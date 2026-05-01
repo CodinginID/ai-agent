@@ -1,0 +1,52 @@
+[project]
+name = "ai-agent"
+version = "0.1.0"
+requires-python = ">=3.13"
+
+# ── Ruff: linting + formatting ─────────────────────────────────────────────────
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+src = ["app", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8 naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear (opinionated bugs)
+    "C4",   # flake8-comprehensions
+    "SIM",  # flake8-simplify
+    "TCH",  # flake8-type-checking (move type-only imports to TYPE_CHECKING block)
+    "RUF",  # ruff-specific rules
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]  # allow assert in tests
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+# ── Mypy: static type checking ─────────────────────────────────────────────────
+[tool.mypy]
+python_version = "3.13"
+strict = true
+pretty = true
+show_error_codes = true
+
+# Abaikan library yang tidak punya stub
+[[tool.mypy.overrides]]
+module = ["telegram.*", "psutil.*"]
+ignore_missing_imports = true
+
+# ── Pytest ─────────────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-v --tb=short"

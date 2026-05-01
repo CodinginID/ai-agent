@@ -1,0 +1,50 @@
+services:
+
+  # ── Ollama: AI model server ─────────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: aiagent_ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
+
+  # ── Model init: pull model sekali, lalu selesai ─────────────────────────────
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: aiagent_ollama_init
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["ollama", "pull", "qwen2.5:3b"]
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+
+  # ── Bot: Telegram bot utama ──────────────────────────────────────────────────
+  bot:
+    build: .
+    container_name: aiagent_bot
+    env_file: .env
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    depends_on:
+      ollama:
+        condition: service_healthy
+      ollama-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    # Opsional: mount direktori project di VPS agar bot bisa ls/git di sana
+    # volumes:
+    #   - /path/ke/project/kamu:/workspace:ro
+
+volumes:
+  ollama_data:
+    name: aiagent_ollama_data

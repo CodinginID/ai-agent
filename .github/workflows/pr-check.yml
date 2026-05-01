@@ -1,0 +1,88 @@
+name: PR Check
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  # ── 1. Validasi nama branch ─────────────────────────────────────────────────
+  branch-name:
+    name: Branch naming convention
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate branch name
+        run: |
+          BRANCH="${{ github.head_ref }}"
+          PATTERN="^(feat|fix|refactor|chore|docs|test|hotfix)/.+"
+
+          if echo "$BRANCH" | grep -qE "$PATTERN"; then
+            echo "Branch OK: $BRANCH"
+          else
+            echo ""
+            echo "Branch '$BRANCH' tidak sesuai konvensi."
+            echo ""
+            echo "Format yang benar:"
+            echo "  feat/deskripsi-singkat"
+            echo "  fix/nama-bug"
+            echo "  refactor/nama-modul"
+            echo "  chore/nama-task"
+            echo "  docs/nama-dokumen"
+            echo "  test/nama-test"
+            echo "  hotfix/nama-issue"
+            echo ""
+            exit 1
+          fi
+
+  # ── 2. Validasi judul PR ────────────────────────────────────────────────────
+  pr-title:
+    name: PR title convention
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate PR title
+        run: |
+          TITLE="${{ github.event.pull_request.title }}"
+          # Format: type(scope)?: deskripsi   — scope opsional
+          PATTERN="^(feat|fix|refactor|chore|docs|test|hotfix)(\(.+\))?: .{5,}"
+
+          if echo "$TITLE" | grep -qE "$PATTERN"; then
+            echo "PR title OK: $TITLE"
+          else
+            echo ""
+            echo "PR title '$TITLE' tidak sesuai konvensi."
+            echo ""
+            echo "Format yang benar:"
+            echo "  feat: tambah action docker stats"
+            echo "  fix: handle timeout saat ollama tidak responsif"
+            echo "  refactor(domain): pisah intent classifier ke file terpisah"
+            echo "  chore: upgrade python-telegram-bot ke 22.8"
+            echo "  docs: tambah panduan deployment Docker"
+            echo "  test: unit test untuk ServerStatusAction"
+            echo "  hotfix: perbaiki crash saat ADMIN_USER_IDS kosong"
+            echo ""
+            exit 1
+          fi
+
+  # ── 3. Validasi kode ────────────────────────────────────────────────────────
+  code-quality:
+    name: Code quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt -q
+
+      - name: Lint (ruff)
+        run: ruff check app/ tests/
+
+      - name: Type check (mypy)
+        run: mypy app/
+
+      - name: Test (pytest)
+        run: pytest tests/ -v

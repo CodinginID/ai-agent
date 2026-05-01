@@ -1,0 +1,54 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:   # bisa trigger manual dari GitHub UI
+
+jobs:
+  # ── Job 1: Validasi di GitHub-hosted runner (cepat, gratis) ────────────────
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Cek syntax Python
+        run: python -m py_compile app/bot.py && echo "Syntax OK"
+
+      - name: Validasi docker-compose
+        run: |
+          cp .env.example .env
+          docker compose config --quiet
+          echo "docker-compose valid"
+
+  # ── Job 2: Deploy langsung dari dalam VPS (self-hosted runner) ──────────────
+  # Runner berjalan di VPS, tidak perlu SSH dari luar.
+  # Cocok untuk VPS di balik Cloudflare Access / firewall ketat.
+  deploy:
+    name: Deploy
+    runs-on: [self-hosted, linux]   # runner "vps-ali" yang sudah diinstall di VPS
+    needs: validate
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Pull kode terbaru
+        run: |
+          cd ~/ai-agent
+          git pull origin main
+
+      - name: Build & restart bot
+        run: |
+          cd ~/ai-agent
+          make up
+
+      - name: Status container
+        run: |
+          cd ~/ai-agent
+          make status
+          echo "Deploy selesai: $(date '+%Y-%m-%d %H:%M:%S')"
