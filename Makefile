@@ -1,5 +1,5 @@
-.PHONY: up down restart logs status build shell pull-model clean \
-        lint type-check test check install-dev
+.PHONY: up down restart logs logs-ollama logs-init status build shell pull-model clean \
+        lint type-check test check install-dev release
 
 # ── Development ──────────────────────────────────────────────────────────────
 
@@ -40,6 +40,14 @@ restart:
 logs:
 	docker compose logs -f bot
 
+## Ikuti log Ollama secara realtime
+logs-ollama:
+	docker compose logs -f ollama
+
+## Lihat log model init / model pull
+logs-init:
+	docker compose logs -f ollama-init
+
 ## Lihat status semua container
 status:
 	docker compose ps
@@ -59,3 +67,11 @@ pull-model:
 ## Hapus semua container + volume (HATI-HATI: model AI ikut terhapus)
 clean:
 	docker compose down -v
+
+## Buat release baru — contoh: make release VERSION=0.2.0
+release:
+	@[ -n "$(VERSION)" ] || (echo "Gunakan: make release VERSION=x.y.z"; exit 1)
+	make check
+	git tag -a v$(VERSION) -m "Release v$(VERSION)"
+	git push origin v$(VERSION)
+	@echo "Tag v$(VERSION) dipush. GitHub Actions akan build & publish otomatis."

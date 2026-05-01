@@ -3,18 +3,17 @@ name: Deploy to VPS
 on:
   push:
     branches: [main]
-  workflow_dispatch:   # bisa trigger manual dari GitHub UI
+  workflow_dispatch:
 
 jobs:
-  # ── Job 1: Validasi di GitHub-hosted runner (cepat, gratis) ────────────────
+  # ── 1. Validasi di GitHub-hosted runner ────────────────────────────────────
   validate:
     name: Validate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
 
@@ -27,28 +26,79 @@ jobs:
           docker compose config --quiet
           echo "docker-compose valid"
 
-  # ── Job 2: Deploy langsung dari dalam VPS (self-hosted runner) ──────────────
-  # Runner berjalan di VPS, tidak perlu SSH dari luar.
-  # Cocok untuk VPS di balik Cloudflare Access / firewall ketat.
+  # ── 2. Deploy di VPS (self-hosted runner) ──────────────────────────────────
   deploy:
     name: Deploy
-    runs-on: [self-hosted, linux]   # runner "vps-ali" yang sudah diinstall di VPS
+    runs-on: self-hosted
     needs: validate
     if: github.ref == 'refs/heads/main'
-
+    env:
+      DEPLOY_DIR: ${{ vars.DEPLOY_DIR }}
     steps:
-      - name: Pull kode terbaru
+      - name: Pull kode terbaru & restart
         run: |
-          cd ~/ai-agent
-          git pull origin main
+          set -euo pipefail
 
-      - name: Build & restart bot
-        run: |
-          cd ~/ai-agent
+          DEPLOY_DIR="${DEPLOY_DIR:-/home/ali/project/codinginid/ai-agent}"
+
+          if [ ! -d "$DEPLOY_DIR/.git" ]; then
+            echo "::error::Deploy directory tidak ditemukan: $DEPLOY_DIR"
+            echo "Jalankan sekali di VPS:"
+            echo "  cd $HOME"
+            echo "  git clone https://github.com/${GITHUB_REPOSITORY}.git ai-agent"
+            echo "  cd ai-agent"
+            echo "  cp .env.example .env"
+            echo "  nano .env"
+            exit 1
+          fi
+
+          cd "$DEPLOY_DIR"
+
+          if [ ! -f ".env" ]; then
+            echo "::error::.env belum ada di $DEPLOY_DIR"
+            echo "Jalankan di VPS:"
+            echo "  cd $DEPLOY_DIR"
+            echo "  cp .env.example .env"
+            echo "  nano .env"
+            exit 1
+          fi
+
+          git pull --ff-only origin main
           make up
 
-      - name: Status container
+  # ── 3. Verifikasi semua container running ───────────────────────────────────
+  verify:
+    name: Verify
+    runs-on: self-hosted
+    needs: deploy
+    steps:
+      - name: Tunggu & cek semua container
         run: |
-          cd ~/ai-agent
-          make status
-          echo "Deploy selesai: $(date '+%Y-%m-%d %H:%M:%S')"
+          TIMEOUT=180
+          ELAPSED=0
+
+          until docker inspect --format='{{.State.Running}}' aiagent_bot 2>/dev/null | grep -q "true"; do
+            if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+              echo "TIMEOUT: bot tidak running setelah ${TIMEOUT}s"
+              docker logs aiagent_bot --tail=30 2>&1 || true
+              exit 1
+            fi
+            echo "Menunggu bot... ${ELAPSED}s"
+            sleep 10
+            ELAPSED=$((ELAPSED + 10))
+          done
+
+          check() {
+            local name=$1
+            local state
+            state=$(docker inspect --format='{{.State.Running}}' "$name" 2>/dev/null || echo "false")
+            if [ "$state" = "true" ]; then echo "OK  $name"
+            else
+              echo "FAIL $name"; docker logs "$name" --tail=20 2>&1 || true; return 1
+            fi
+          }
+
+          echo "=== Status ==="
+          check aiagent_ollama
+          check aiagent_bot
+          echo "Deploy verified: $(date '+%Y-%m-%d %H:%M:%S')"

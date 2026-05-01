@@ -1,0 +1,161 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+# Flow: build image → deploy ke VPS → verifikasi container → baru buat release
+# GitHub Release hanya dibuat kalau semua container running di VPS.
+
+jobs:
+  # ── 1. Build & push image ke GHCR ──────────────────────────────────────────
+  build:
+    name: Build & Push Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.meta.outputs.tags }}
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login ke GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Buildx (multi-platform)
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ── 2. Deploy ke VPS (self-hosted runner di dalam VPS) ─────────────────────
+  deploy:
+    name: Deploy to VPS
+    runs-on: self-hosted
+    needs: build
+    steps:
+      - name: Pull kode & image terbaru, restart bot
+        run: |
+          set -e
+          cd ~/ai-agent
+
+          echo ">>> Sync kode..."
+          git pull origin main
+
+          echo ">>> Pull image baru dari GHCR..."
+          docker compose pull bot
+
+          echo ">>> Restart dengan image baru..."
+          docker compose up -d
+
+  # ── 3. Verifikasi semua container running di VPS ────────────────────────────
+  verify:
+    name: Verify Deployment
+    runs-on: self-hosted
+    needs: deploy
+    steps:
+      - name: Tunggu container stabil
+        run: |
+          echo "Menunggu container stabil..."
+
+          # Bot menunggu Ollama healthy sebelum start.
+          # Poll hingga bot running, timeout 3 menit.
+          TIMEOUT=180
+          ELAPSED=0
+
+          until docker inspect --format='{{.State.Running}}' aiagent_bot 2>/dev/null | grep -q "true"; do
+            if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+              echo ""
+              echo "TIMEOUT: bot tidak running setelah ${TIMEOUT}s"
+              echo ""
+              echo "=== Log Ollama (tail 30) ==="
+              docker logs aiagent_ollama --tail=30 2>&1 || true
+              echo ""
+              echo "=== Log Bot (tail 30) ==="
+              docker logs aiagent_bot --tail=30 2>&1 || true
+              exit 1
+            fi
+            echo "  Menunggu... ${ELAPSED}s / ${TIMEOUT}s"
+            sleep 10
+            ELAPSED=$((ELAPSED + 10))
+          done
+
+          echo "Bot running setelah ${ELAPSED}s"
+
+      - name: Cek semua container
+        run: |
+          check() {
+            local name=$1
+            local state
+            state=$(docker inspect --format='{{.State.Running}}' "$name" 2>/dev/null || echo "false")
+            if [ "$state" = "true" ]; then
+              echo "OK  $name"
+            else
+              echo "FAIL $name (state: $state)"
+              docker logs "$name" --tail=30 2>&1 || true
+              return 1
+            fi
+          }
+
+          echo "=== Status Container ==="
+          check aiagent_ollama
+          check aiagent_bot
+          echo "========================"
+          echo "Semua container running. Deployment verified."
+
+  # ── 4. Buat GitHub Release — hanya setelah verify sukses ───────────────────
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: verify
+    permissions:
+      contents: write
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            docker-compose.yml
+            .env.example
+            install.sh
+          body_prefix: |
+            ## Instalasi
+
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | bash
+            ```
+
+            Atau pull image langsung:
+            ```bash
+            docker pull ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            ```
+
+            ---

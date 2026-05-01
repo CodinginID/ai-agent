@@ -8,11 +8,11 @@ services:
       - ollama_data:/root/.ollama
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:11434 || exit 1"]
+      test: ["CMD", "ollama", "list"]
       interval: 15s
       timeout: 5s
-      retries: 8
-      start_period: 30s
+      retries: 20
+      start_period: 60s
 
   # ── Model init: pull model sekali, lalu selesai ─────────────────────────────
   ollama-init:
@@ -22,14 +22,18 @@ services:
       - ollama_data:/root/.ollama
     environment:
       OLLAMA_HOST: http://ollama:11434
-    entrypoint: ["ollama", "pull", "qwen2.5:3b"]
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
+    entrypoint: ["ollama", "pull", "${OLLAMA_MODEL:-qwen2.5:3b}"]
     depends_on:
       ollama:
         condition: service_healthy
     restart: "no"
 
   # ── Bot: Telegram bot utama ──────────────────────────────────────────────────
+  # image: dipakai saat `docker compose pull` (user yang install via install.sh)
+  # build: dipakai saat `docker compose up --build` (developer lokal)
   bot:
+    image: ghcr.io/codinginid/ai-agent:latest
     build: .
     container_name: aiagent_bot
     env_file: .env

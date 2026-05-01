@@ -1,6 +1,42 @@
 # AI Agent — Telegram Server Admin Bot
 
+[![Release](https://img.shields.io/github/v/release/CodinginID/ai-agent)](https://github.com/CodinginID/ai-agent/releases)
+[![Docker Image](https://img.shields.io/badge/ghcr.io-ai--agent-blue)](https://github.com/CodinginID/ai-agent/pkgs/container/ai-agent)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
 Bot Telegram untuk memantau dan mengontrol server menggunakan bahasa natural (Bahasa Indonesia maupun Inggris). Mode chat default didukung oleh **Qwen** via **Ollama** yang berjalan lokal. Integrasi opsional seperti **Codex CLI** dan **Claude Code CLI** dapat mengirim prompt/output ke provider masing-masing saat diaktifkan.
+
+---
+
+## Install dalam 1 Menit
+
+> Butuh: **Docker** yang sudah berjalan di mesin/VPS kamu.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/CodinginID/ai-agent/main/install.sh | bash
+```
+
+Script otomatis: download image, tanya token Telegram, jalankan bot. Selesai.
+
+### Atau manual dengan Docker Compose
+
+```bash
+# Download konfigurasi
+curl -fsSL https://raw.githubusercontent.com/CodinginID/ai-agent/main/docker-compose.yml -o docker-compose.yml
+curl -fsSL https://raw.githubusercontent.com/CodinginID/ai-agent/main/.env.example -o .env
+
+# Isi token Telegram
+nano .env
+
+# Jalankan
+docker compose up -d
+```
+
+### Update ke versi terbaru
+
+```bash
+docker compose pull && docker compose up -d
+```
 
 ---
 
@@ -169,7 +205,7 @@ Push ke main
     ▼
 GitHub Actions
   ├── [validate] cek syntax Python + docker-compose
-  └── [deploy]   SSH ke VPS → git pull → make up
+  └── [deploy]   self-hosted runner di VPS → git pull → make up
 ```
 
 ### Kenapa Self-hosted Runner, Bukan SSH Biasa?
@@ -229,9 +265,45 @@ nano .env   # isi TELEGRAM_BOT_TOKEN dan ADMIN_USER_IDS
 make up     # download model AI (~2GB) + jalankan semua service
 ```
 
+Workflow deploy default mencari project di `/home/ali/project/codinginid/ai-agent`. Jika ingin path lain, set repository variable `DEPLOY_DIR` dan sesuaikan workflow.
+
 **5. Selesai — tidak ada GitHub Secrets yang perlu ditambahkan untuk deploy.**
 
 Runner sudah berjalan di dalam VPS dengan akses langsung ke Docker dan project.
+
+### Jika Deploy Kuning dan Menunggu Runner
+
+Jika log GitHub Actions berhenti di:
+
+```text
+Requested labels: self-hosted, linux
+Waiting for a runner to pick up this job...
+```
+
+artinya job deploy sudah valid, tetapi GitHub belum menemukan self-hosted runner yang online dan cocok. Cek di VPS:
+
+```bash
+cd ~/actions-runner
+sudo ./svc.sh status
+sudo ./svc.sh start
+```
+
+Jika service belum pernah dipasang:
+
+```bash
+cd ~/actions-runner
+sudo ./svc.sh install
+sudo ./svc.sh start
+```
+
+Untuk test cepat tanpa systemd:
+
+```bash
+cd ~/actions-runner
+./run.sh
+```
+
+Di GitHub, buka **Settings → Actions → Runners** dan pastikan runner statusnya **Idle** atau **Online** untuk repository ini. Jika runner online tapi label tidak cocok, gunakan label default `self-hosted` saja, atau tambahkan label custom seperti `vps-ali` dan sesuaikan `runs-on` di `.github/workflows/deploy.yml`.
 
 ### Cara Kerja Setelah Setup
 
@@ -471,6 +543,30 @@ Kirim `/whoami` ke bot untuk melihat user ID kamu, lalu tambahkan ke `ADMIN_USER
 ```bash
 make logs              # lihat error message
 make status            # cek status tiap container
+```
+
+**`dependency failed to start: container aiagent_ollama is unhealthy`**
+
+Artinya Compose menunggu service `ollama` menjadi healthy, tetapi healthcheck gagal sebelum timeout. Cek detailnya:
+
+```bash
+make status
+make logs-ollama
+docker inspect aiagent_ollama --format '{{json .State.Health}}'
+```
+
+Jika log menunjukkan Ollama sebenarnya sudah berjalan, coba restart stack:
+
+```bash
+docker compose down
+docker compose up -d --build
+```
+
+Jika VPS kecil atau cold start lambat, tunggu 1-2 menit lalu cek:
+
+```bash
+docker compose exec ollama ollama list
+make logs-init
 ```
 
 **Ollama belum selesai siap saat bot start**
