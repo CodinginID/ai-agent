@@ -342,6 +342,26 @@ git -C /home/ali/project/codinginid/ai-agent fetch origin main
 
 Jika runner service berjalan sebagai user lain, pindahkan SSH config/key ke user itu atau install ulang service runner sebagai user `ali`. Jika ingin override remote tanpa mengubah repo lokal, set repository variable `DEPLOY_GIT_REMOTE_URL`.
 
+### Memakai SSH Key Ber-passphrase dengan Runner
+
+Jika private key GitHub memakai passphrase, GitHub Actions tidak bisa mengetik passphrase secara interaktif. Gunakan `ssh-agent` dengan socket tetap:
+
+```bash
+export SSH_AUTH_SOCK=/home/ali/.ssh/ssh-agent.sock
+ssh-agent -a "$SSH_AUTH_SOCK"
+ssh-add /home/ali/.ssh/hamas-ali
+ssh-add -l
+```
+
+Masukkan passphrase saat `ssh-add`. Setelah key masuk agent, workflow deploy akan memakai socket itu:
+
+```bash
+ssh -T git@github-work
+git -C /home/ali/project/codinginid/ai-agent fetch origin main
+```
+
+Jika VPS reboot atau `ssh-agent` mati, jalankan ulang blok `ssh-agent` + `ssh-add` di atas.
+
 ### Cara Kerja Setelah Setup
 
 ```bash

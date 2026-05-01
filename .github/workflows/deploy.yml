@@ -38,6 +38,7 @@ jobs:
     env:
       DEPLOY_DIR: ${{ vars.DEPLOY_DIR }}
       DEPLOY_GIT_REMOTE_URL: ${{ vars.DEPLOY_GIT_REMOTE_URL }}
+      SSH_AUTH_SOCK: /home/ali/.ssh/ssh-agent.sock
     steps:
       - name: Pull kode terbaru & restart
         run: |
@@ -74,6 +75,19 @@ jobs:
           echo "Runner user: $(whoami)"
           echo "Deploy dir: $DEPLOY_DIR"
           git remote -v
+
+          if ! ssh-add -l >/dev/null 2>&1; then
+            echo "::error::ssh-agent belum punya key. Jalankan di VPS:"
+            echo "  export SSH_AUTH_SOCK=/home/ali/.ssh/ssh-agent.sock"
+            echo "  ssh-agent -a \$SSH_AUTH_SOCK"
+            echo "  ssh-add /home/ali/.ssh/hamas-ali"
+            exit 1
+          fi
+
+          if [ -f "$HOME/.ssh/config" ]; then
+            export GIT_SSH_COMMAND="ssh -F $HOME/.ssh/config -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+          fi
+          ssh -T git@github-work || true
           git fetch origin main
           git merge --ff-only FETCH_HEAD
           make up
