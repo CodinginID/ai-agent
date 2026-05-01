@@ -45,7 +45,7 @@ jobs:
             echo "::error::Deploy directory tidak ditemukan: $DEPLOY_DIR"
             echo "Jalankan sekali di VPS:"
             echo "  cd $HOME"
-            echo "  git clone https://github.com/${GITHUB_REPOSITORY}.git ai-agent"
+            echo "  git clone https://github-work/${GITHUB_REPOSITORY}.git ai-agent"
             echo "  cd ai-agent"
             echo "  cp .env.example .env"
             echo "  nano .env"
