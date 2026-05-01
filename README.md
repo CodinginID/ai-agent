@@ -305,6 +305,43 @@ cd ~/actions-runner
 
 Di GitHub, buka **Settings → Actions → Runners** dan pastikan runner statusnya **Idle** atau **Online** untuk repository ini. Jika runner online tapi label tidak cocok, gunakan label default `self-hosted` saja, atau tambahkan label custom seperti `vps-ali` dan sesuaikan `runs-on` di `.github/workflows/deploy.yml`.
 
+### Jika Deploy Gagal `Permission denied (publickey)`
+
+Error:
+
+```text
+git@github.com: Permission denied (publickey).
+fatal: Could not read from remote repository.
+```
+
+berarti clone lokal di VPS memakai remote SSH, tetapi user runner tidak punya SSH key GitHub yang cocok. Untuk setup multi-akun Git, remote boleh tetap memakai alias, misalnya:
+
+```bash
+cd /home/ali/project/codinginid/ai-agent
+git remote -v
+# origin git@github-work:CodinginID/ai-agent.git
+```
+
+Pastikan alias `github-work` ada di `/home/ali/.ssh/config` dan bisa dipakai oleh user runner:
+
+```sshconfig
+Host github-work
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/id_ed25519_work
+  IdentitiesOnly yes
+```
+
+Tes dari VPS:
+
+```bash
+whoami
+ssh -T git@github-work
+git -C /home/ali/project/codinginid/ai-agent fetch origin main
+```
+
+Jika runner service berjalan sebagai user lain, pindahkan SSH config/key ke user itu atau install ulang service runner sebagai user `ali`. Jika ingin override remote tanpa mengubah repo lokal, set repository variable `DEPLOY_GIT_REMOTE_URL`.
+
 ### Cara Kerja Setelah Setup
 
 ```bash

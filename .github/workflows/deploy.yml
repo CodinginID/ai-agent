@@ -5,6 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   # ── 1. Validasi di GitHub-hosted runner ────────────────────────────────────
   validate:
@@ -34,6 +37,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     env:
       DEPLOY_DIR: ${{ vars.DEPLOY_DIR }}
+      DEPLOY_GIT_REMOTE_URL: ${{ vars.DEPLOY_GIT_REMOTE_URL }}
     steps:
       - name: Pull kode terbaru & restart
         run: |
@@ -45,7 +49,7 @@ jobs:
             echo "::error::Deploy directory tidak ditemukan: $DEPLOY_DIR"
             echo "Jalankan sekali di VPS:"
             echo "  cd $HOME"
-            echo "  git clone https://github-work/${GITHUB_REPOSITORY}.git ai-agent"
+            echo "  git clone git@github-work:${GITHUB_REPOSITORY}.git ai-agent"
             echo "  cd ai-agent"
             echo "  cp .env.example .env"
             echo "  nano .env"
@@ -63,7 +67,15 @@ jobs:
             exit 1
           fi
 
-          git pull --ff-only origin main
+          if [ -n "${DEPLOY_GIT_REMOTE_URL:-}" ]; then
+            git remote set-url origin "$DEPLOY_GIT_REMOTE_URL"
+          fi
+
+          echo "Runner user: $(whoami)"
+          echo "Deploy dir: $DEPLOY_DIR"
+          git remote -v
+          git fetch origin main
+          git merge --ff-only FETCH_HEAD
           make up
 
   # ── 3. Verifikasi semua container running ───────────────────────────────────
