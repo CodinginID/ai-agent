@@ -1,0 +1,169 @@
+from typing import Any
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.adapters.database.models import (
+    AgentIntegrationModel,
+    DeviceModel,
+    ProjectModel,
+    TelegramAccountModel,
+    UserModel,
+    utc_now,
+)
+from app.domain.accounts import DeviceIdentity, TenantIdentity
+
+
+class DatabaseConflictError(Exception):
+    pass
+
+
+class ControlPlaneRepository:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def create_user(self, display_name: str | None = None, email: str | None = None) -> UserModel:
+        user = UserModel(display_name=display_name, email=email)
+        self._session.add(user)
+        self._session.flush()
+        return user
+
+    def link_telegram_account(
+        self,
+        user_id: str,
+        telegram_user_id: int,
+        username: str | None = None,
+        first_name: str | None = None,
+    ) -> TelegramAccountModel:
+        existing = self._session.scalar(
+            select(TelegramAccountModel).where(
+                TelegramAccountModel.telegram_user_id == telegram_user_id,
+            )
+        )
+        if existing is not None:
+            raise DatabaseConflictError("Telegram account is already linked")
+
+        account = TelegramAccountModel(
+            user_id=user_id,
+            telegram_user_id=telegram_user_id,
+            username=username,
+            first_name=first_name,
+        )
+        self._session.add(account)
+        self._session.flush()
+        return account
+
+    def resolve_by_telegram_user_id(self, telegram_user_id: int) -> TenantIdentity | None:
+        account = self._session.scalar(
+            select(TelegramAccountModel).where(
+                TelegramAccountModel.telegram_user_id == telegram_user_id,
+            )
+        )
+        if account is None:
+            return None
+
+        return TenantIdentity(
+            user_id=account.user_id,
+            telegram_account_id=account.id,
+            telegram_user_id=account.telegram_user_id,
+        )
+
+    def register_device(
+        self,
+        user_id: str,
+        name: str,
+        device_token_hash: str,
+    ) -> DeviceIdentity:
+        existing = self._session.scalar(
+            select(DeviceModel).where(
+                DeviceModel.user_id == user_id,
+                DeviceModel.name == name,
+            )
+        )
+        if existing is not None:
+            raise DatabaseConflictError("Device name is already registered for this user")
+
+        device = DeviceModel(
+            user_id=user_id,
+            name=name,
+            device_token_hash=device_token_hash,
+        )
+        self._session.add(device)
+        self._session.flush()
+        return DeviceIdentity(device_id=device.id, user_id=device.user_id, name=device.name)
+
+    def create_project(
+        self,
+        user_id: str,
+        name: str,
+        root_path: str,
+        description: str = "",
+    ) -> ProjectModel:
+        existing = self._session.scalar(
+            select(ProjectModel).where(
+                ProjectModel.user_id == user_id,
+                ProjectModel.name == name,
+            )
+        )
+        if existing is not None:
+            raise DatabaseConflictError("Project name is already registered for this user")
+
+        project = ProjectModel(
+            user_id=user_id,
+            name=name,
+            root_path=root_path,
+            description=description,
+        )
+        self._session.add(project)
+        self._session.flush()
+        return project
+
+    def upsert_agent_integration(
+        self,
+        device_id: str,
+        agent_id: str,
+        display_name: str,
+        provider: str,
+        executable: str | None,
+        installed: bool,
+        enabled: bool,
+        probe_ok: bool,
+        status: str,
+        version: str | None = None,
+        probe_detail: str | None = None,
+        capabilities: dict[str, Any] | None = None,
+    ) -> AgentIntegrationModel:
+        integration = self._session.scalar(
+            select(AgentIntegrationModel).where(
+                AgentIntegrationModel.device_id == device_id,
+                AgentIntegrationModel.agent_id == agent_id,
+            )
+        )
+        ready = installed and enabled and probe_ok
+        now = utc_now()
+
+        if integration is None:
+            integration = AgentIntegrationModel(
+                device_id=device_id,
+                agent_id=agent_id,
+                display_name=display_name,
+                provider=provider,
+                executable=executable,
+            )
+            self._session.add(integration)
+
+        integration.display_name = display_name
+        integration.provider = provider
+        integration.executable = executable
+        integration.installed = installed
+        integration.enabled = enabled
+        integration.probe_ok = probe_ok
+        integration.ready = ready
+        integration.status = status
+        integration.version = version
+        integration.last_probe_status = "ok" if probe_ok else "failed"
+        integration.last_probe_detail = probe_detail
+        integration.last_probe_at = now
+        integration.capabilities = capabilities or {}
+        self._session.flush()
+        return integration
