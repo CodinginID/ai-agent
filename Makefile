@@ -1,11 +1,20 @@
 .PHONY: up down restart logs logs-ollama logs-init status build shell pull-model clean \
-        lint type-check test check install-dev release
+        lint type-check test check install-dev db-upgrade db-downgrade release \
+        dev dev-webhook
 
 # ── Development ──────────────────────────────────────────────────────────────
 
 ## Install dev dependencies (linting, type-check, testing)
 install-dev:
 	pip install -r requirements-dev.txt
+
+## Jalankan aplikasi lokal — polling mode (setup wizard otomatis jika belum konfigurasi)
+dev:
+	./dev.sh
+
+## Jalankan aplikasi lokal — webhook mode dengan uvicorn hot-reload
+dev-webhook:
+	MODE=webhook ./dev.sh
 
 ## Jalankan linter (ruff)
 lint:
@@ -21,6 +30,14 @@ test:
 
 ## Jalankan lint + type-check + test sekaligus (wajib sebelum push)
 check: lint type-check test
+
+## Jalankan migration database ke versi terbaru
+db-upgrade:
+	alembic upgrade head
+
+## Rollback satu migration database
+db-downgrade:
+	alembic downgrade -1
 
 # ── Docker ───────────────────────────────────────────────────────────────────
 

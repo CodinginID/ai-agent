@@ -323,8 +323,11 @@ def run_setup_wizard(env_path: Path) -> None:
         f"https://t.me/{bot_username}",
         f"Scan untuk buka @{bot_username} di Telegram:",
     )
-    print("  Kirim /start ke bot untuk mendaftarkan akun.")
+    print("  Kirim /start ke bot untuk mendaftarkan akun kamu.")
+    print()
+    print("  Jalankan ulang untuk mulai bot:")
+    print("    make dev")
     print("─" * 43)
     print()
 
-    os.execv(sys.executable, [sys.executable, *sys.argv])
+    sys.exit(0)
