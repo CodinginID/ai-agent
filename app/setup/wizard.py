@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import http.server
 import os
+import socket
 import sys
+import threading
+import urllib.parse
+import webbrowser
 from pathlib import Path
 
 import requests  # type: ignore[import-untyped]
@@ -15,6 +20,33 @@ _GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/userinfo.profile",
 ]
+
+_AUTH_SUCCESS_HTML = b"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>AI Agent</title>
+  <style>
+    *    { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #0f172a;
+           color: #e2e8f0; display: flex; align-items: center;
+           justify-content: center; min-height: 100vh; }
+    .card { text-align: center; padding: 48px 40px; max-width: 400px; }
+    .icon { font-size: 3rem; margin-bottom: 16px; }
+    h1   { color: #4ade80; font-size: 1.6rem; margin-bottom: 10px; }
+    p    { color: #94a3b8; font-size: 0.95rem; line-height: 1.6; }
+    .dim { margin-top: 28px; font-size: 0.8rem; color: #475569; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">&#10003;</div>
+    <h1>Login Berhasil</h1>
+    <p>Akun kamu sudah terverifikasi.<br>Kembali ke terminal untuk melanjutkan.</p>
+    <p class="dim">Halaman ini bisa ditutup.</p>
+  </div>
+</body>
+</html>"""
 
 
 def needs_setup(token: str) -> bool:
@@ -32,7 +64,6 @@ def _print_header() -> None:
 
 
 def _show_qr(url: str, label: str) -> None:
-    """Print QR code to terminal. Gracefully skips if qrcode is not installed."""
     print(f"\n  {label}")
     try:
         import qrcode  # type: ignore[import-untyped]
@@ -47,7 +78,7 @@ def _show_qr(url: str, label: str) -> None:
         qr.print_ascii(invert=True)
     except Exception:
         pass
-    print(f"  → {url}")
+    print(f"  → {url}\n")
 
 
 def _prompt(label: str, secret: bool = False) -> str:
@@ -59,6 +90,12 @@ def _prompt(label: str, secret: bool = False) -> str:
     except (KeyboardInterrupt, EOFError):
         print("\n\nSetup dibatalkan.")
         sys.exit(0)
+
+
+def _free_port() -> int:
+    with socket.socket() as s:
+        s.bind(("", 0))
+        return int(s.getsockname()[1])
 
 
 def _read_env_lines(env_path: Path) -> list[str]:
@@ -88,14 +125,14 @@ def _save_env(env_path: Path, lines: list[str]) -> None:
     env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-# ── Step 1: Google Auth ────────────────────────────────────────────────────────
+# ── Step 1: Google Auth ───────────────────────────────────────────────────────
 
 def _step_google_auth(lines: list[str]) -> tuple[str, str, list[str]]:
     """
-    Returns (email, display_name, updated_env_lines).
-    Saves GOOGLE_CLIENT_ID / SECRET to env if entered for the first time.
+    Returns (email, display_name, env_lines_unchanged).
+    GOOGLE_CLIENT_ID/SECRET harus sudah ada di .env — itu config server, bukan user.
     """
-    print("Step 1/3 — Login Google")
+    print("Step 1/3 — Login dengan Google")
     print("─" * 43)
 
     client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
@@ -103,26 +140,12 @@ def _step_google_auth(lines: list[str]) -> tuple[str, str, list[str]]:
 
     if not client_id or not client_secret:
         print()
-        print("  Google OAuth credentials belum dikonfigurasi.")
-        print("  Cara mendapatkannya (satu kali saja):")
+        print("  GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET belum diisi di .env.")
+        print("  Ini config server — isi terlebih dahulu lalu jalankan ulang.")
         print()
-        print("    1. Buka https://console.cloud.google.com/apis/credentials")
-        print("    2. Create Credentials → OAuth 2.0 Client ID")
-        print("    3. Application type: Desktop App")
-        print("    4. Copy Client ID dan Client Secret")
-        print()
-
-        while not client_id:
-            client_id = _prompt("Google Client ID")
-        while not client_secret:
-            client_secret = _prompt("Google Client Secret", secret=True)
-
-        lines = _set_env_key(lines, "GOOGLE_CLIENT_ID", client_id)
-        lines = _set_env_key(lines, "GOOGLE_CLIENT_SECRET", client_secret)
-
-    print()
-    print("  Membuka browser untuk login Google...")
-    print("  (Jika browser tidak terbuka, salin URL yang muncul)\n")
+        print("  Cara mendapatkan (admin, satu kali):")
+        print("    console.cloud.google.com → Credentials → OAuth 2.0 Client ID")
+        sys.exit(1)
 
     from google_auth_oauthlib.flow import InstalledAppFlow  # type: ignore[import-untyped]
 
@@ -137,7 +160,46 @@ def _step_google_auth(lines: list[str]) -> tuple[str, str, list[str]]:
     }
 
     flow = InstalledAppFlow.from_client_config(client_config, scopes=_GOOGLE_SCOPES)
-    creds = flow.run_local_server(port=0, prompt="consent", open_browser=True)
+    port = _free_port()
+    flow.redirect_uri = f"http://localhost:{port}"
+    auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline")
+
+    # Show QR + URL — user scans from phone OR browser opens automatically
+    _show_qr(auth_url, "Scan atau klik untuk login dengan Google:")
+    print("  Menunggu login di browser... (Ctrl+C untuk batalkan)")
+
+    # --- Callback server ---
+    auth_code: list[str] = []
+
+    class _Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            code = params.get("code", [None])[0]
+            if code:
+                auth_code.append(code)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(_AUTH_SUCCESS_HTML)
+
+        def log_message(self, *args: object) -> None:
+            pass  # suppress access logs
+
+    server = http.server.HTTPServer(("localhost", port), _Handler)
+    threading.Timer(0.5, lambda: webbrowser.open(auth_url)).start()
+
+    try:
+        server.handle_request()  # blocks until callback arrives
+    except KeyboardInterrupt:
+        print("\n\nSetup dibatalkan.")
+        sys.exit(0)
+
+    if not auth_code:
+        print("\n  Login gagal — tidak ada kode yang diterima.")
+        sys.exit(1)
+
+    flow.fetch_token(code=auth_code[0])
+    creds = flow.credentials
 
     resp = requests.get(
         "https://www.googleapis.com/oauth2/v1/userinfo",
@@ -152,10 +214,9 @@ def _step_google_auth(lines: list[str]) -> tuple[str, str, list[str]]:
     return email, name, lines
 
 
-# ── Step 2: Telegram bot setup ─────────────────────────────────────────────────
+# ── Step 2: Telegram bot setup ────────────────────────────────────────────────
 
 def _validate_telegram_token(token: str) -> str | None:
-    """Returns bot @username if valid, None otherwise."""
     try:
         resp = requests.get(
             f"https://api.telegram.org/bot{token}/getMe",
@@ -176,20 +237,17 @@ def _step_bot_setup() -> tuple[str, str]:
     print()
     print("Step 2/3 — Setup Bot Telegram")
     print("─" * 43)
-
-    _show_qr("https://t.me/BotFather", "Buat bot baru — scan atau buka link ini:")
-    print()
-    print("  Di @BotFather: kirim /newbot → ikuti instruksi → copy token")
+    _show_qr("https://t.me/BotFather", "Buat bot baru — scan atau buka @BotFather:")
+    print("  Di @BotFather: ketik /newbot → ikuti instruksi → copy token")
     print()
 
-    bot_username = ""
     token = ""
+    bot_username = ""
     while True:
         token = _prompt("Token bot (dari @BotFather)")
         if not token:
             print("  Token tidak boleh kosong.\n")
             continue
-
         print("  Memvalidasi... ", end="", flush=True)
         result = _validate_telegram_token(token)
         if result:
@@ -201,7 +259,7 @@ def _step_bot_setup() -> tuple[str, str]:
     return token, bot_username
 
 
-# ── Step 3: Ollama + selesai ───────────────────────────────────────────────────
+# ── Step 3: Ollama ────────────────────────────────────────────────────────────
 
 def _step_ollama() -> str:
     print()
@@ -230,7 +288,7 @@ def run_setup_wizard(env_path: Path) -> None:
 
     lines = _read_env_lines(env_path)
 
-    # Step 1 — Google Auth
+    # Step 1 — Google login (user cukup klik, tidak perlu setup apapun)
     email, _display_name, lines = _step_google_auth(lines)
 
     # Step 2 — Telegram bot token
@@ -257,7 +315,7 @@ def run_setup_wizard(env_path: Path) -> None:
         print(f"✗  {exc}")
         sys.exit(1)
 
-    # Done — show bot QR
+    # Done — show QR to bot
     print()
     print("─" * 43)
     print(f"  Setup selesai! Login sebagai {email}")
@@ -265,10 +323,8 @@ def run_setup_wizard(env_path: Path) -> None:
         f"https://t.me/{bot_username}",
         f"Scan untuk buka @{bot_username} di Telegram:",
     )
-    print()
     print("  Kirim /start ke bot untuk mendaftarkan akun.")
     print("─" * 43)
     print()
 
-    # Restart process so fresh .env is loaded
     os.execv(sys.executable, [sys.executable, *sys.argv])
