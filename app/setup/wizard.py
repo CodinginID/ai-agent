@@ -130,7 +130,7 @@ def _save_env(env_path: Path, lines: list[str]) -> None:
 def _step_google_auth(lines: list[str]) -> tuple[str, str, list[str]]:
     """
     Returns (email, display_name, env_lines_unchanged).
-    GOOGLE_CLIENT_ID/SECRET harus sudah ada di .env — itu config server, bukan user.
+    Jika GOOGLE_CLIENT_ID/SECRET belum diisi, step ini dilewati (opsional).
     """
     print("Step 1/3 — Login dengan Google")
     print("─" * 43)
@@ -140,12 +140,15 @@ def _step_google_auth(lines: list[str]) -> tuple[str, str, list[str]]:
 
     if not client_id or not client_secret:
         print()
-        print("  GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET belum diisi di .env.")
-        print("  Ini config server — isi terlebih dahulu lalu jalankan ulang.")
+        print("  [SKIP] GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET belum diisi di .env.")
+        print("  Untuk mengaktifkan Google login, isi dulu di .env:")
+        print("    GOOGLE_CLIENT_ID=...")
+        print("    GOOGLE_CLIENT_SECRET=...")
         print()
-        print("  Cara mendapatkan (admin, satu kali):")
-        print("    console.cloud.google.com → Credentials → OAuth 2.0 Client ID")
-        sys.exit(1)
+        print("  Dapatkan dari: console.cloud.google.com → Credentials → OAuth 2.0 Client ID")
+        print()
+        print("  Melanjutkan setup tanpa Google login...")
+        return "", "", lines
 
     from google_auth_oauthlib.flow import InstalledAppFlow  # type: ignore[import-untyped]
 
@@ -318,7 +321,10 @@ def run_setup_wizard(env_path: Path) -> None:
     # Done — show QR to bot
     print()
     print("─" * 43)
-    print(f"  Setup selesai! Login sebagai {email}")
+    if email:
+        print(f"  Setup selesai! Login sebagai {email}")
+    else:
+        print("  Setup selesai!")
     _show_qr(
         f"https://t.me/{bot_username}",
         f"Scan untuk buka @{bot_username} di Telegram:",
