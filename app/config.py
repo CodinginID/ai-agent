@@ -72,6 +72,10 @@ class Settings:
     database_url: str
     database_migration_url: str
 
+    app_url: str
+    google_client_id: str
+    google_client_secret: str
+
 
 _DEFAULT_MANUAL_COMMANDS: frozenset[str] = frozenset({
     "docker", "git", "ls", "ps", "df", "du", "free",
@@ -149,6 +153,9 @@ def load_settings() -> Settings:
         port=int(os.getenv("PORT", "8080")),
         database_url=database_url,
         database_migration_url=os.getenv("DATABASE_MIGRATION_URL", database_url),
+        app_url=os.getenv("APP_URL", "http://localhost:8080").rstrip("/"),
+        google_client_id=os.getenv("GOOGLE_CLIENT_ID", "").strip(),
+        google_client_secret=os.getenv("GOOGLE_CLIENT_SECRET", "").strip(),
     )
 
 

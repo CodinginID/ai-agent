@@ -150,34 +150,46 @@ def _step_google_auth(lines: list[str]) -> tuple[str, str, list[str]]:
         print("  Melanjutkan setup tanpa Google login...")
         return "", "", lines
 
-    from google_auth_oauthlib.flow import InstalledAppFlow  # type: ignore[import-untyped]
+    # Wizard pakai port yang sama dengan APP_URL agar redirect URI konsisten
+    # dengan yang didaftarkan di Google Cloud Console
+    app_url = os.getenv("APP_URL", "http://localhost:8080").rstrip("/")
+    port_str = app_url.split(":")[-1] if ":" in app_url.split("//")[-1] else "8080"
+    try:
+        port = int(port_str)
+    except ValueError:
+        port = 8080
 
-    client_config = {
-        "installed": {
-            "client_id": client_id,
-            "client_secret": client_secret,
-            "redirect_uris": ["http://localhost"],
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-        }
-    }
+    redirect_uri = f"{app_url}/auth/google/callback"
 
-    flow = InstalledAppFlow.from_client_config(client_config, scopes=_GOOGLE_SCOPES)
-    port = _free_port()
-    flow.redirect_uri = f"http://localhost:{port}"
-    auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline")
+    # Build Google OAuth URL sama persis seperti endpoint /auth/google/login
+    import secrets
+    import urllib.parse as _urlparse
 
-    # Show QR + URL — user scans from phone OR browser opens automatically
+    state = secrets.token_urlsafe(16)
+    params = _urlparse.urlencode({
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "scope": " ".join(_GOOGLE_SCOPES),
+        "state": state,
+        "access_type": "offline",
+        "prompt": "consent",
+    })
+    auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{params}"
+
+    # Show QR + URL: user scans dari HP atau browser terbuka otomatis
     _show_qr(auth_url, "Scan atau klik untuk login dengan Google:")
+    print(f"  Callback akan diterima di: {redirect_uri}")
     print("  Menunggu login di browser... (Ctrl+C untuk batalkan)")
 
-    # --- Callback server ---
+    # Jalankan callback server sementara di port yang sama
     auth_code: list[str] = []
 
     class _Handler(http.server.BaseHTTPRequestHandler):
         def do_GET(self) -> None:
-            params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-            code = params.get("code", [None])[0]
+            parsed = urllib.parse.urlparse(self.path)
+            params_qs = urllib.parse.parse_qs(parsed.query)
+            code = params_qs.get("code", [None])[0]
             if code:
                 auth_code.append(code)
             self.send_response(200)
@@ -186,13 +198,13 @@ def _step_google_auth(lines: list[str]) -> tuple[str, str, list[str]]:
             self.wfile.write(_AUTH_SUCCESS_HTML)
 
         def log_message(self, *args: object) -> None:
-            pass  # suppress access logs
+            pass
 
     server = http.server.HTTPServer(("localhost", port), _Handler)
     threading.Timer(0.5, lambda: webbrowser.open(auth_url)).start()
 
     try:
-        server.handle_request()  # blocks until callback arrives
+        server.handle_request()
     except KeyboardInterrupt:
         print("\n\nSetup dibatalkan.")
         sys.exit(0)
@@ -201,15 +213,31 @@ def _step_google_auth(lines: list[str]) -> tuple[str, str, list[str]]:
         print("\n  Login gagal — tidak ada kode yang diterima.")
         sys.exit(1)
 
-    flow.fetch_token(code=auth_code[0])
-    creds = flow.credentials
-
-    resp = requests.get(
-        "https://www.googleapis.com/oauth2/v1/userinfo",
-        headers={"Authorization": f"Bearer {creds.token}"},
+    # Exchange code → access token
+    token_resp = requests.post(
+        "https://oauth2.googleapis.com/token",
+        data={
+            "code": auth_code[0],
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "redirect_uri": redirect_uri,
+            "grant_type": "authorization_code",
+        },
         timeout=10,
     )
-    info: dict[str, object] = resp.json()
+    token_data: dict[str, object] = token_resp.json()
+    access_token = str(token_data.get("access_token", ""))
+
+    if not access_token:
+        print("\n  Gagal mendapatkan access token.")
+        sys.exit(1)
+
+    info_resp = requests.get(
+        "https://www.googleapis.com/oauth2/v1/userinfo",
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=10,
+    )
+    info: dict[str, object] = info_resp.json()
     email = str(info.get("email", ""))
     name = str(info.get("name", ""))
 

@@ -28,6 +28,11 @@ class ControlPlaneRepository:
         self._session.flush()
         return user
 
+    def get_user_by_email(self, email: str) -> UserModel | None:
+        return self._session.scalar(
+            select(UserModel).where(UserModel.email == email)
+        )
+
     def link_telegram_account(
         self,
         user_id: str,
