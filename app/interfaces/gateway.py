@@ -9,7 +9,9 @@ from telegram.ext import Application
 
 from app.bot import build_application
 from app.config import settings
+from app.interfaces.admin import router as admin_router
 from app.interfaces.auth import router as auth_router
+from app.interfaces.chat import router as chat_router
 
 logger = logging.getLogger(__name__)
 
@@ -30,22 +32,31 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         logger.info("Webhook registered: %s", webhook_endpoint)
     else:
-        logger.warning("WEBHOOK_URL not set — webhook not registered with Telegram")
+        # Dev / local: run polling alongside FastAPI so both OAuth and bot work
+        await _telegram_app.updater.start_polling(  # type: ignore[union-attr]
+            allowed_updates=Update.ALL_TYPES,
+        )
+        logger.info("Polling started (no WEBHOOK_URL set)")
 
     await _telegram_app.start()
     yield
 
+    if not settings.webhook_url:
+        await _telegram_app.updater.stop()  # type: ignore[union-attr]
     await _telegram_app.stop()
     await _telegram_app.shutdown()
 
 
 app = FastAPI(title="AI Agent Gateway", version="0.1.0", lifespan=lifespan)
 app.include_router(auth_router)
+app.include_router(admin_router)
+app.include_router(chat_router)
 
 
 @app.get("/health")
 async def health() -> dict[str, str]:
-    return {"status": "ok", "mode": "webhook"}
+    mode = "webhook" if settings.webhook_url else "polling"
+    return {"status": "ok", "mode": mode}
 
 
 @app.post("/webhook/telegram")

@@ -39,15 +39,28 @@ services:
     env_file: .env
     environment:
       OLLAMA_HOST: http://ollama:11434
+      # Untuk full-access agent di Docker, set PROJECT_DIR/AGENT_WORKDIR/TERMINAL_WORKDIR=/workspace di .env.
+      # HOST_PROJECT_DIR default "." berarti repo saat ini akan tersedia di /workspace.
     depends_on:
       ollama:
         condition: service_healthy
       ollama-init:
         condition: service_completed_successfully
     restart: unless-stopped
-    # Opsional: mount direktori project di VPS agar bot bisa ls/git di sana
-    # volumes:
-    #   - /path/ke/project/kamu:/workspace:ro
+    volumes:
+      - ${HOST_PROJECT_DIR:-.}:/workspace:rw
+    # Tidak ada bind mount /app/data — DB pindah ke Postgres (Neon),
+    # log via `docker logs aiagent_bot` atau Grafana/Loki.
+    # FastAPI (OAuth login + webhook) selalu aktif di port ini.
+    # Arahkan reverse proxy (nginx/caddy) ke port ini untuk HTTPS.
+    ports:
+      - "${PORT:-8080}:${PORT:-8080}"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:${PORT:-8080}/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 20s
 
 volumes:
   ollama_data:

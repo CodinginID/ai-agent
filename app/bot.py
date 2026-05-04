@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import json
 import os
 import platform
@@ -8,6 +9,7 @@ import socket
 import subprocess
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 import psutil
 import requests
@@ -20,8 +22,15 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+from telegram.request import HTTPXRequest
 
 from app.adapters.agent_discovery import CliAgentDefinition, CliAgentDiscoveryAdapter
+from app.adapters.database.repositories import ControlPlaneRepository, DatabaseConflictError
+from app.adapters.database.session import (
+    create_database_engine,
+    create_session_factory,
+    session_scope,
+)
 from app.config import BASE_DIR, settings
 from app.domain.agents import AgentCapability, AgentRoleAssignment, resolve_agent_roles
 from app.executor.actions import ActionMeta, ActionRegistry
@@ -46,7 +55,6 @@ _db_session_factory = None
 def _get_db_session_factory():
     global _db_session_factory
     if _db_session_factory is None:
-        from app.adapters.database.session import create_database_engine, create_session_factory
         _db_session_factory = create_session_factory(
             create_database_engine(settings.database_url)
         )
@@ -1004,11 +1012,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     tg_user = update.effective_user
+    args = context.args or []
 
-    # Auto-register: /start terbuka untuk semua, tidak perlu auth dulu
-    from app.adapters.database.repositories import ControlPlaneRepository, DatabaseConflictError
-    from app.adapters.database.session import session_scope
+    # Telegram pair flow: /start TG-XXXXXX → link telegram_user_id ke user yang
+    # sudah login di TUI. Diutamakan sebelum auto-register.
+    if args and args[0].startswith("TG-"):
+        await _handle_pair_code(update, tg_user, args[0])
+        return
 
+    # Auto-register fallback: /start tanpa args terbuka untuk semua.
     is_new = False
     try:
         with session_scope(_get_db_session_factory()) as session:
@@ -1016,7 +1028,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             tenant = repo.resolve_by_telegram_user_id(tg_user.id)
             if tenant is None:
                 user = repo.create_user(display_name=tg_user.full_name)
-                import contextlib
                 with contextlib.suppress(DatabaseConflictError):
                     repo.link_telegram_account(
                         user_id=user.id,
@@ -1038,6 +1049,53 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         await update.message.reply_text("Bot siap.\n\n" + _HELP_TEXT)
+
+
+async def _handle_pair_code(update: Update, tg_user, code: str) -> None:
+    """Klaim code TUI pairing → link telegram_user_id ke user_id yang sudah login."""
+    from app.interfaces.auth import claim_telegram_pair_code
+
+    user_id = claim_telegram_pair_code(code)
+    if user_id is None:
+        await update.message.reply_text(
+            "Kode pair tidak valid atau sudah kedaluwarsa.\n"
+            "Buka TUI di komputer dan jalankan /pair-telegram untuk dapat kode baru."
+        )
+        return
+
+    try:
+        with session_scope(_get_db_session_factory()) as session:
+            repo = ControlPlaneRepository(session)
+            existing = repo.resolve_by_telegram_user_id(tg_user.id)
+            if existing is not None:
+                if existing.user_id == user_id:
+                    await update.message.reply_text(
+                        "Akun Telegram kamu sudah ter-link ke user ini."
+                    )
+                else:
+                    await update.message.reply_text(
+                        "Akun Telegram kamu sudah ter-link ke user lain. "
+                        "Hubungi admin untuk unlink dulu."
+                    )
+                return
+            repo.link_telegram_account(
+                user_id=user_id,
+                telegram_user_id=tg_user.id,
+                username=tg_user.username,
+                first_name=tg_user.first_name,
+            )
+    except DatabaseConflictError:
+        await update.message.reply_text(
+            "Akun Telegram kamu sudah ter-link ke user lain."
+        )
+        return
+    except Exception as exc:
+        await update.message.reply_text(f"Gagal link akun: {exc}")
+        return
+
+    await update.message.reply_text(
+        "Berhasil terhubung. Kamu sekarang bisa pakai bot ini sebagai akun TUI kamu."
+    )
 
 
 async def whoami(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1163,64 +1221,86 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     user_text = update.message.text.strip()
-    user = update.effective_user
+    if not user_text:
+        return
+
+    tg_user = update.effective_user
     chat = update.effective_chat
     chat_id = chat.id if chat else 0
-
     active_project = project_store.get_active_project(chat_id, PROJECT_DIR)
 
-    parsed = intent_parser.parse(user_text, active_project.id)
-
-    if not parsed.is_action():
-        await reply_chat(update, context, user_text)
-        return
-
-    plan = plan_generator.generate(parsed)
-
-    action_context = {
-        "telegram_user": {
-            "id": user.id if user else "-",
-            "username": f"@{user.username}" if user and user.username else "-",
-        },
-        "project_dir": active_project.root_path,
-        "project_name": active_project.name,
-        **parsed.parameters,
-    }
-
-    if plan.requires_approval:
-        pending_plans.save(plan, chat_id, user_text, action_context)
+    # Resolve user_id dari Telegram → DB. Kalau belum terdaftar, kasih /start dulu.
+    user_id = _resolve_user_id_from_telegram(tg_user.id if tg_user else None)
+    if user_id is None:
         await update.message.reply_text(
-            f"{plan.short_description()}\n\n"
-            f"Konfirmasi: /approve {plan.plan_id}\n"
-            f"Batalkan:   /reject {plan.plan_id}\n"
-            f"(kedaluwarsa dalam 5 menit)"
+            "Akun belum terdaftar. Kirim /start dulu untuk auto-register."
         )
         return
 
-    if parsed.intent not in EXECUTABLE_ACTIONS:
-        await update.message.reply_text(
-            f"Intent '{parsed.intent}' dikenali tapi belum ada handler.\n"
-            f"Reason: {parsed.reason}"
-        )
-        return
+    from app.composition import build_use_case
+    from app.domain.messaging import ChatEventType, MessageContext
 
-    result = action_registry.execute(parsed.intent, action_context)
+    use_case = build_use_case()
+    ctx = MessageContext(
+        user_id=user_id,
+        conversation_id=str(chat_id),
+        project_id=active_project.id,
+        project_root=Path(active_project.root_path),
+        project_name=active_project.name,
+        telegram_user_id=tg_user.id if tg_user else None,
+        extra={"telegram_username": f"@{tg_user.username}" if tg_user and tg_user.username else "-"},
+    )
 
-    if parsed.intent == "whoami":
-        await update.message.reply_text(format_output(result))
-        return
+    text_chunks: list[str] = []
+    final_sent = False
 
     try:
-        summary = call_qwen(
-            f"Ringkas output server ini dalam bahasa Indonesia yang singkat:\n{result}"
-        )
-    except Exception:
-        summary = result
+        for event in use_case.handle(user_text, ctx):
+            if event.type == ChatEventType.APPROVAL_REQUIRED:
+                summary = event.payload["summary"]
+                plan_id = event.payload["plan_id"]
+                await update.message.reply_text(
+                    f"{summary}\n\n"
+                    f"Konfirmasi: /approve {plan_id}\n"
+                    f"Batalkan:   /reject {plan_id}\n"
+                    f"(kedaluwarsa dalam 5 menit)"
+                )
+                final_sent = True
+            elif event.type == ChatEventType.TEXT_CHUNK:
+                text_chunks.append(event.payload["text"])
+            elif event.type == ChatEventType.FINAL:
+                final_text = event.payload.get("text") or "".join(text_chunks)
+                if final_text.strip():
+                    await update.message.reply_text(format_output(final_text))
+                final_sent = True
+            elif event.type == ChatEventType.ERROR:
+                await update.message.reply_text(
+                    f"Maaf, terjadi error: {event.payload['message']}"
+                )
+                final_sent = True
+    except Exception as exc:  # defensive — use case sudah catch internal, ini safety net
+        await update.message.reply_text(f"Internal error: {exc}")
+        return
 
-    await update.message.reply_text(
-        f"Action: {parsed.intent} ({parsed.confidence:.0%})\n\n"
-        f"{format_output(summary)}"
-    )
+    # Kalau use case selesai tanpa FINAL (mis. early return), pastikan minimal ada respons
+    if not final_sent and text_chunks:
+        await update.message.reply_text(format_output("".join(text_chunks)))
+
+
+def _resolve_user_id_from_telegram(telegram_user_id: int | None) -> str | None:
+    """Lookup user_id (UUID) berdasarkan telegram_user_id."""
+    if telegram_user_id is None:
+        return None
+    from app.adapters.database.repositories import ControlPlaneRepository
+    from app.adapters.database.session import session_scope
+
+    try:
+        with session_scope(_get_db_session_factory()) as session:
+            repo = ControlPlaneRepository(session)
+            tenant = repo.resolve_by_telegram_user_id(telegram_user_id)
+            return tenant.user_id if tenant else None
+    except Exception:
+        return None
 
 
 async def project_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1409,11 +1489,39 @@ async def pending_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("\n".join(lines))
 
 
+_PROXY_ENV_KEYS = ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy")
+
+
+def _resolve_proxy() -> str | None:
+    proxy_url = next((os.getenv(k) for k in _PROXY_ENV_KEYS if os.getenv(k)), None)
+    if not proxy_url:
+        return None
+    try:
+        p = urlparse(proxy_url)
+        host = p.hostname or "127.0.0.1"
+        port = p.port or 8080
+        with socket.create_connection((host, port), timeout=1):
+            return proxy_url
+    except OSError:
+        # Proxy not reachable — clear env vars so httpx doesn't pick them up either
+        for key in _PROXY_ENV_KEYS:
+            os.environ.pop(key, None)
+        return None
+
+
 def build_application() -> Application:
     if TOKEN in PLACEHOLDER_TOKENS:
         raise RuntimeError("TELEGRAM_BOT_TOKEN belum diisi. Buat .env dari .env.example lalu isi token bot.")
 
-    app = ApplicationBuilder().token(TOKEN).build()
+    proxy_url = _resolve_proxy()
+    request = HTTPXRequest(
+        proxy=proxy_url,
+        connect_timeout=30,
+        read_timeout=30,
+        write_timeout=30,
+        pool_timeout=30,
+    )
+    app = ApplicationBuilder().token(TOKEN).request(request).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", start))
     app.add_handler(CommandHandler("whoami", whoami))

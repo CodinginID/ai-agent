@@ -1,6 +1,6 @@
 .PHONY: up down restart logs logs-ollama logs-init status build shell pull-model clean \
         lint type-check test check install-dev db-upgrade db-downgrade release \
-        dev dev-webhook
+        dev
 
 # ── Development ──────────────────────────────────────────────────────────────
 
@@ -8,13 +8,9 @@
 install-dev:
 	pip install -r requirements-dev.txt
 
-## Jalankan aplikasi lokal — polling mode (setup wizard otomatis jika belum konfigurasi)
+## Jalankan aplikasi lokal — FastAPI + Telegram polling berjalan bersamaan
 dev:
 	./dev.sh
-
-## Jalankan aplikasi lokal — webhook mode dengan uvicorn hot-reload
-dev-webhook:
-	MODE=webhook ./dev.sh
 
 ## Jalankan linter (ruff)
 lint:

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import getpass
 import http.server
 import os
+import secrets
 import socket
 import sys
 import threading
@@ -10,6 +12,21 @@ import webbrowser
 from pathlib import Path
 
 import requests  # type: ignore[import-untyped]
+from alembic import command as alembic_cmd
+from alembic.config import Config as AlembicConfig
+
+try:
+    import qrcode  # type: ignore[import-untyped]
+except ImportError:
+    qrcode = None  # type: ignore[assignment]
+
+
+# Wizard berjalan di mesin lokal — jangan pakai proxy dari env (HTTPS_PROXY di .env
+# ditujukan untuk bot di VPS, bukan untuk wizard interaktif di laptop).
+def _session() -> requests.Session:
+    s = requests.Session()
+    s.trust_env = False
+    return s
 
 _PLACEHOLDER_TOKENS: frozenset[str] = frozenset({
     "", "ISI_TOKEN_KAMU_DI_SINI", "ISI_TOKEN_TELEGRAM_KAMU_DI_SINI",
@@ -65,26 +82,25 @@ def _print_header() -> None:
 
 def _show_qr(url: str, label: str) -> None:
     print(f"\n  {label}")
-    try:
-        import qrcode  # type: ignore[import-untyped]
-        qr = qrcode.QRCode(
-            version=1,
-            error_correction=qrcode.constants.ERROR_CORRECT_L,
-            box_size=1,
-            border=2,
-        )
-        qr.add_data(url)
-        qr.make(fit=True)
-        qr.print_ascii(invert=True)
-    except Exception:
-        pass
+    if qrcode is not None:
+        try:
+            qr = qrcode.QRCode(
+                version=1,
+                error_correction=qrcode.constants.ERROR_CORRECT_L,
+                box_size=1,
+                border=2,
+            )
+            qr.add_data(url)
+            qr.make(fit=True)
+            qr.print_ascii(invert=True)
+        except Exception:
+            pass
     print(f"  → {url}\n")
 
 
 def _prompt(label: str, secret: bool = False) -> str:
     try:
         if secret:
-            import getpass
             return getpass.getpass(f"  {label}: ").strip()
         return input(f"  {label}: ").strip()
     except (KeyboardInterrupt, EOFError):
@@ -132,7 +148,7 @@ def _step_google_auth(lines: list[str]) -> tuple[str, str, list[str]]:
     Returns (email, display_name, env_lines_unchanged).
     Jika GOOGLE_CLIENT_ID/SECRET belum diisi, step ini dilewati (opsional).
     """
-    print("Step 1/3 — Login dengan Google")
+    print("Step 1/2 — Login dengan Google")
     print("─" * 43)
 
     client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
@@ -162,11 +178,8 @@ def _step_google_auth(lines: list[str]) -> tuple[str, str, list[str]]:
     redirect_uri = f"{app_url}/auth/google/callback"
 
     # Build Google OAuth URL sama persis seperti endpoint /auth/google/login
-    import secrets
-    import urllib.parse as _urlparse
-
     state = secrets.token_urlsafe(16)
-    params = _urlparse.urlencode({
+    params = urllib.parse.urlencode({
         "client_id": client_id,
         "redirect_uri": redirect_uri,
         "response_type": "code",
@@ -214,7 +227,7 @@ def _step_google_auth(lines: list[str]) -> tuple[str, str, list[str]]:
         sys.exit(1)
 
     # Exchange code → access token
-    token_resp = requests.post(
+    token_resp = _session().post(
         "https://oauth2.googleapis.com/token",
         data={
             "code": auth_code[0],
@@ -232,7 +245,7 @@ def _step_google_auth(lines: list[str]) -> tuple[str, str, list[str]]:
         print("\n  Gagal mendapatkan access token.")
         sys.exit(1)
 
-    info_resp = requests.get(
+    info_resp = _session().get(
         "https://www.googleapis.com/oauth2/v1/userinfo",
         headers={"Authorization": f"Bearer {access_token}"},
         timeout=10,
@@ -249,7 +262,7 @@ def _step_google_auth(lines: list[str]) -> tuple[str, str, list[str]]:
 
 def _validate_telegram_token(token: str) -> str | None:
     try:
-        resp = requests.get(
+        resp = _session().get(
             f"https://api.telegram.org/bot{token}/getMe",
             timeout=10,
         )
@@ -266,7 +279,7 @@ def _validate_telegram_token(token: str) -> str | None:
 def _step_bot_setup() -> tuple[str, str]:
     """Returns (token, bot_username)."""
     print()
-    print("Step 2/3 — Setup Bot Telegram")
+    print("Step 2/2 — Setup Bot Telegram")
     print("─" * 43)
     _show_qr("https://t.me/BotFather", "Buat bot baru — scan atau buka @BotFather:")
     print("  Di @BotFather: ketik /newbot → ikuti instruksi → copy token")
@@ -290,24 +303,10 @@ def _step_bot_setup() -> tuple[str, str]:
     return token, bot_username
 
 
-# ── Step 3: Ollama ────────────────────────────────────────────────────────────
-
-def _step_ollama() -> str:
-    print()
-    print("Step 3/3 — Konfigurasi Ollama")
-    print("─" * 43)
-    print()
-    raw = _prompt("Ollama host [http://localhost:11434]")
-    return raw or "http://localhost:11434"
-
-
 # ── Migration ─────────────────────────────────────────────────────────────────
 
 def _run_migration(project_root: Path) -> None:
-    from alembic import command as alembic_cmd
-    from alembic.config import Config
-
-    cfg = Config(str(project_root / "alembic.ini"))
+    cfg = AlembicConfig(str(project_root / "alembic.ini"))
     cfg.set_main_option("script_location", str(project_root / "alembic"))
     alembic_cmd.upgrade(cfg, "head")
 
@@ -325,11 +324,6 @@ def run_setup_wizard(env_path: Path) -> None:
     # Step 2 — Telegram bot token
     token, bot_username = _step_bot_setup()
     lines = _set_env_key(lines, "TELEGRAM_BOT_TOKEN", token)
-
-    # Step 3 — Ollama
-    ollama_host = _step_ollama()
-    lines = _set_env_key(lines, "OLLAMA_HOST", ollama_host)
-    lines = _set_env_key(lines, "OLLAMA_MODEL", "qwen2.5:3b")
 
     # Save .env
     print()
@@ -358,10 +352,9 @@ def run_setup_wizard(env_path: Path) -> None:
         f"Scan untuk buka @{bot_username} di Telegram:",
     )
     print("  Kirim /start ke bot untuk mendaftarkan akun kamu.")
-    print()
-    print("  Jalankan ulang untuk mulai bot:")
-    print("    make dev")
     print("─" * 43)
     print()
 
-    sys.exit(0)
+    # Inject token ke env process ini lalu restart — user tidak perlu jalankan ulang
+    os.environ["TELEGRAM_BOT_TOKEN"] = token
+    os.execv(sys.executable, [sys.executable, "-m", "app.main"])

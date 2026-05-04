@@ -100,7 +100,7 @@ install_dependencies() {
         error "File requirements.txt tidak ditemukan!"
     fi
 
-    pip install -r requirements.txt -q
+    pip install --no-proxy -r requirements.txt -q
     success "Semua dependencies berhasil diinstall"
 }
 
@@ -194,80 +194,23 @@ pull_model() {
 }
 
 # -------------------------------------------------------
-# 8. Setup .env
+# 8. Siapkan .env dari template
 # -------------------------------------------------------
 setup_env() {
-    step "Konfigurasi Telegram Bot Token..."
+    step "Menyiapkan file konfigurasi..."
 
     if [[ -f ".env" ]]; then
-        warn "File .env sudah ada. Melewati pembuatan .env"
+        success "File .env sudah ada. Melewati."
         return
     fi
 
-    echo -e "${YELLOW}"
-    echo "  Untuk mendapatkan Token Telegram Bot:"
-    echo "  1. Buka Telegram, cari @BotFather"
-    echo "  2. Ketik /newbot dan ikuti instruksinya"
-    echo "  3. Copy token yang diberikan"
-    echo -e "${NC}"
-
-    read -rp "  Masukkan Telegram Bot Token (atau tekan Enter untuk isi nanti): " BOT_TOKEN
-
-    if [[ -z "$BOT_TOKEN" ]]; then
-        BOT_TOKEN="ISI_TOKEN_TELEGRAM_KAMU_DI_SINI"
-        warn "Token belum diisi. Edit file .env sebelum menjalankan bot."
-    fi
-
-    cat > .env << EOF
-# Telegram Bot Configuration
-TELEGRAM_BOT_TOKEN=$BOT_TOKEN
-
-# Ollama Configuration
-OLLAMA_HOST=http://localhost:11434
-OLLAMA_MODEL=qwen2.5:3b
-
-# Security and runtime
-ADMIN_USER_IDS=
-ALLOW_UNRESTRICTED_ACCESS=false
-PROJECT_DIR=.
-COMMAND_TIMEOUT=20
-CHAT_HISTORY_LIMIT=6
-
-# Agent CLI integrations
-ENABLE_CODEX=false
-ENABLE_CLAUDE=false
-AGENT_WORKDIR=.
-AGENT_TIMEOUT=180
-AGENT_MAX_PROMPT_CHARS=6000
-CODEX_BIN=codex
-CODEX_MODEL=
-CODEX_SANDBOX=read-only
-CLAUDE_BIN=claude
-CLAUDE_MODEL=
-CLAUDE_PERMISSION_MODE=dontAsk
-CLAUDE_ALLOWED_TOOLS=Read,Grep,Glob
-EOF
-
-    success "File .env berhasil dibuat"
+    cp .env.example .env
+    success "File .env dibuat dari .env.example"
+    info "Jalankan 'make dev' — wizard akan memandu setup token bot dan login Google."
 }
 
 # -------------------------------------------------------
-# 9. Update bot.py agar baca dari .env
-# -------------------------------------------------------
-patch_bot() {
-    step "Memeriksa konfigurasi bot.py..."
-
-    if grep -q "load_env_file" app/bot.py && grep -q "CommandHandler(\"codex\"" app/bot.py; then
-        success "bot.py sudah mendukung .env, perintah natural, /cmd, /codex, dan /claude"
-        return
-    fi
-
-    warn "bot.py tidak dikenali, jadi installer tidak menimpa file otomatis."
-    warn "Gunakan versi app/bot.py terbaru dari repository ini."
-}
-
-# -------------------------------------------------------
-# 10. Final Summary
+# 9. Final Summary
 # -------------------------------------------------------
 print_summary() {
     echo ""
@@ -277,17 +220,10 @@ print_summary() {
     echo ""
     echo -e "${BOLD}Langkah selanjutnya:${NC}"
     echo ""
-    echo -e "  ${CYAN}1.${NC} Pastikan token Telegram sudah diisi di file ${BOLD}.env${NC}"
-    echo -e "     ${YELLOW}nano .env${NC}"
+    echo -e "  ${CYAN}1.${NC} Jalankan bot (wizard setup otomatis berjalan pertama kali):"
+    echo -e "     ${YELLOW}make dev${NC}"
     echo ""
-    echo -e "  ${CYAN}2.${NC} Jalankan bot:"
-    echo -e "     ${YELLOW}source env/bin/activate${NC}"
-    echo -e "     ${YELLOW}python app/bot.py${NC}"
-    echo ""
-    echo -e "  ${CYAN}3.${NC} Cek model AI yang tersedia:"
-    echo -e "     ${YELLOW}ollama list${NC}"
-    echo ""
-    echo -e "  ${CYAN}4.${NC} Ganti model di .env jika diperlukan:"
+    echo -e "  ${CYAN}2.${NC} Ganti model AI di .env jika diperlukan:"
     echo -e "     ${YELLOW}OLLAMA_MODEL=qwen2.5:7b${NC}  (lebih pintar, butuh RAM lebih besar)"
     echo ""
 }
@@ -310,5 +246,4 @@ install_ollama
 start_ollama
 pull_model
 setup_env
-patch_bot
 print_summary

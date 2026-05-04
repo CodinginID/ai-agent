@@ -8,10 +8,35 @@ on:
 # GitHub Release hanya dibuat kalau semua container running di VPS.
 
 jobs:
+  # ── 0. Validasi kode sebelum image release dibuat ──────────────────────────
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt -q
+
+      - name: Lint
+        run: ruff check app/ tests/
+
+      - name: Type check
+        run: mypy app/
+
+      - name: Unit test
+        run: pytest tests/ -v
+
   # ── 1. Build & push image ke GHCR ──────────────────────────────────────────
   build:
     name: Build & Push Image
     runs-on: ubuntu-latest
+    needs: test
     permissions:
       contents: read
       packages: write

@@ -18,6 +18,19 @@ def _load_env_file(path: Path) -> None:
         os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
+def _normalize_database_url(url: str) -> str:
+    """Pastikan SQLAlchemy pakai driver psycopg v3 untuk Postgres.
+
+    Neon kasih connection string ``postgresql://...`` atau ``postgres://...``;
+    SQLAlchemy butuh skema eksplisit kalau mau driver psycopg3.
+    """
+    if url.startswith("postgres://"):
+        return "postgresql+psycopg://" + url[len("postgres://"):]
+    if url.startswith("postgresql://"):
+        return "postgresql+psycopg://" + url[len("postgresql://"):]
+    return url
+
+
 def _env_bool(name: str, default: bool = False) -> bool:
     raw = os.getenv(name)
     if raw is None:
@@ -75,6 +88,7 @@ class Settings:
     app_url: str
     google_client_id: str
     google_client_secret: str
+    admin_token: str
 
 
 _DEFAULT_MANUAL_COMMANDS: frozenset[str] = frozenset({
@@ -96,7 +110,7 @@ def load_settings() -> Settings:
     agent_workdir = Path(os.getenv("AGENT_WORKDIR", str(project_dir))).expanduser().resolve()
     terminal_workdir = Path(os.getenv("TERMINAL_WORKDIR", str(project_dir))).expanduser().resolve()
     default_database_url = f"sqlite:///{BASE_DIR / 'data' / 'control_plane.sqlite3'}"
-    database_url = os.getenv("DATABASE_URL", default_database_url)
+    database_url = _normalize_database_url(os.getenv("DATABASE_URL", default_database_url))
 
     admin_user_ids: frozenset[int] = frozenset(
         int(uid.strip())
@@ -156,6 +170,7 @@ def load_settings() -> Settings:
         app_url=os.getenv("APP_URL", "http://localhost:8080").rstrip("/"),
         google_client_id=os.getenv("GOOGLE_CLIENT_ID", "").strip(),
         google_client_secret=os.getenv("GOOGLE_CLIENT_SECRET", "").strip(),
+        admin_token=os.getenv("ADMIN_TOKEN", "").strip(),
     )
 
 
