@@ -7,6 +7,16 @@ services:
     volumes:
       - ollama_data:/root/.ollama
     restart: unless-stopped
+    environment:
+      # Pin model di memory supaya tidak load-unload setiap request.
+      # 24h = praktisnya selalu hangat selama backend hidup.
+      OLLAMA_KEEP_ALIVE: "24h"
+      # Maximize concurrency untuk request kecil tapi banyak (intent + chat).
+      OLLAMA_NUM_PARALLEL: "2"
+    # Catatan: ``deploy.resources`` cuma dipakai di swarm mode. Untuk
+    # ``docker compose up`` biasa pakai ``mem_limit`` & ``mem_reservation``.
+    mem_limit: 4g
+    mem_reservation: 2g
     healthcheck:
       test: ["CMD", "ollama", "list"]
       interval: 15s
@@ -22,8 +32,8 @@ services:
       - ollama_data:/root/.ollama
     environment:
       OLLAMA_HOST: http://ollama:11434
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
-    entrypoint: ["ollama", "pull", "${OLLAMA_MODEL:-qwen2.5:3b}"]
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:1.5b}
+    entrypoint: ["ollama", "pull", "${OLLAMA_MODEL:-qwen2.5:1.5b}"]
     depends_on:
       ollama:
         condition: service_healthy

@@ -26,11 +26,36 @@ _QUESTION_PREFIXES = (
     "tolong bantu", "tolong jelaskan",
 )
 
+# Frasa percakapan eksplisit — kalau ada, route ke chat tanpa cek action keyword.
+# Mencegah substring false-positive (mis. "diskusi" mengandung "disk").
+_CHAT_PHRASES = (
+    "ingin diskusi", "mau diskusi", "bisa diskusi", "kita diskusi",
+    "ingin tanya", "mau tanya", "boleh tanya",
+    "saya pengen", "saya ingin", "saya mau",
+    "kita ingin", "kita pengen", "kita mau",
+    "menurut kamu", "menurut anda",
+    "let's talk", "let's discuss",
+    "ngobrol", "diskusi", "ngediskusiin",
+    "ada saran", "kasih saran", "kasih masukan", "kasih tips",
+)
+
 _ACTION_KEYWORDS = (
     "cek", "check", "lihat", "tampilkan", "show", "status",
     "jalan", "running", "list", "daftar",
     "usage", "penggunaan", "stats", "statistik",
 )
+
+
+def _has_word(text: str, *words: str) -> bool:
+    """Word-boundary match — hindari substring false-positive (disk vs diskusi)."""
+    for w in words:
+        if re.search(rf"\b{re.escape(w)}\b", text, re.IGNORECASE):
+            return True
+    return False
+
+
+def _has_phrase(text: str, *phrases: str) -> bool:
+    return any(p in text for p in phrases)
 
 _JSON_PROMPT = """\
 You are a strict JSON intent parser for a private Telegram server admin bot.
@@ -102,41 +127,46 @@ def _make(
 def _parse_local(text: str, project_id: str) -> Intent | None:
     t = text.lower().strip()
 
+    # Frasa percakapan eksplisit menang duluan — supaya "ingin diskusi" tidak
+    # ke-trigger "disk" via substring match.
+    if _has_phrase(t, *_CHAT_PHRASES):
+        return _make("chat", project_id, 1.0, False, "Conversation phrase detected")
+
     if _is_greeting(t) or _looks_like_chat(t):
         return _make("chat", project_id, 1.0, False, "Greeting or general chat")
 
-    if "docker" in t or "container" in t:
-        if "image" in t:
+    if _has_word(t, "docker", "container"):
+        if _has_word(t, "image", "images"):
             return _make("docker_images", project_id, 0.95, False, "Docker images query")
-        if any(k in t for k in ("stats", "statistik", "resource")):
+        if _has_word(t, "stats", "statistik", "resource"):
             return _make("docker_stats", project_id, 0.95, False, "Docker stats query")
-        if any(k in t for k in ("restart", "ulang", "stop", "start")):
+        if _has_word(t, "restart", "ulang", "stop", "start"):
             return _make("docker_restart", project_id, 0.9, True, "Docker restart — needs approval")
-        if "log" in t:
+        if _has_word(t, "log", "logs"):
             return _make("docker_logs", project_id, 0.9, False, "Docker logs query")
         return _make("docker_ps", project_id, 0.95, False, "Docker container list")
 
-    if "git" in t:
-        if "pull" in t:
+    if _has_word(t, "git"):
+        if _has_word(t, "pull"):
             return _make("git_pull", project_id, 0.9, True, "Git pull — needs approval")
         return _make("git_status", project_id, 0.95, False, "Git status query")
 
-    if any(k in t for k in ("ram", "memory", "memori", "swap")):
+    if _has_word(t, "ram", "memory", "memori", "swap"):
         return _make("memory", project_id, 0.95, False, "Memory usage query")
 
-    if any(k in t for k in ("disk", "storage", "penyimpanan", "df")):
+    if _has_word(t, "disk", "storage", "penyimpanan", "df"):
         return _make("disk", project_id, 0.95, False, "Disk usage query")
 
-    if any(k in t for k in ("process", "proses", "ps", "top")):
+    if _has_word(t, "process", "processes", "proses", "ps", "top"):
         return _make("processes", project_id, 0.9, False, "Process list query")
 
-    if any(k in t for k in ("whoami", "user bot", "hostname", "working dir")):
+    if _has_word(t, "whoami", "hostname") or _has_phrase(t, "user bot", "working dir"):
         return _make("whoami", project_id, 0.95, False, "Identity query")
 
-    if any(k in t for k in ("list file", "lihat file", "ls")):
+    if _has_phrase(t, "list file", "lihat file") or _has_word(t, "ls"):
         return _make("list_files", project_id, 0.9, False, "File listing")
 
-    if any(k in t for k in ("status", "uptime", "health", "sehat", "server", "load", "cpu")):
+    if _has_word(t, "status", "uptime", "health", "sehat", "server", "load", "cpu"):
         return _make("server_status", project_id, 0.9, False, "Server status query")
 
     return None

@@ -293,7 +293,9 @@ async def cmd_pair_telegram() -> None:
         return
 
     try:
-        async with httpx.AsyncClient(timeout=5.0, trust_env=False) as c:
+        # Cold-start backend bisa ~4-5 detik (DB session lookup + Telegram
+        # getMe untuk bot username). Warm call ~1.5s.
+        async with httpx.AsyncClient(timeout=15.0, trust_env=False) as c:
             r = await c.post(
                 f"{settings.app_url}/auth/telegram/pair-init",
                 headers={"Authorization": f"Bearer {session.token}"},

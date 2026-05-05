@@ -129,7 +129,7 @@ def load_settings() -> Settings:
         telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", "").strip(),
         ollama_host=ollama_host,
         qwen_url=os.getenv("QWEN_URL", f"{ollama_host}/api/generate"),
-        qwen_model=os.getenv("QWEN_MODEL", os.getenv("OLLAMA_MODEL", "qwen2.5:3b")),
+        qwen_model=os.getenv("QWEN_MODEL", os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")),
         project_dir=project_dir,
         command_timeout=int(os.getenv("COMMAND_TIMEOUT", "20")),
         max_reply_chars=3800,

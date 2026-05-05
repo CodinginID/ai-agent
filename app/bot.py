@@ -611,14 +611,24 @@ def action_memory(_: dict | None = None) -> str:
 def action_disk(_: dict | None = None) -> str:
     lines = ["Disk usage"]
     partitions = safe_psutil(lambda: psutil.disk_partitions(all=False), [])
+    seen_mountpoints: set[str] = set()
     for partition in partitions:
-        try:
-            usage = psutil.disk_usage(partition.mountpoint)
-        except PermissionError:
+        mp = partition.mountpoint
+        # Container bind mounts (mis. /etc/resolv.conf) terdeteksi sebagai
+        # "partition" oleh psutil. Filter: hanya direktori real yang dihitung.
+        if not Path(mp).is_dir():
             continue
-
+        # Mountpoint yang sama bisa muncul beberapa kali kalau ada bind mount
+        # nested — dedup supaya tidak nampilkan duplicate.
+        if mp in seen_mountpoints:
+            continue
+        seen_mountpoints.add(mp)
+        try:
+            usage = psutil.disk_usage(mp)
+        except (PermissionError, OSError):
+            continue
         lines.append(
-            f"{partition.mountpoint}: {usage.percent:.1f}% "
+            f"{mp}: {usage.percent:.1f}% "
             f"({bytes_to_gb(usage.used)} / {bytes_to_gb(usage.total)})"
         )
 
@@ -1008,51 +1018,53 @@ _HELP_TEXT = (
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Bot ini private — hanya operator (di ADMIN_USER_IDS) yang bisa pakai.
+
+    Fase A lockdown: hapus auto-register `/start` untuk siapapun. User asing
+    yang nyasar dapat pesan halus. Operator pair via `/pair-telegram` di TUI.
+    Pair code (``/start TG-XXX``) tetap diterima — tapi juga dibatasi whitelist.
+    """
     if update.message is None or update.effective_user is None:
         return
 
     tg_user = update.effective_user
     args = context.args or []
 
-    # Telegram pair flow: /start TG-XXXXXX → link telegram_user_id ke user yang
-    # sudah login di TUI. Diutamakan sebelum auto-register.
+    if not is_authorized(update):
+        await update.message.reply_text(
+            "Bot ini private — hanya bisa dipakai oleh pemilik server.\n\n"
+            "Kalau kamu ingin install AI Agent untuk dirimu sendiri, "
+            "deploy backend + bot Telegram sendiri. Lihat README di "
+            "github.com/codinginid/ai-agent.",
+        )
+        return
+
+    # /start TG-XXXXXX → klaim pair code (operator yang sudah login di TUI)
     if args and args[0].startswith("TG-"):
         await _handle_pair_code(update, tg_user, args[0])
         return
 
-    # Auto-register fallback: /start tanpa args terbuka untuk semua.
-    is_new = False
-    try:
-        with session_scope(_get_db_session_factory()) as session:
-            repo = ControlPlaneRepository(session)
-            tenant = repo.resolve_by_telegram_user_id(tg_user.id)
-            if tenant is None:
-                user = repo.create_user(display_name=tg_user.full_name)
-                with contextlib.suppress(DatabaseConflictError):
-                    repo.link_telegram_account(
-                        user_id=user.id,
-                        telegram_user_id=tg_user.id,
-                        username=tg_user.username,
-                        first_name=tg_user.first_name,
-                    )
-                is_new = True
-    except Exception:
-        # DB error tidak boleh block user — tetap tampilkan help
-        pass
-
-    if is_new:
-        name = tg_user.first_name or tg_user.username or "kamu"
-        await update.message.reply_text(
-            f"Selamat datang, {name}!\n"
-            "Akun kamu sudah terdaftar.\n\n"
-            + _HELP_TEXT
-        )
-    else:
-        await update.message.reply_text("Bot siap.\n\n" + _HELP_TEXT)
+    # /start tanpa args → kasih instruksi, jangan auto-create user record.
+    await update.message.reply_text(
+        "Hai! Bot ini sudah aktif untuk akun kamu.\n\n"
+        "Untuk hubungkan akun Telegram ini ke akun TUI:\n"
+        "  1. Buka TUI di komputer kamu\n"
+        "  2. Login Google dulu (`/login`)\n"
+        "  3. Lalu `/pair-telegram` — scan QR atau klik link\n\n"
+        + _HELP_TEXT
+    )
 
 
 async def _handle_pair_code(update: Update, tg_user, code: str) -> None:
-    """Klaim code TUI pairing → link telegram_user_id ke user_id yang sudah login."""
+    """Klaim code TUI pairing → link telegram_user_id ke user_id yang sudah login.
+
+    Auto-merge ghost user: kalau telegram_user_id sudah ter-link ke user yang
+    email=null (relik dari /start auto-register lama), hapus ghost user-nya
+    lalu link ulang ke target user. Lebih ramah daripada nyuruh hubungi admin.
+    """
+    from sqlalchemy import select
+
+    from app.adapters.database.models import UserModel
     from app.interfaces.auth import claim_telegram_pair_code
 
     user_id = claim_telegram_pair_code(code)
@@ -1072,12 +1084,20 @@ async def _handle_pair_code(update: Update, tg_user, code: str) -> None:
                     await update.message.reply_text(
                         "Akun Telegram kamu sudah ter-link ke user ini."
                     )
+                    return
+                # Cek apakah existing-nya ghost (email=null) → auto-merge.
+                old_user = session.scalar(
+                    select(UserModel).where(UserModel.id == existing.user_id)
+                )
+                if old_user is not None and not old_user.email:
+                    session.delete(old_user)  # cascade: telegram_account ikut hilang
+                    session.flush()
                 else:
                     await update.message.reply_text(
-                        "Akun Telegram kamu sudah ter-link ke user lain. "
+                        "Akun Telegram kamu sudah ter-link ke user lain (yang punya email). "
                         "Hubungi admin untuk unlink dulu."
                     )
-                return
+                    return
             repo.link_telegram_account(
                 user_id=user_id,
                 telegram_user_id=tg_user.id,
