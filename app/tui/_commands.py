@@ -24,7 +24,7 @@ from app.tui._completer import TuiCompleter
 from app.tui._http import client, fmt_http_error
 from app.tui._output import print_parts, println
 from app.tui._session import (
-    LoginAborted,
+    LoginAbortedError,
     Session,
     clear_session,
     poll_pair_code,
@@ -218,7 +218,7 @@ async def cmd_login() -> None:
         while asyncio.get_event_loop().time() < deadline and _state.running[0]:
             try:
                 token = await poll_pair_code(code)
-            except LoginAborted as exc:
+            except LoginAbortedError as exc:
                 println("class:err", f"  login dibatalkan: {exc}")
                 return
             if token:
