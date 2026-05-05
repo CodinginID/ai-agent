@@ -1,0 +1,10 @@
+[
+  {
+    "id": "default",
+    "name": "default",
+    "root_path": ".",
+    "description": "Default project",
+    "created_at": "2026-05-02T00:00:00",
+    "updated_at": "2026-05-02T00:00:00"
+  }
+]

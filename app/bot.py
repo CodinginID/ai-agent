@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import json
 import os
 import platform
@@ -8,66 +9,91 @@ import socket
 import subprocess
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 import psutil
 import requests
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import (
+    Application,
+    ApplicationBuilder,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
+from telegram.request import HTTPXRequest
+
+from app.adapters.agent_discovery import CliAgentDefinition, CliAgentDiscoveryAdapter
+from app.adapters.database.repositories import ControlPlaneRepository, DatabaseConflictError
+from app.adapters.database.session import (
+    create_database_engine,
+    create_session_factory,
+    session_scope,
+)
+from app.config import BASE_DIR, settings
+from app.domain.agents import AgentCapability, AgentRoleAssignment, resolve_agent_roles
+from app.executor.actions import ActionMeta, ActionRegistry
+from app.executor.runner import run_safe
+from app.intents.parser import IntentParser
+from app.intents.schemas import EXECUTABLE_ACTIONS
+from app.memory.store import ProjectAlreadyExistsError, ProjectStore
+from app.orchestrator.approval import PendingPlanStore
+from app.orchestrator.plans import PlanGenerator
+
+project_store = ProjectStore(BASE_DIR / "data")
+plan_generator = PlanGenerator()
+pending_plans = PendingPlanStore()
+
+TOKEN = settings.telegram_bot_token
+OLLAMA_HOST = settings.ollama_host
+
+# DB session factory — lazy init saat /start pertama kali dipanggil
+_db_session_factory = None
 
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+def _get_db_session_factory():
+    global _db_session_factory
+    if _db_session_factory is None:
+        _db_session_factory = create_session_factory(
+            create_database_engine(settings.database_url)
+        )
+    return _db_session_factory
+QWEN_URL = settings.qwen_url
+QWEN_MODEL = settings.qwen_model
+PROJECT_DIR = settings.project_dir
+COMMAND_TIMEOUT = settings.command_timeout
+MAX_REPLY_CHARS = settings.max_reply_chars
+CHAT_HISTORY_LIMIT = settings.chat_history_limit
+ALLOW_UNRESTRICTED_ACCESS = settings.allow_unrestricted_access
+ENABLE_CODEX = settings.enable_codex
+ENABLE_CLAUDE = settings.enable_claude
+AGENT_TIMEOUT = settings.agent_timeout
+AGENT_WORKDIR = settings.agent_workdir
+AGENT_MAX_PROMPT_CHARS = settings.agent_max_prompt_chars
+CODEX_BIN = settings.codex_bin
+CODEX_MODEL = settings.codex_model
+CODEX_SANDBOX = settings.codex_sandbox
+CLAUDE_BIN = settings.claude_bin
+CLAUDE_MODEL = settings.claude_model
+CLAUDE_PERMISSION_MODE = settings.claude_permission_mode
+CLAUDE_ALLOWED_TOOLS = settings.claude_allowed_tools
+CLAUDE_TOOLS = settings.claude_tools
+ENABLE_GLM = settings.enable_glm
+GLM_BIN = settings.glm_bin
+GLM_MODEL = settings.glm_model
+GLM_ACCESS_MODE = settings.glm_access_mode
+AGENT_ROLE_ENGINEER = settings.agent_role_engineer
+AGENT_ROLE_ARCHITECT = settings.agent_role_architect
+AGENT_ROLE_REVIEWER = settings.agent_role_reviewer
+ENABLE_TERMINAL_TOOLS = settings.enable_terminal_tools
+TERMINAL_TIMEOUT = settings.terminal_timeout
+TERMINAL_WORKDIR = settings.terminal_workdir
+TERMINAL_ALLOWED_COMMANDS = settings.terminal_allowed_commands
+ADMIN_USER_IDS = settings.admin_user_ids
+ALLOWED_MANUAL_COMMANDS = settings.allowed_manual_commands
+
 PLACEHOLDER_TOKENS = {"", "ISI_TOKEN_KAMU_DI_SINI", "ISI_TOKEN_TELEGRAM_KAMU_DI_SINI"}
-
-
-def load_env_file(path: str | Path = ".env"):
-    env_path = Path(path)
-    if not env_path.exists():
-        return
-
-    for line in env_path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-
-        key, value = line.split("=", 1)
-        key = key.strip()
-        value = value.strip().strip('"').strip("'")
-        os.environ.setdefault(key, value)
-
-
-load_env_file(BASE_DIR / ".env")
-
-
-def env_bool(name: str, default: bool = False) -> bool:
-    value = os.getenv(name)
-    if value is None:
-        return default
-
-    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
-
-
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
-QWEN_URL = os.getenv("QWEN_URL", f"{OLLAMA_HOST}/api/generate")
-QWEN_MODEL = os.getenv("QWEN_MODEL", os.getenv("OLLAMA_MODEL", "qwen2.5:3b"))
-PROJECT_DIR = Path(os.getenv("PROJECT_DIR", str(BASE_DIR))).expanduser().resolve()
-COMMAND_TIMEOUT = int(os.getenv("COMMAND_TIMEOUT", "20"))
-MAX_REPLY_CHARS = 3800
-CHAT_HISTORY_LIMIT = int(os.getenv("CHAT_HISTORY_LIMIT", "6"))
-ALLOW_UNRESTRICTED_ACCESS = env_bool("ALLOW_UNRESTRICTED_ACCESS")
-
-ENABLE_CODEX = env_bool("ENABLE_CODEX")
-ENABLE_CLAUDE = env_bool("ENABLE_CLAUDE")
-AGENT_TIMEOUT = int(os.getenv("AGENT_TIMEOUT", "180"))
-AGENT_WORKDIR = Path(os.getenv("AGENT_WORKDIR", str(PROJECT_DIR))).expanduser().resolve()
-AGENT_MAX_PROMPT_CHARS = int(os.getenv("AGENT_MAX_PROMPT_CHARS", "6000"))
-CODEX_BIN = os.getenv("CODEX_BIN", "codex")
-CODEX_MODEL = os.getenv("CODEX_MODEL", "")
-CODEX_SANDBOX = os.getenv("CODEX_SANDBOX", "read-only")
-CLAUDE_BIN = os.getenv("CLAUDE_BIN", "claude")
-CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "")
-CLAUDE_PERMISSION_MODE = os.getenv("CLAUDE_PERMISSION_MODE", "dontAsk")
-CLAUDE_ALLOWED_TOOLS = os.getenv("CLAUDE_ALLOWED_TOOLS", "Read,Grep,Glob")
 
 VALID_CODEX_SANDBOXES = {"read-only", "workspace-write", "danger-full-access"}
 CODEX_SANDBOX_ALIASES = {
@@ -76,26 +102,9 @@ CODEX_SANDBOX_ALIASES = {
     "seatbelt": "read-only",
     "sandbox": "read-only",
     "workspace": "workspace-write",
-}
-
-ADMIN_USER_IDS = {
-    int(user_id.strip())
-    for user_id in os.getenv("ADMIN_USER_IDS", "").replace(";", ",").split(",")
-    if user_id.strip().isdigit()
-}
-
-ALLOWED_MANUAL_COMMANDS = {
-    "docker",
-    "git",
-    "ls",
-    "ps",
-    "df",
-    "du",
-    "free",
-    "uptime",
-    "whoami",
-    "pwd",
-    "hostname",
+    "full": "danger-full-access",
+    "full-access": "danger-full-access",
+    "danger": "danger-full-access",
 }
 
 
@@ -145,27 +154,7 @@ def call_qwen(prompt: str) -> str:
 
 
 def run_process(args: list[str], cwd: Path | None = None) -> str:
-    try:
-        result = subprocess.run(
-            args,
-            cwd=str(cwd or PROJECT_DIR),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            timeout=COMMAND_TIMEOUT,
-            check=False,
-        )
-    except FileNotFoundError:
-        return f"Command tidak ditemukan: {args[0]}"
-    except subprocess.TimeoutExpired:
-        return f"Command timeout setelah {COMMAND_TIMEOUT} detik."
-    except Exception as exc:
-        return f"Gagal menjalankan command: {exc}"
-
-    output = result.stdout.strip()
-    if result.returncode != 0:
-        output = f"Exit code: {result.returncode}\n{output}"
-
+    output, _ = run_safe(args, cwd=cwd or PROJECT_DIR, timeout=COMMAND_TIMEOUT)
     return format_output(output)
 
 
@@ -198,6 +187,40 @@ def run_agent_process(args: list[str], cwd: Path | None = None) -> str:
     return format_output(output)
 
 
+def run_terminal_process(args: list[str], cwd: Path | None = None) -> str:
+    workdir = cwd or TERMINAL_WORKDIR
+    if not workdir.exists():
+        return f"Terminal workdir tidak ditemukan: {workdir}"
+
+    env = os.environ.copy()
+    env.setdefault("TERM", "xterm-256color")
+    env.setdefault("NO_COLOR", "1")
+
+    try:
+        result = subprocess.run(
+            args,
+            cwd=str(workdir),
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=TERMINAL_TIMEOUT,
+            check=False,
+        )
+    except FileNotFoundError:
+        return f"Command tidak ditemukan: {args[0]}"
+    except subprocess.TimeoutExpired:
+        return f"Command timeout setelah {TERMINAL_TIMEOUT} detik."
+    except Exception as exc:
+        return f"Gagal menjalankan terminal tool: {exc}"
+
+    output = result.stdout.strip()
+    if result.returncode != 0:
+        output = f"Exit code: {result.returncode}\n{output}"
+
+    return format_output(output)
+
+
 def validate_agent_prompt(prompt: str) -> str | None:
     if not prompt.strip():
         return "Prompt kosong."
@@ -212,16 +235,23 @@ def validate_agent_prompt(prompt: str) -> str | None:
 
 
 def build_agent_prompt(user_prompt: str, agent_name: str) -> str:
+    access_mode = (
+        f"Codex sandbox={normalized_codex_sandbox() or CODEX_SANDBOX}"
+        if agent_name == "Codex"
+        else f"Claude permission={CLAUDE_PERMISSION_MODE}, tools={CLAUDE_TOOLS or CLAUDE_ALLOWED_TOOLS or 'default'}"
+    )
     return f"""
 Kamu sedang dipanggil dari private Telegram bot untuk membantu user mengelola project/server.
 
 Agent: {agent_name}
 Working directory: {AGENT_WORKDIR}
+Access mode: {access_mode}
 
 Aturan respons:
 - Jawab dalam bahasa user.
 - Buat output ringkas dan cocok untuk Telegram.
-- Jika environment read-only atau tool tidak punya izin edit, jelaskan batasannya.
+- Jika akses edit tersedia dan user meminta edit, lakukan perubahan langsung.
+- Jika environment/tool tidak punya izin edit, jelaskan batasannya.
 - Jangan meminta input interaktif karena sesi ini non-interactive.
 
 Instruksi user:
@@ -302,7 +332,9 @@ def run_claude_agent(prompt: str) -> str:
         "--output-format",
         "text",
     ]
-    if CLAUDE_ALLOWED_TOOLS:
+    if CLAUDE_TOOLS:
+        args.extend(["--tools", CLAUDE_TOOLS])
+    if CLAUDE_ALLOWED_TOOLS and CLAUDE_ALLOWED_TOOLS.lower() != "default":
         args.extend(["--allowedTools", CLAUDE_ALLOWED_TOOLS])
     if CLAUDE_MODEL:
         args.extend(["--model", CLAUDE_MODEL])
@@ -311,25 +343,191 @@ def run_claude_agent(prompt: str) -> str:
     return run_agent_process(args)
 
 
+def qwen_capability() -> AgentCapability:
+    return AgentCapability(
+        agent_id="qwen",
+        display_name="Qwen/Ollama",
+        provider="ollama",
+        role_hint="orchestrator",
+        enabled=True,
+        available=bool(QWEN_URL and QWEN_MODEL),
+        path=QWEN_URL,
+        model=QWEN_MODEL,
+        access_mode="controller-only",
+        description="Orchestrator, intent parser, planner, and result analyzer",
+    )
+
+
+def discover_agent_capabilities() -> tuple[AgentCapability, ...]:
+    cli_agents = (
+        CliAgentDefinition(
+            agent_id="codex",
+            display_name="Codex",
+            provider="openai",
+            role_hint="engineer",
+            executable=CODEX_BIN,
+            enabled=ENABLE_CODEX,
+            model=CODEX_MODEL or None,
+            access_mode=normalized_codex_sandbox() or CODEX_SANDBOX,
+            description="Code editing and engineering worker",
+        ),
+        CliAgentDefinition(
+            agent_id="claude",
+            display_name="Claude",
+            provider="anthropic",
+            role_hint="reviewer",
+            executable=CLAUDE_BIN,
+            enabled=ENABLE_CLAUDE,
+            model=CLAUDE_MODEL or None,
+            access_mode=f"permission={CLAUDE_PERMISSION_MODE}, tools={CLAUDE_TOOLS or CLAUDE_ALLOWED_TOOLS or 'default'}",
+            description="Review and code reasoning worker",
+        ),
+        CliAgentDefinition(
+            agent_id="glm",
+            display_name="GLM",
+            provider="zhipu",
+            role_hint="architect",
+            executable=GLM_BIN,
+            enabled=ENABLE_GLM,
+            model=GLM_MODEL or None,
+            access_mode=GLM_ACCESS_MODE,
+            description="Architecture and planning worker",
+        ),
+    )
+    discovered = CliAgentDiscoveryAdapter(cli_agents).discover()
+    return (qwen_capability(), *discovered)
+
+
+def agent_role_assignments(capabilities: tuple[AgentCapability, ...]) -> tuple[AgentRoleAssignment, ...]:
+    return resolve_agent_roles(
+        capabilities=capabilities,
+        assignments={
+            "orchestrator": "qwen",
+            "engineer": AGENT_ROLE_ENGINEER,
+            "architect": AGENT_ROLE_ARCHITECT,
+            "reviewer": AGENT_ROLE_REVIEWER,
+        },
+    )
+
+
+def format_agent_capability(capability: AgentCapability) -> list[str]:
+    location = capability.path or "not found"
+    enabled = "yes" if capability.enabled else "no"
+    available = "yes" if capability.available else "no"
+    lines = [
+        f"- {capability.display_name} ({capability.agent_id}): {capability.status}",
+        f"  provider: {capability.provider}",
+        f"  role hint: {capability.role_hint}",
+        f"  enabled: {enabled}",
+        f"  available: {available}",
+        f"  location: {location}",
+    ]
+    if capability.model:
+        lines.append(f"  model: {capability.model}")
+    if capability.access_mode:
+        lines.append(f"  access: {capability.access_mode}")
+    return lines
+
+
 def agent_status_text() -> str:
-    return "\n".join(
-        [
-            "Agent CLI status",
-            f"Admin restriction: {'nonaktif' if ALLOW_UNRESTRICTED_ACCESS else 'aktif'}",
-            f"Agent workdir: {AGENT_WORKDIR}",
-            f"Agent timeout: {AGENT_TIMEOUT}s",
-            "",
-            f"Codex enabled: {ENABLE_CODEX}",
-            f"Codex binary: {agent_binary_status(CODEX_BIN)}",
-            f"Codex sandbox: {CODEX_SANDBOX} -> {normalized_codex_sandbox() or 'invalid'}",
-            f"Codex model: {CODEX_MODEL or '(default config)'}",
-            "",
-            f"Claude enabled: {ENABLE_CLAUDE}",
-            f"Claude binary: {agent_binary_status(CLAUDE_BIN)}",
-            f"Claude permission: {CLAUDE_PERMISSION_MODE}",
-            f"Claude tools: {CLAUDE_ALLOWED_TOOLS or '(default)'}",
-            f"Claude model: {CLAUDE_MODEL or '(default config)'}",
-        ]
+    capabilities = discover_agent_capabilities()
+    assignments = agent_role_assignments(capabilities)
+    lines = [
+        "Agent registry",
+        f"Admin restriction: {'nonaktif' if ALLOW_UNRESTRICTED_ACCESS else 'aktif'}",
+        f"Agent workdir: {AGENT_WORKDIR}",
+        f"Agent timeout: {AGENT_TIMEOUT}s",
+        "",
+        "Role assignments:",
+    ]
+
+    for assignment in assignments:
+        marker = "ready" if assignment.ready else "not ready"
+        lines.append(f"- {assignment.role}: {assignment.agent_id} ({marker}, {assignment.status})")
+        lines.append(f"  detail: {assignment.detail}")
+
+    lines.extend(["", "Registered agents:"])
+    for capability in capabilities:
+        lines.extend(format_agent_capability(capability))
+
+    return "\n".join(lines)
+
+
+def terminal_status_text() -> str:
+    commands = sorted(TERMINAL_ALLOWED_COMMANDS)
+    lines = [
+        "Terminal tools",
+        f"Enabled: {ENABLE_TERMINAL_TOOLS}",
+        f"Workdir: {TERMINAL_WORKDIR}",
+        f"Timeout: {TERMINAL_TIMEOUT}s",
+        "",
+        "Allowed commands:",
+    ]
+
+    for command in commands:
+        lines.append(f"- {command}: {agent_binary_status(command)}")
+
+    return "\n".join(lines)
+
+
+def run_terminal_command(command_text: str) -> str:
+    if not ENABLE_TERMINAL_TOOLS:
+        return "Terminal tools belum aktif. Set ENABLE_TERMINAL_TOOLS=true di .env lalu restart bot."
+
+    if not ADMIN_USER_IDS and not ALLOW_UNRESTRICTED_ACCESS:
+        return "Isi ADMIN_USER_IDS di .env dulu sebelum mengaktifkan terminal tools dari Telegram."
+
+    try:
+        parts = shlex.split(command_text)
+    except ValueError as exc:
+        return f"Command tidak valid: {exc}"
+
+    if not parts:
+        return "Command kosong."
+
+    command = parts[0]
+    if command not in TERMINAL_ALLOWED_COMMANDS:
+        allowed = ", ".join(sorted(TERMINAL_ALLOWED_COMMANDS))
+        return f"Command tidak diizinkan: {command}\nAllowed: {allowed}"
+
+    return run_terminal_process(parts)
+
+
+def btop_snapshot() -> str:
+    status = action_server_status({})
+    processes = action_processes({})
+    return (
+        "btop adalah aplikasi TUI, jadi tidak bisa dibuka interaktif di Telegram.\n"
+        "Ini snapshot server sebagai pengganti:\n\n"
+        f"{status}\n\n{processes}"
+    )
+
+
+def spf_listing(path_text: str = "") -> str:
+    path = (path_text or ".").strip()
+    if not ENABLE_TERMINAL_TOOLS:
+        return "Terminal tools belum aktif. Set ENABLE_TERMINAL_TOOLS=true di .env lalu restart bot."
+
+    try:
+        target = (TERMINAL_WORKDIR / path).resolve()
+    except Exception as exc:
+        return f"Path tidak valid: {exc}"
+
+    try:
+        target.relative_to(TERMINAL_WORKDIR)
+    except ValueError:
+        return f"Path keluar dari TERMINAL_WORKDIR tidak diizinkan: {target}"
+
+    if not target.exists():
+        return f"Path tidak ditemukan: {target}"
+
+    if target.is_file():
+        return run_terminal_process(["ls", "-lah", str(target)], cwd=TERMINAL_WORKDIR)
+
+    return (
+        "spf adalah aplikasi TUI, jadi tidak bisa dibuka interaktif di Telegram.\n"
+        "Ini listing direktori sebagai pengganti:\n\n"
+        f"{run_terminal_process(['ls', '-lah', str(target)], cwd=TERMINAL_WORKDIR)}"
     )
 
 
@@ -413,14 +611,24 @@ def action_memory(_: dict | None = None) -> str:
 def action_disk(_: dict | None = None) -> str:
     lines = ["Disk usage"]
     partitions = safe_psutil(lambda: psutil.disk_partitions(all=False), [])
+    seen_mountpoints: set[str] = set()
     for partition in partitions:
-        try:
-            usage = psutil.disk_usage(partition.mountpoint)
-        except PermissionError:
+        mp = partition.mountpoint
+        # Container bind mounts (mis. /etc/resolv.conf) terdeteksi sebagai
+        # "partition" oleh psutil. Filter: hanya direktori real yang dihitung.
+        if not Path(mp).is_dir():
             continue
-
+        # Mountpoint yang sama bisa muncul beberapa kali kalau ada bind mount
+        # nested — dedup supaya tidak nampilkan duplicate.
+        if mp in seen_mountpoints:
+            continue
+        seen_mountpoints.add(mp)
+        try:
+            usage = psutil.disk_usage(mp)
+        except (PermissionError, OSError):
+            continue
         lines.append(
-            f"{partition.mountpoint}: {usage.percent:.1f}% "
+            f"{mp}: {usage.percent:.1f}% "
             f"({bytes_to_gb(usage.used)} / {bytes_to_gb(usage.total)})"
         )
 
@@ -474,12 +682,18 @@ def action_docker_stats(_: dict | None = None) -> str:
     return run_process(["docker", "stats", "--no-stream"])
 
 
-def action_git_status(_: dict | None = None) -> str:
-    return run_process(["git", "status", "--short", "--branch"])
+def _project_dir(context: dict | None) -> Path:
+    if context and "project_dir" in context:
+        return Path(context["project_dir"]).expanduser().resolve()
+    return PROJECT_DIR
 
 
-def action_list_files(_: dict | None = None) -> str:
-    return run_process(["ls", "-lah"])
+def action_git_status(context: dict | None = None) -> str:
+    return run_process(["git", "status", "--short", "--branch"], cwd=_project_dir(context))
+
+
+def action_list_files(context: dict | None = None) -> str:
+    return run_process(["ls", "-lah"], cwd=_project_dir(context))
 
 
 def action_whoami(context: dict | None = None) -> str:
@@ -495,10 +709,11 @@ def action_whoami(context: dict | None = None) -> str:
             ]
         )
 
+    project_dir = _project_dir(context)
     lines.extend(
         [
             f"Bot user: {run_process(['whoami'])}",
-            f"Working dir: {PROJECT_DIR}",
+            f"Working dir: {project_dir}",
             f"Hostname: {socket.gethostname()}",
         ]
     )
@@ -518,20 +733,44 @@ ACTIONS = {
     "whoami": action_whoami,
 }
 
+_ACTION_METADATA: list[tuple[str, str, str]] = [
+    ("server_status", "Check server health, uptime, CPU, RAM, load, disk", "low"),
+    ("memory",        "Check RAM and swap usage",                          "low"),
+    ("disk",          "Check disk usage across partitions",                "low"),
+    ("processes",     "List top processes by CPU/memory",                  "low"),
+    ("docker_ps",     "List running Docker containers",                    "low"),
+    ("docker_images", "List Docker images",                                "low"),
+    ("docker_stats",  "Show Docker container resource stats",              "low"),
+    ("git_status",    "Show Git repository status",                        "low"),
+    ("list_files",    "List files in project directory",                   "low"),
+    ("whoami",        "Show bot identity and working directory",           "low"),
+]
+
+
+def _build_registry() -> ActionRegistry:
+    registry = ActionRegistry()
+    for name, desc, risk in _ACTION_METADATA:
+        registry.register(ActionMeta(
+            name=name,
+            description=desc,
+            risk_level=risk,
+            requires_approval=(risk != "low"),
+            handler=ACTIONS[name],
+        ))
+    return registry
+
+
+action_registry = _build_registry()
+
+
+intent_parser = IntentParser(qwen_caller=call_qwen)
+
 
 def is_greeting(text: str) -> bool:
     greetings = {
-        "hi",
-        "hai",
-        "halo",
-        "hello",
-        "hey",
-        "pagi",
-        "siang",
-        "sore",
-        "malam",
-        "assalamualaikum",
-        "assalamu'alaikum",
+        "hi", "hai", "halo", "hello", "hey",
+        "pagi", "siang", "sore", "malam",
+        "assalamualaikum", "assalamu'alaikum",
     }
     return text.lower().strip(" .,!?\n\t") in greetings
 
@@ -752,35 +991,130 @@ async def deny_if_unauthorized(update: Update) -> bool:
     return True
 
 
+_HELP_TEXT = (
+    "Perintah yang tersedia:\n\n"
+    "Chat natural:\n"
+    "  cek status server\n"
+    "  cek ram / cek disk\n"
+    "  docker yang jalan apa aja\n"
+    "  git status\n\n"
+    "Agent CLI:\n"
+    "  /agents — lihat agent terdaftar\n"
+    "  /codex <instruksi>\n"
+    "  /claude <instruksi>\n\n"
+    "Terminal:\n"
+    "  /tools — lihat tools aktif\n"
+    "  /tool <command>\n\n"
+    "Project:\n"
+    "  /project — project aktif\n"
+    "  /projects — daftar semua\n"
+    "  /project_add <nama> <path>\n\n"
+    "Lainnya:\n"
+    "  /cmd <shell command>\n"
+    "  /ask <pertanyaan>\n"
+    "  /whoami — lihat Telegram ID\n"
+    "  /reset — reset riwayat chat"
+)
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if await deny_if_unauthorized(update):
+    """Bot ini private — hanya operator (di ADMIN_USER_IDS) yang bisa pakai.
+
+    Fase A lockdown: hapus auto-register `/start` untuk siapapun. User asing
+    yang nyasar dapat pesan halus. Operator pair via `/pair-telegram` di TUI.
+    Pair code (``/start TG-XXX``) tetap diterima — tapi juga dibatasi whitelist.
+    """
+    if update.message is None or update.effective_user is None:
+        return
+
+    tg_user = update.effective_user
+    args = context.args or []
+
+    if not is_authorized(update):
+        await update.message.reply_text(
+            "Bot ini private — hanya bisa dipakai oleh pemilik server.\n\n"
+            "Kalau kamu ingin install AI Agent untuk dirimu sendiri, "
+            "deploy backend + bot Telegram sendiri. Lihat README di "
+            "github.com/codinginid/ai-agent.",
+        )
+        return
+
+    # /start TG-XXXXXX → klaim pair code (operator yang sudah login di TUI)
+    if args and args[0].startswith("TG-"):
+        await _handle_pair_code(update, tg_user, args[0])
+        return
+
+    # /start tanpa args → kasih instruksi, jangan auto-create user record.
+    await update.message.reply_text(
+        "Hai! Bot ini sudah aktif untuk akun kamu.\n\n"
+        "Untuk hubungkan akun Telegram ini ke akun TUI:\n"
+        "  1. Buka TUI di komputer kamu\n"
+        "  2. Login Google dulu (`/login`)\n"
+        "  3. Lalu `/pair-telegram` — scan QR atau klik link\n\n"
+        + _HELP_TEXT
+    )
+
+
+async def _handle_pair_code(update: Update, tg_user, code: str) -> None:
+    """Klaim code TUI pairing → link telegram_user_id ke user_id yang sudah login.
+
+    Auto-merge ghost user: kalau telegram_user_id sudah ter-link ke user yang
+    email=null (relik dari /start auto-register lama), hapus ghost user-nya
+    lalu link ulang ke target user. Lebih ramah daripada nyuruh hubungi admin.
+    """
+    from sqlalchemy import select
+
+    from app.adapters.database.models import UserModel
+    from app.interfaces.auth import claim_telegram_pair_code
+
+    user_id = claim_telegram_pair_code(code)
+    if user_id is None:
+        await update.message.reply_text(
+            "Kode pair tidak valid atau sudah kedaluwarsa.\n"
+            "Buka TUI di komputer dan jalankan /pair-telegram untuk dapat kode baru."
+        )
+        return
+
+    try:
+        with session_scope(_get_db_session_factory()) as session:
+            repo = ControlPlaneRepository(session)
+            existing = repo.resolve_by_telegram_user_id(tg_user.id)
+            if existing is not None:
+                if existing.user_id == user_id:
+                    await update.message.reply_text(
+                        "Akun Telegram kamu sudah ter-link ke user ini."
+                    )
+                    return
+                # Cek apakah existing-nya ghost (email=null) → auto-merge.
+                old_user = session.scalar(
+                    select(UserModel).where(UserModel.id == existing.user_id)
+                )
+                if old_user is not None and not old_user.email:
+                    session.delete(old_user)  # cascade: telegram_account ikut hilang
+                    session.flush()
+                else:
+                    await update.message.reply_text(
+                        "Akun Telegram kamu sudah ter-link ke user lain (yang punya email). "
+                        "Hubungi admin untuk unlink dulu."
+                    )
+                    return
+            repo.link_telegram_account(
+                user_id=user_id,
+                telegram_user_id=tg_user.id,
+                username=tg_user.username,
+                first_name=tg_user.first_name,
+            )
+    except DatabaseConflictError:
+        await update.message.reply_text(
+            "Akun Telegram kamu sudah ter-link ke user lain."
+        )
+        return
+    except Exception as exc:
+        await update.message.reply_text(f"Gagal link akun: {exc}")
         return
 
     await update.message.reply_text(
-        "Bot siap.\n\n"
-        "Chat biasa:\n"
-        "- hi\n"
-        "- jelaskan docker itu apa\n"
-        "- bantu analisa error ini\n"
-        "- /ask apa beda docker image dan container\n\n"
-        "Agent CLI:\n"
-        "- /agents\n"
-        "- /codex review singkat project ini\n"
-        "- /claude jelaskan struktur project ini\n\n"
-        "Contoh perintah:\n"
-        "- cek status server\n"
-        "- cek ram\n"
-        "- cek disk\n"
-        "- docker yang jalan apa aja\n"
-        "- git status\n\n"
-        "Manual command:\n"
-        "/cmd docker ps\n"
-        "/cmd git status\n"
-        "/cmd df -h\n\n"
-        "Cek Telegram user ID:\n"
-        "/whoami\n\n"
-        "Reset riwayat chat:\n"
-        "/reset"
+        "Berhasil terhubung. Kamu sekarang bisa pakai bot ini sebagai akun TUI kamu."
     )
 
 
@@ -829,6 +1163,43 @@ async def agents(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(format_output(agent_status_text()))
 
 
+async def tools(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if await deny_if_unauthorized(update):
+        return
+
+    await update.message.reply_text(format_output(terminal_status_text()))
+
+
+async def tool(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if await deny_if_unauthorized(update):
+        return
+
+    command_text = " ".join(context.args).strip()
+    if not command_text:
+        await update.message.reply_text("Pakai format: /tool command args, contoh: /tool fastfetch")
+        return
+
+    result = await asyncio.to_thread(run_terminal_command, command_text)
+    await update.message.reply_text(f"Tool result:\n\n{format_output(result)}")
+
+
+async def btop(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if await deny_if_unauthorized(update):
+        return
+
+    result = await asyncio.to_thread(btop_snapshot)
+    await update.message.reply_text(format_output(result))
+
+
+async def spf(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if await deny_if_unauthorized(update):
+        return
+
+    path_text = " ".join(context.args).strip()
+    result = await asyncio.to_thread(spf_listing, path_text)
+    await update.message.reply_text(format_output(result))
+
+
 async def codex(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if await deny_if_unauthorized(update):
         return
@@ -870,55 +1241,333 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     user_text = update.message.text.strip()
+    if not user_text:
+        return
+
+    tg_user = update.effective_user
+    chat = update.effective_chat
+    chat_id = chat.id if chat else 0
+    active_project = project_store.get_active_project(chat_id, PROJECT_DIR)
+
+    # Resolve user_id dari Telegram → DB. Kalau belum terdaftar, kasih /start dulu.
+    user_id = _resolve_user_id_from_telegram(tg_user.id if tg_user else None)
+    if user_id is None:
+        await update.message.reply_text(
+            "Akun belum terdaftar. Kirim /start dulu untuk auto-register."
+        )
+        return
+
+    from app.composition import build_use_case
+    from app.domain.messaging import ChatEventType, MessageContext
+
+    use_case = build_use_case()
+    ctx = MessageContext(
+        user_id=user_id,
+        conversation_id=str(chat_id),
+        project_id=active_project.id,
+        project_root=Path(active_project.root_path),
+        project_name=active_project.name,
+        telegram_user_id=tg_user.id if tg_user else None,
+        extra={"telegram_username": f"@{tg_user.username}" if tg_user and tg_user.username else "-"},
+    )
+
+    text_chunks: list[str] = []
+    final_sent = False
+
     try:
-        intent = parse_intent_with_ai(user_text)
-    except requests.RequestException as exc:
-        await update.message.reply_text(f"Gagal menghubungi Qwen/Ollama: {exc}")
-        return
-    except Exception as exc:
-        await update.message.reply_text(f"Gagal membaca intent: {exc}")
+        for event in use_case.handle(user_text, ctx):
+            if event.type == ChatEventType.APPROVAL_REQUIRED:
+                summary = event.payload["summary"]
+                plan_id = event.payload["plan_id"]
+                await update.message.reply_text(
+                    f"{summary}\n\n"
+                    f"Konfirmasi: /approve {plan_id}\n"
+                    f"Batalkan:   /reject {plan_id}\n"
+                    f"(kedaluwarsa dalam 5 menit)"
+                )
+                final_sent = True
+            elif event.type == ChatEventType.TEXT_CHUNK:
+                text_chunks.append(event.payload["text"])
+            elif event.type == ChatEventType.FINAL:
+                final_text = event.payload.get("text") or "".join(text_chunks)
+                if final_text.strip():
+                    await update.message.reply_text(format_output(final_text))
+                final_sent = True
+            elif event.type == ChatEventType.ERROR:
+                await update.message.reply_text(
+                    f"Maaf, terjadi error: {event.payload['message']}"
+                )
+                final_sent = True
+    except Exception as exc:  # defensive — use case sudah catch internal, ini safety net
+        await update.message.reply_text(f"Internal error: {exc}")
         return
 
-    action = intent["action"]
-    if action in {"chat", "unknown"}:
-        await reply_chat(update, context, user_text)
-        return
+    # Kalau use case selesai tanpa FINAL (mis. early return), pastikan minimal ada respons
+    if not final_sent and text_chunks:
+        await update.message.reply_text(format_output("".join(text_chunks)))
 
-    user = update.effective_user
-    intent["telegram_user"] = {
-        "id": user.id if user else "-",
-        "username": f"@{user.username}" if user and user.username else "-",
-    }
 
-    result = ACTIONS[action](intent)
-    if action == "whoami":
-        await update.message.reply_text(format_output(result))
-        return
+def _resolve_user_id_from_telegram(telegram_user_id: int | None) -> str | None:
+    """Lookup user_id (UUID) berdasarkan telegram_user_id."""
+    if telegram_user_id is None:
+        return None
+    from app.adapters.database.repositories import ControlPlaneRepository
+    from app.adapters.database.session import session_scope
 
     try:
-        summary = call_qwen(f"Ringkas output server ini dalam bahasa Indonesia yang singkat:\n{result}")
+        with session_scope(_get_db_session_factory()) as session:
+            repo = ControlPlaneRepository(session)
+            tenant = repo.resolve_by_telegram_user_id(telegram_user_id)
+            return tenant.user_id if tenant else None
+    except Exception:
+        return None
+
+
+async def project_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if await deny_if_unauthorized(update):
+        return
+
+    chat = update.effective_chat
+    chat_id = chat.id if chat else 0
+    args = context.args or []
+
+    if not args:
+        project = project_store.get_active_project(chat_id, PROJECT_DIR)
+        await update.message.reply_text(
+            f"Project aktif: {project.name}\n"
+            f"ID: {project.id}\n"
+            f"Path: {project.root_path}\n"
+            f"Deskripsi: {project.description or '-'}"
+        )
+        return
+
+    name = args[0]
+    found = project_store.get_project(name)
+    if found is None:
+        await update.message.reply_text(
+            f"Project '{name}' tidak ditemukan.\nGunakan /projects untuk melihat daftar."
+        )
+        return
+
+    project_store.set_active_project(chat_id, found.id)
+    await update.message.reply_text(
+        f"Switched ke project: {found.name}\nPath: {found.root_path}"
+    )
+
+
+async def projects_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if await deny_if_unauthorized(update):
+        return
+
+    chat = update.effective_chat
+    chat_id = chat.id if chat else 0
+    active_id = project_store.get_active_project_id(chat_id)
+    all_projects = project_store.list_projects()
+
+    if not all_projects:
+        await update.message.reply_text("Belum ada project terdaftar.")
+        return
+
+    lines = ["Daftar project:"]
+    for p in all_projects:
+        marker = " *" if p.id == active_id else ""
+        lines.append(f"- {p.name} ({p.id}){marker}  →  {p.root_path}")
+    lines.append("\n* = aktif saat ini")
+    await update.message.reply_text("\n".join(lines))
+
+
+async def project_add_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if await deny_if_unauthorized(update):
+        return
+
+    args = context.args or []
+    if len(args) < 2:
+        await update.message.reply_text(
+            "Format: /project_add <nama> <path>\nContoh: /project_add myapp /home/ali/myapp"
+        )
+        return
+
+    name = args[0]
+    root_path = args[1]
+    description = " ".join(args[2:]) if len(args) > 2 else ""
+
+    try:
+        project = project_store.add_project(name, root_path, description)
+        await update.message.reply_text(
+            f"Project ditambahkan!\nNama: {project.name}\nID: {project.id}\nPath: {project.root_path}"
+        )
+    except ProjectAlreadyExistsError as exc:
+        await update.message.reply_text(str(exc))
+
+
+async def project_info_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if await deny_if_unauthorized(update):
+        return
+
+    chat = update.effective_chat
+    chat_id = chat.id if chat else 0
+    project = project_store.get_active_project(chat_id, PROJECT_DIR)
+    project_path = Path(project.root_path).expanduser().resolve()
+
+    git_info = run_process(["git", "log", "--oneline", "-3"], cwd=project_path)
+    git_status = run_process(["git", "status", "--short", "--branch"], cwd=project_path)
+
+    await update.message.reply_text(
+        format_output(
+            f"Project: {project.name} ({project.id})\n"
+            f"Path: {project_path}\n"
+            f"Deskripsi: {project.description or '-'}\n"
+            f"Dibuat: {project.created_at[:10] if project.created_at else '-'}\n\n"
+            f"Git status:\n{git_status}\n\n"
+            f"3 commit terakhir:\n{git_info}"
+        )
+    )
+
+
+async def approve_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if await deny_if_unauthorized(update):
+        return
+
+    args = context.args or []
+    if not args:
+        await update.message.reply_text("Format: /approve <plan_id>")
+        return
+
+    chat = update.effective_chat
+    chat_id = chat.id if chat else 0
+    plan_id = args[0]
+
+    pending = pending_plans.consume(plan_id, chat_id)
+    if pending is None:
+        await update.message.reply_text(
+            f"Plan '{plan_id}' tidak ditemukan atau sudah kedaluwarsa."
+        )
+        return
+
+    action_name = pending.plan.intent
+    if action_name not in EXECUTABLE_ACTIONS:
+        await update.message.reply_text(
+            f"Action '{action_name}' disetujui tapi belum ada executor-nya."
+        )
+        return
+
+    result = action_registry.execute(action_name, pending.action_context)
+
+    try:
+        summary = call_qwen(
+            f"Ringkas output server ini dalam bahasa Indonesia yang singkat:\n{result}"
+        )
     except Exception:
         summary = result
 
-    await update.message.reply_text(f"Action: {action}\n\n{format_output(summary)}")
+    await update.message.reply_text(
+        f"Approved & executed: {action_name}\n\n{format_output(summary)}"
+    )
 
 
-def main():
+async def reject_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if await deny_if_unauthorized(update):
+        return
+
+    args = context.args or []
+    if not args:
+        await update.message.reply_text("Format: /reject <plan_id>")
+        return
+
+    chat = update.effective_chat
+    chat_id = chat.id if chat else 0
+    plan_id = args[0]
+
+    if pending_plans.cancel(plan_id, chat_id):
+        await update.message.reply_text("Plan dibatalkan.")
+    else:
+        await update.message.reply_text(
+            f"Plan '{plan_id}' tidak ditemukan atau sudah kedaluwarsa."
+        )
+
+
+async def pending_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if await deny_if_unauthorized(update):
+        return
+
+    chat = update.effective_chat
+    chat_id = chat.id if chat else 0
+    plans = pending_plans.list_for_chat(chat_id)
+
+    if not plans:
+        await update.message.reply_text("Tidak ada plan yang menunggu approval.")
+        return
+
+    lines = [f"Plan pending ({len(plans)}):"]
+    for p in plans:
+        sisa = int((p.expires_at - __import__("datetime").datetime.now()).total_seconds() / 60)
+        lines.append(
+            f"- {p.plan.plan_id[:8]}...  action: {p.plan.intent}"
+            f"  (kedaluwarsa ~{sisa} menit)"
+        )
+        lines.append(f"  /approve {p.plan.plan_id}")
+    await update.message.reply_text("\n".join(lines))
+
+
+_PROXY_ENV_KEYS = ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy")
+
+
+def _resolve_proxy() -> str | None:
+    proxy_url = next((os.getenv(k) for k in _PROXY_ENV_KEYS if os.getenv(k)), None)
+    if not proxy_url:
+        return None
+    try:
+        p = urlparse(proxy_url)
+        host = p.hostname or "127.0.0.1"
+        port = p.port or 8080
+        with socket.create_connection((host, port), timeout=1):
+            return proxy_url
+    except OSError:
+        # Proxy not reachable — clear env vars so httpx doesn't pick them up either
+        for key in _PROXY_ENV_KEYS:
+            os.environ.pop(key, None)
+        return None
+
+
+def build_application() -> Application:
     if TOKEN in PLACEHOLDER_TOKENS:
         raise RuntimeError("TELEGRAM_BOT_TOKEN belum diisi. Buat .env dari .env.example lalu isi token bot.")
 
-    app = ApplicationBuilder().token(TOKEN).build()
+    proxy_url = _resolve_proxy()
+    request = HTTPXRequest(
+        proxy=proxy_url,
+        connect_timeout=30,
+        read_timeout=30,
+        write_timeout=30,
+        pool_timeout=30,
+    )
+    app = ApplicationBuilder().token(TOKEN).request(request).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", start))
     app.add_handler(CommandHandler("whoami", whoami))
     app.add_handler(CommandHandler("cmd", cmd))
     app.add_handler(CommandHandler("ask", ask))
     app.add_handler(CommandHandler("agents", agents))
+    app.add_handler(CommandHandler("tools", tools))
+    app.add_handler(CommandHandler("tool", tool))
+    app.add_handler(CommandHandler("btop", btop))
+    app.add_handler(CommandHandler("spf", spf))
     app.add_handler(CommandHandler("codex", codex))
     app.add_handler(CommandHandler("claude", claude))
     app.add_handler(CommandHandler("reset", reset_chat))
+    app.add_handler(CommandHandler("project", project_cmd))
+    app.add_handler(CommandHandler("projects", projects_cmd))
+    app.add_handler(CommandHandler("project_add", project_add_cmd))
+    app.add_handler(CommandHandler("project_info", project_info_cmd))
+    app.add_handler(CommandHandler("approve", approve_cmd))
+    app.add_handler(CommandHandler("reject", reject_cmd))
+    app.add_handler(CommandHandler("pending", pending_cmd))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-    app.run_polling()
+    return app
+
+
+def main() -> None:
+    build_application().run_polling()
 
 
 if __name__ == "__main__":

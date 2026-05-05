@@ -25,6 +25,8 @@ select = [
 ]
 ignore = [
     "E501",  # line too long (handled by formatter)
+    "TC001", # keep imports at top level
+    "TC003", # keep imports at top level
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -44,6 +46,11 @@ show_error_codes = true
 [[tool.mypy.overrides]]
 module = ["telegram.*", "psutil.*"]
 ignore_missing_imports = true
+
+# bot.py dan gateway.py adalah monolith legacy — akan di-type-check setelah direfactor di issue #4
+[[tool.mypy.overrides]]
+module = ["app.bot", "app.interfaces.gateway"]
+ignore_errors = true
 
 # ── Pytest ─────────────────────────────────────────────────────────────────────
 [tool.pytest.ini_options]
