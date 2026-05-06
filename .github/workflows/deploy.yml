@@ -90,7 +90,7 @@ jobs:
           ssh -T git@github-work || true
           git fetch origin main
           git merge --ff-only FETCH_HEAD
-          make up
+          make deploy
 
   # ── 3. Verifikasi semua container running ───────────────────────────────────
   verify:

@@ -1,6 +1,8 @@
-.PHONY: up down restart logs logs-ollama logs-init status build shell pull-model clean \
+.PHONY: up down restart deploy logs logs-ollama logs-init status build shell pull-model clean \
         lint type-check test check install-dev db-upgrade db-downgrade release \
         dev
+
+COMPOSE := $(shell docker compose version > /dev/null 2>&1 && echo "docker compose" || echo "docker-compose")
 
 # ── Development ──────────────────────────────────────────────────────────────
 
@@ -39,51 +41,57 @@ db-downgrade:
 
 ## Jalankan semua service (build ulang jika ada perubahan kode)
 up:
-	docker compose up -d --build
+	$(COMPOSE) up -d --build
 
 ## Hentikan semua service
 down:
-	docker compose down
+	$(COMPOSE) down
 
 ## Restart hanya bot (tanpa restart Ollama)
 restart:
-	docker compose restart bot
+	$(COMPOSE) restart bot
+
+## Zero-downtime deploy: rebuild bot, infra tetap jalan, Caddy tidak direstart
+deploy:
+	$(COMPOSE) up -d --no-recreate redis ollama
+	$(COMPOSE) up -d --build --no-deps bot
+	@docker ps --format '{{.Names}}' | grep -q "^aiagent_caddy$$" || $(COMPOSE) up -d caddy
 
 ## Ikuti log bot secara realtime
 logs:
-	docker compose logs -f bot
+	$(COMPOSE) logs -f bot
 
 ## Ikuti log Ollama secara realtime
 logs-ollama:
-	docker compose logs -f ollama
+	$(COMPOSE) logs -f ollama
 
 ## Ikuti log Caddy (reverse proxy) secara realtime
 logs-caddy:
-	docker compose logs -f caddy
+	$(COMPOSE) logs -f caddy
 
 ## Lihat log model init / model pull
 logs-init:
-	docker compose logs -f ollama-init
+	$(COMPOSE) logs -f ollama-init
 
 ## Lihat status semua container
 status:
-	docker compose ps
+	$(COMPOSE) ps
 
 ## Build ulang image bot tanpa menjalankan
 build:
-	docker compose build bot
+	$(COMPOSE) build bot
 
 ## Masuk ke dalam container bot
 shell:
-	docker compose exec bot sh
+	$(COMPOSE) exec bot sh
 
 ## Pull / update model AI (jalankan setelah ganti OLLAMA_MODEL di .env)
 pull-model:
-	docker compose exec ollama ollama pull $$(grep OLLAMA_MODEL .env | cut -d= -f2 | tr -d ' ')
+	$(COMPOSE) exec ollama ollama pull $$(grep OLLAMA_MODEL .env | cut -d= -f2 | tr -d ' ')
 
 ## Hapus semua container + volume (HATI-HATI: model AI ikut terhapus)
 clean:
-	docker compose down -v
+	$(COMPOSE) down -v
 
 ## Buat release baru — contoh: make release VERSION=0.2.0
 release:

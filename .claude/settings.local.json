@@ -123,7 +123,8 @@
       "Bash(awk '/^def run_codex_agent/,/^def [a-z]/' app/bot.py)",
       "Bash(env/bin/python -m py_compile app/tui/_worker.py)",
       "Bash(env/bin/python -m py_compile app/bot.py app/interfaces/chat.py app/domain/use_cases.py app/domain/messaging.py app/intents/parser.py app/intents/schemas.py app/tui/_worker.py)",
-      "Bash(env/bin/python *)"
+      "Bash(env/bin/python *)",
+      "Bash(make deploy *)"
     ]
   }
 }
