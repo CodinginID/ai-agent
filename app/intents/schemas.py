@@ -12,7 +12,14 @@ KNOWN_INTENTS: frozenset[str] = frozenset({
     "git_status", "git_pull",
     "deploy_restart", "run_command",
     "list_files", "whoami",
+    # Agent role: didelegasi ke worker user (Codex/Claude/GLM via WS).
+    "agent_code", "agent_review", "agent_architect",
     "chat", "unknown",
+})
+
+# Intent agent yang harus didelegasi ke worker user (bukan eksekusi backend).
+AGENT_INTENTS: frozenset[str] = frozenset({
+    "agent_code", "agent_review", "agent_architect",
 })
 
 # Intent yang punya handler di ACTIONS dan bisa langsung dieksekusi
@@ -57,7 +64,10 @@ class Intent:
     reason: str
 
     def is_action(self) -> bool:
-        return self.intent not in {"chat", "unknown"}
+        return self.intent not in {"chat", "unknown"} and not self.is_agent()
+
+    def is_agent(self) -> bool:
+        return self.intent in AGENT_INTENTS
 
     def risk(self) -> str:
         return risk_level(self.intent)

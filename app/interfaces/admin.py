@@ -132,3 +132,59 @@ def logout_user(email: str) -> dict[str, Any]:
 
 def _iso(dt: datetime | None) -> str | None:
     return dt.isoformat() if dt is not None else None
+
+
+# ── Worker dispatch test (Fase B2 verification) ──────────────────────────────
+
+@router.post("/dispatch-test", dependencies=[Depends(_require_admin_token)])
+async def dispatch_test(payload: dict[str, Any]) -> Any:
+    """Test endpoint: kirim job ke worker user, stream event balik via SSE.
+
+    Body: ``{"user_id": "<uuid>", "agent": "echo", "prompt": "halo"}``.
+    Worker side (TUI) harus implement handler untuk agent ``echo`` — minimal
+    mock yang reply 1-2 chunk + done.
+    """
+    import json as _json
+
+    from fastapi.responses import StreamingResponse
+
+    from app.interfaces.worker_ws import (
+        NoWorkerAvailableError,
+        dispatch_agent_job,
+    )
+
+    user_id = str(payload.get("user_id", "")).strip()
+    agent = str(payload.get("agent", "echo")).strip()
+    prompt = str(payload.get("prompt", "")).strip()
+    if not user_id or not prompt:
+        raise HTTPException(400, "user_id & prompt required")
+
+    async def _stream() -> Any:
+        try:
+            async for event in dispatch_agent_job(user_id, agent, prompt):
+                yield f"data: {_json.dumps(event)}\n\n"
+        except NoWorkerAvailableError as exc:
+            yield f"data: {_json.dumps({'type':'no_worker','message':str(exc)})}\n\n"
+        yield "data: {\"type\":\"end\"}\n\n"
+
+    return StreamingResponse(_stream(), media_type="text/event-stream")
+
+
+# ── Audit log via Redis Streams ──────────────────────────────────────────────
+
+@router.get("/audit", dependencies=[Depends(_require_admin_token)])
+async def get_audit(n: int = 50, user_id: str = "") -> dict[str, Any]:
+    """Recent audit events (chat & agent dispatch). ?user_id= filter optional."""
+    from app.adapters.audit import recent
+    events = await recent(n=min(max(1, n), 500), user_id=user_id or None)
+    return {"events": events, "count": len(events)}
+
+
+@router.get("/jobs/{job_id}", dependencies=[Depends(_require_admin_token)])
+async def get_job(job_id: str) -> dict[str, Any]:
+    """Inspect persistent job state (Redis hash). Untuk debug & retry."""
+    from app.adapters import job_store
+    data = await job_store.get(job_id)
+    if data is None:
+        raise HTTPException(404, f"job {job_id} not found (mungkin sudah expired)")
+    return {"job_id": job_id, **data}

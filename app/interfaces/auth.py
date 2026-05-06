@@ -531,3 +531,95 @@ async def telegram_pair_init(
             "expires_in_sec": int(_TUI_CODE_TTL.total_seconds()),
         }
     )
+
+
+# ── Per-user agent configuration ─────────────────────────────────────────────
+
+@router.get("/me/agents")
+async def list_my_agents(
+    authorization: str | None = Header(default=None),
+) -> JSONResponse:
+    """List konfigurasi agent (Codex/Claude/GLM) untuk user yang lagi login."""
+    resolved = _resolve_session_user(authorization)
+    if resolved is None:
+        raise HTTPException(status_code=401, detail="invalid or expired session")
+    user_id, _ = resolved
+
+    from app.adapters.agent_configs import (
+        DEFAULT_ROLE,
+        KNOWN_AGENTS,
+        UserAgentConfigRepository,
+    )
+
+    from app.adapters.redis_client import get_client, k_caps
+
+    repo = UserAgentConfigRepository(_session_factory_lazy())
+    existing = {c.agent_id: c for c in repo.list(user_id)}
+
+    redis = get_client()
+    # Tampilkan semua agent yang dikenal — yang belum di-config dianggap disabled.
+    # Plus jumlah worker yang punya CLI installed (dari capabilities advertise).
+    agents = []
+    for agent_id in KNOWN_AGENTS:
+        cfg = existing.get(agent_id)
+        installed_workers = await redis.scard(k_caps(user_id, agent_id))
+        agents.append({
+            "agent_id": agent_id,
+            "enabled": bool(cfg and cfg.enabled),
+            "role": cfg.role if cfg else DEFAULT_ROLE.get(agent_id),
+            "model": cfg.model if cfg else None,
+            "installed_on_workers": int(installed_workers or 0),
+        })
+    return JSONResponse({"agents": agents})
+
+
+@router.put("/me/agents/{agent_id}")
+async def upsert_my_agent(
+    agent_id: str,
+    payload: dict[str, Any] = Body(...),
+    authorization: str | None = Header(default=None),
+) -> JSONResponse:
+    """Update konfigurasi agent untuk user.
+
+    Body fields (semua optional, hanya yang diisi yang di-update):
+    - ``enabled``: bool
+    - ``role``: "engineer" | "reviewer" | "architect" | null
+    - ``model``: str | null
+    """
+    resolved = _resolve_session_user(authorization)
+    if resolved is None:
+        raise HTTPException(status_code=401, detail="invalid or expired session")
+    user_id, _ = resolved
+
+    from app.adapters.agent_configs import (
+        KNOWN_AGENTS,
+        VALID_ROLES,
+        UserAgentConfigRepository,
+    )
+
+    if agent_id not in KNOWN_AGENTS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown agent_id '{agent_id}'. Allowed: {', '.join(KNOWN_AGENTS)}",
+        )
+    role = payload.get("role")
+    if role is not None and role not in VALID_ROLES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"invalid role '{role}'. Allowed: {', '.join(VALID_ROLES)}",
+        )
+
+    repo = UserAgentConfigRepository(_session_factory_lazy())
+    cfg = repo.upsert(
+        user_id=user_id,
+        agent_id=agent_id,
+        enabled=payload.get("enabled"),
+        role=role,
+        model=payload.get("model"),
+    )
+    return JSONResponse({
+        "agent_id": cfg.agent_id,
+        "enabled": cfg.enabled,
+        "role": cfg.role,
+        "model": cfg.model,
+    })

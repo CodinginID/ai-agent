@@ -82,12 +82,37 @@ class HandleMessageUseCase:
             reason=intent.reason,
         )
 
-        # ── 2. Chat path ──────────────────────────────────────────────────────
+        # ── 2. Agent delegation path ──────────────────────────────────────────
+        # Intent agent_* tidak dijalanin di sini — handler luar (chat.py / bot.py)
+        # yang ngerelay ke worker user via WS dispatcher. Use case cuma kasih
+        # mapping intent → agent CLI + prompt yang udah dibersihin.
+        if intent.is_agent():
+            agent_name = _agent_for_intent(intent.intent, ctx.user_id)
+            role = _role_for_intent(intent.intent)
+            if agent_name is None:
+                yield ChatEvent.error(
+                    f"Belum ada agent yang assigned untuk role '{role}'. "
+                    "Set via /agents di TUI atau Telegram."
+                )
+                return
+            cleaned = _strip_command_prefix(text)
+            # Hand-off antar role: kalau ini reviewer/architect, ambil output
+            # role sebelumnya (engineer hasil terakhir) sebagai context tambahan.
+            cleaned = _maybe_prepend_handoff(ctx.user_id, role, cleaned)
+            yield ChatEvent.delegate_to_agent(
+                agent=agent_name,
+                prompt=cleaned,
+                intent=intent.intent,
+                role=role,
+            )
+            return
+
+        # ── 3. Chat path ──────────────────────────────────────────────────────
         if not intent.is_action():
             yield from self._handle_chat(text, ctx)
             return
 
-        # ── 3. Action path ────────────────────────────────────────────────────
+        # ── 4. Action path ────────────────────────────────────────────────────
         yield from self._handle_action(text, intent, ctx)
 
     # ── private ───────────────────────────────────────────────────────────────
@@ -190,3 +215,74 @@ def _conv_id_to_int(conv_id: str) -> int:
         return int(conv_id)
     except ValueError:
         return abs(hash(conv_id)) % (2**31)
+
+
+# ── Agent role → CLI mapping ─────────────────────────────────────────────────
+
+# Mapping intent → role string (yang disimpan di DB).
+_INTENT_TO_ROLE: dict[str, str] = {
+    "agent_code":      "engineer",
+    "agent_review":    "reviewer",
+    "agent_architect": "architect",
+}
+
+
+def _role_for_intent(intent_name: str) -> str:
+    return _INTENT_TO_ROLE.get(intent_name, "engineer")
+
+
+def _agent_for_intent(intent_name: str, user_id: str) -> str | None:
+    """Resolve intent → CLI agent name dari config DB per-user.
+
+    Cari agent yang ``enabled=True`` dan ``role`` cocok. Return None kalau user
+    belum config agent untuk role tersebut.
+    """
+    from app.adapters.agent_configs import UserAgentConfigRepository
+    from app.adapters.database.session import (
+        create_database_engine,
+        create_session_factory,
+    )
+    from app.config import settings as _settings
+
+    role = _role_for_intent(intent_name)
+    factory = create_session_factory(create_database_engine(_settings.database_url))
+    repo = UserAgentConfigRepository(factory)
+    return repo.agent_for_role(user_id, role)
+
+
+def _strip_command_prefix(text: str) -> str:
+    """Buang prefix ``/code``, ``/review``, ``/architect``, ``/refactor`` kalau ada."""
+    text = text.strip()
+    for prefix in ("/code ", "/refactor ", "/review ", "/architect "):
+        if text.lower().startswith(prefix):
+            return text[len(prefix):].strip()
+    for prefix in ("/code", "/refactor", "/review", "/architect"):
+        if text.lower() == prefix:
+            return ""
+    return text
+
+
+# Mapping role yang inherit context dari role sebelumnya. Reviewer biasanya
+# review output engineer; architect bisa pakai output engineer juga.
+_HANDOFF_FROM: dict[str, str] = {
+    "reviewer":  "engineer",
+    "architect": "engineer",
+}
+
+
+def _maybe_prepend_handoff(user_id: str, current_role: str, prompt: str) -> str:
+    """Kalau current_role punya hand-off mapping, prepend hasil role sebelumnya."""
+    prev_role = _HANDOFF_FROM.get(current_role)
+    if not prev_role:
+        return prompt
+    # Sync wrapper supaya bisa di-call dari sync use case generator.
+    import asyncio
+    from app.adapters.agent_context import build_handoff_prefix, fetch_role
+    try:
+        prev = asyncio.run(fetch_role(user_id, prev_role))
+    except RuntimeError:
+        # Sudah ada event loop running — fallback no-handoff.
+        return prompt
+    if not prev:
+        return prompt
+    return build_handoff_prefix(prev, current_role) + prompt

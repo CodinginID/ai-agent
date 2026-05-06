@@ -1157,10 +1157,87 @@ async def ask(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def agents(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Per-user agent config — list/toggle/set role/set model.
+
+    Usage:
+        /agents                       — list semua agent
+        /agents <name> on|off         — enable/disable
+        /agents <name> role <role>    — engineer/reviewer/architect
+        /agents <name> model <model>  — override default model
+    """
     if await deny_if_unauthorized(update):
         return
 
-    await update.message.reply_text(format_output(agent_status_text()))
+    tg_user = update.effective_user
+    user_id = _resolve_user_id_from_telegram(tg_user.id if tg_user else None)
+    if user_id is None:
+        await update.message.reply_text(
+            "Akun belum terdaftar. /start dulu, atau pair via /pair-telegram di TUI."
+        )
+        return
+
+    from app.adapters.agent_configs import (
+        DEFAULT_ROLE,
+        KNOWN_AGENTS,
+        VALID_ROLES,
+        UserAgentConfigRepository,
+    )
+
+    repo = UserAgentConfigRepository(_get_db_session_factory())
+    args = context.args or []
+
+    if not args:
+        existing = {c.agent_id: c for c in repo.list(user_id)}
+        lines = ["Agent Config:"]
+        for aid in KNOWN_AGENTS:
+            cfg = existing.get(aid)
+            en = "✓" if (cfg and cfg.enabled) else "✗"
+            role = (cfg.role if cfg else None) or DEFAULT_ROLE.get(aid) or "-"
+            model = (cfg.model if cfg else None) or "(default)"
+            lines.append(f"  {en} {aid:<8} role={role:<10} model={model}")
+        lines.append("")
+        lines.append("Usage:")
+        lines.append("  /agents codex on")
+        lines.append("  /agents codex role engineer")
+        lines.append("  /agents codex model gpt-4o-mini")
+        await update.message.reply_text("\n".join(lines))
+        return
+
+    name = args[0].lower()
+    if name not in KNOWN_AGENTS:
+        await update.message.reply_text(
+            f"Agent tidak dikenal: {name}. Allowed: {', '.join(KNOWN_AGENTS)}"
+        )
+        return
+    if len(args) < 2:
+        await update.message.reply_text(
+            f"Usage: /agents {name} on|off | role <role> | model <model>"
+        )
+        return
+
+    op = args[1].lower()
+    try:
+        if op in ("on", "off", "enable", "disable"):
+            cfg = repo.upsert(user_id, name, enabled=(op in ("on", "enable")))
+            await update.message.reply_text(
+                f"✓ {cfg.agent_id}: enabled={cfg.enabled} role={cfg.role or '-'}"
+            )
+        elif op == "role" and len(args) >= 3:
+            role = args[2].lower()
+            if role not in VALID_ROLES:
+                await update.message.reply_text(
+                    f"Role invalid: {role}. Allowed: {', '.join(VALID_ROLES)}"
+                )
+                return
+            cfg = repo.upsert(user_id, name, role=role)
+            await update.message.reply_text(f"✓ {cfg.agent_id}: role={cfg.role}")
+        elif op == "model" and len(args) >= 3:
+            cfg = repo.upsert(user_id, name, model=args[2])
+            await update.message.reply_text(f"✓ {cfg.agent_id}: model={cfg.model}")
+        else:
+            await update.message.reply_text(f"Op tidak dikenal: {op}")
+    except Exception as exc:
+        await update.message.reply_text(f"Gagal update: {exc}")
 
 
 async def tools(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1298,6 +1375,15 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"Maaf, terjadi error: {event.payload['message']}"
                 )
                 final_sent = True
+            elif event.type == ChatEventType.DELEGATE_TO_AGENT:
+                # Delegasi ke worker user (Codex/Claude/GLM via WS).
+                await _handle_agent_delegation(
+                    update,
+                    user_id=user_id,
+                    agent=str(event.payload.get("agent", "codex")),
+                    prompt=str(event.payload.get("prompt", "")),
+                )
+                final_sent = True
     except Exception as exc:  # defensive — use case sudah catch internal, ini safety net
         await update.message.reply_text(f"Internal error: {exc}")
         return
@@ -1305,6 +1391,93 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Kalau use case selesai tanpa FINAL (mis. early return), pastikan minimal ada respons
     if not final_sent and text_chunks:
         await update.message.reply_text(format_output("".join(text_chunks)))
+
+
+async def _handle_agent_delegation(
+    update: Update,
+    *,
+    user_id: str,
+    agent: str,
+    prompt: str,
+) -> None:
+    """Forward delegate event ke worker user, kumpulin chunks, kirim ke Telegram.
+
+    Karena Telegram tidak ideal untuk streaming (rate limit edit), kita kumpulin
+    semua chunks dulu lalu kirim 1-2 message akhir.
+    """
+    from app.adapters.audit import log_event
+    from app.interfaces.worker_ws import (
+        NoWorkerAvailableError,
+        dispatch_agent_job,
+    )
+
+    if not prompt:
+        await update.message.reply_text("Prompt agent kosong.")
+        return
+
+    await update.message.reply_text(f"⚙️  Delegasi ke `{agent}` di mesin kamu…")
+    await log_event(
+        "agent_dispatch",
+        user_id=user_id,
+        agent=agent,
+        prompt=prompt,
+        status="started",
+    )
+
+    chunks: list[str] = []
+    try:
+        async for ev in dispatch_agent_job(user_id, agent, prompt):
+            kind = ev.get("type", "")
+            if kind == "job_queued":
+                await update.message.reply_text(
+                    f"⏳ {ev.get('message', 'queued — menunggu slot worker')}"
+                )
+                continue
+            if kind == "job_chunk":
+                chunks.append(str(ev.get("text", "")))
+            elif kind == "job_done":
+                summary = str(ev.get("summary", ""))
+                full_output = "".join(chunks).strip()
+                if len(full_output) <= 4000:
+                    msg = full_output or summary
+                    await update.message.reply_text(format_output(msg))
+                else:
+                    await update.message.reply_text(
+                        format_output(full_output[-3800:]) + "\n\n[output dipotong]"
+                    )
+                if summary:
+                    await update.message.reply_text(f"✓ {agent}: {summary}")
+                await log_event(
+                    "agent_done",
+                    user_id=user_id,
+                    agent=agent,
+                    status="ok",
+                    detail=summary,
+                )
+                return
+            elif kind == "job_error":
+                err = str(ev.get("message", ""))
+                await update.message.reply_text(f"❌ Agent {agent} error: {err}")
+                await log_event(
+                    "agent_error",
+                    user_id=user_id,
+                    agent=agent,
+                    status="error",
+                    detail=err,
+                )
+                return
+    except NoWorkerAvailableError as exc:
+        await update.message.reply_text(
+            f"⚠️  Worker tidak tersedia: {exc}\n"
+            "Buka TUI di komputer kamu supaya bisa delegasi ke agent."
+        )
+        await log_event(
+            "agent_error",
+            user_id=user_id,
+            agent=agent,
+            status="error",
+            detail=str(exc),
+        )
 
 
 def _resolve_user_id_from_telegram(telegram_user_id: int | None) -> str | None:

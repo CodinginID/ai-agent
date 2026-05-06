@@ -80,7 +80,7 @@ def clear_session() -> None:
 
 # ── HTTP API ke backend ──────────────────────────────────────────────────────
 
-class LoginAbortedErrorError(Exception):
+class LoginAbortedError(Exception):
     """User cancel atau code expired."""
 
 

@@ -251,6 +251,34 @@ class UserSessionModel(Base):
     user_agent: Mapped[str | None] = mapped_column(String(120))
 
 
+class UserAgentConfigModel(Base):
+    """Per-user agent configuration — pengganti env var ENABLE_CODEX dst.
+
+    Dipakai backend untuk routing intent ``agent_code/review/architect`` ke
+    agent tertentu. Worker user TIDAK perlu cek enabled — backend yang putuskan
+    apakah agent boleh dipanggil.
+    """
+
+    __tablename__ = "user_agent_configs"
+    __table_args__ = (
+        UniqueConstraint("user_id", "agent_id", name="uq_user_agent_configs_user_agent"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    agent_id: Mapped[str] = mapped_column(String(40))  # codex, claude, glm, ...
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    role: Mapped[str | None] = mapped_column(String(40))  # engineer, reviewer, architect, NULL
+    model: Mapped[str | None] = mapped_column(String(120))  # override default model
+    concurrency: Mapped[int] = mapped_column(default=1)  # max parallel jobs
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+    )
+
+
 class ChatMessageModel(Base):
     __tablename__ = "chat_messages"
     __table_args__ = (
