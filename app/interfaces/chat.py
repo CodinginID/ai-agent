@@ -93,7 +93,26 @@ def _format_sse(event: ChatEvent) -> str:
 
 
 async def _stream_events(text: str, ctx: MessageContext) -> AsyncIterator[str]:
-    """Jalankan use case di thread (sync generator) lalu pump ke async stream."""
+    """Jalankan use case di thread (sync generator) lalu pump ke async stream.
+
+    Saat use case yield ``DELEGATE_TO_AGENT``, kita sambung ke worker tunnel
+    user-nya (via WS dispatcher) — relay chunks balik sebagai SSE event biasa.
+    """
+    from app.domain.messaging import ChatEventType
+    from app.interfaces.worker_ws import (
+        NoWorkerAvailableError,
+        dispatch_agent_job,
+    )
+
+    from app.adapters.audit import log_event
+
+    await log_event(
+        "chat_send",
+        user_id=ctx.user_id,
+        prompt=text,
+        status="started",
+    )
+
     use_case = build_use_case()
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue[ChatEvent | None] = asyncio.Queue()
@@ -118,6 +137,69 @@ async def _stream_events(text: str, ctx: MessageContext) -> AsyncIterator[str]:
             if ev is None:
                 break
             yield _format_sse(ev)
+            # Saat dapat DELEGATE_TO_AGENT, jangan break — terus drain queue
+            # SAMBIL juga dispatch ke worker dan stream chunk-nya. Use case
+            # sudah selesai (return setelah yield delegate), jadi queue akan
+            # segera dapat None sentinel.
+            if ev.type == ChatEventType.DELEGATE_TO_AGENT:
+                agent = str(ev.payload.get("agent", "codex"))
+                prompt = str(ev.payload.get("prompt", ""))
+                intent_name = str(ev.payload.get("intent", ""))
+                if not prompt:
+                    yield _format_sse(ChatEvent.error("prompt agent kosong"))
+                    continue
+                await log_event(
+                    "agent_dispatch",
+                    user_id=ctx.user_id,
+                    intent=intent_name,
+                    agent=agent,
+                    prompt=prompt,
+                    status="started",
+                )
+                try:
+                    async for ev2 in dispatch_agent_job(ctx.user_id, agent, prompt):
+                        # Map worker event → ChatEvent supaya SSE format konsisten.
+                        kind = ev2.get("type", "")
+                        if kind == "job_chunk":
+                            yield _format_sse(ChatEvent.text_chunk(str(ev2.get("text", ""))))
+                        elif kind == "job_done":
+                            summary = str(ev2.get("summary", ""))
+                            yield _format_sse(ChatEvent.final(
+                                f"[{agent} done] {summary}".strip()
+                            ))
+                            await log_event(
+                                "agent_done",
+                                user_id=ctx.user_id,
+                                intent=intent_name,
+                                agent=agent,
+                                status="ok",
+                                detail=summary,
+                            )
+                        elif kind == "job_error":
+                            err_msg = str(ev2.get('message', ''))
+                            yield _format_sse(ChatEvent.error(
+                                f"agent {agent} error: {err_msg}"
+                            ))
+                            await log_event(
+                                "agent_error",
+                                user_id=ctx.user_id,
+                                intent=intent_name,
+                                agent=agent,
+                                status="error",
+                                detail=err_msg,
+                            )
+                        elif kind == "job_started":
+                            yield _format_sse(ChatEvent.thinking(
+                                f"delegated to {agent} on your worker (job_id={ev2.get('job_id', '?')})"
+                            ))
+                        elif kind == "job_queued":
+                            yield _format_sse(ChatEvent.thinking(
+                                str(ev2.get("message", "queued — menunggu slot worker"))
+                            ))
+                except NoWorkerAvailableError as exc:
+                    yield _format_sse(ChatEvent.error(
+                        f"Worker tidak tersedia: {exc} — buka TUI di mesin kamu untuk pasang worker."
+                    ))
         yield "event: done\ndata: {}\n\n"
     finally:
         await task

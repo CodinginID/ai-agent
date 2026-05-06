@@ -57,6 +57,10 @@ logs:
 logs-ollama:
 	docker compose logs -f ollama
 
+## Ikuti log Caddy (reverse proxy) secara realtime
+logs-caddy:
+	docker compose logs -f caddy
+
 ## Lihat log model init / model pull
 logs-init:
 	docker compose logs -f ollama-init

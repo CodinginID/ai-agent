@@ -80,7 +80,7 @@ def clear_session() -> None:
 
 # ── HTTP API ke backend ──────────────────────────────────────────────────────
 
-class LoginAborted(Exception):
+class LoginAbortedError(Exception):
     """User cancel atau code expired."""
 
 
@@ -138,7 +138,7 @@ async def request_pair_code() -> tuple[str, str]:
 async def poll_pair_code(code: str) -> str | None:
     """POST /auth/tui/poll. Return session_token kalau sudah paired, else None.
 
-    Raise ``LoginAborted`` kalau backend bilang code expired/unknown.
+    Raise ``LoginAbortedError`` kalau backend bilang code expired/unknown.
     """
     try:
         async with httpx.AsyncClient(timeout=5.0, trust_env=False) as c:
@@ -149,12 +149,12 @@ async def poll_pair_code(code: str) -> str | None:
     except httpx.HTTPError:
         return None
     if r.status_code == 410:
-        raise LoginAborted("kode pair expired atau tidak dikenal")
+        raise LoginAbortedError("kode pair expired atau tidak dikenal")
     if r.status_code == 200:
         try:
             data = r.json()
         except Exception as exc:
-            raise LoginAborted(
+            raise LoginAbortedError(
                 f"backend balas 200 tapi body bukan JSON valid: {exc} "
                 f"(body={r.text[:120]!r})"
             ) from exc
@@ -162,7 +162,7 @@ async def poll_pair_code(code: str) -> str | None:
         if data.get("status") == "paired" and token:
             return str(token)
         # 200 tapi bukan paired/token kosong — bug yang tidak boleh terjadi.
-        raise LoginAborted(f"backend balas 200 tapi payload aneh: {data!r}")
+        raise LoginAbortedError(f"backend balas 200 tapi payload aneh: {data!r}")
     # 202 pending atau status lain → terus loop polling.
     return None
 

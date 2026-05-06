@@ -1,5 +1,21 @@
 services:
 
+  # ── Redis: shared state untuk worker tunnel + agent context ──────────────────
+  # Privat di network internal backend (tidak ekspos ke host). Worker user
+  # talk ke backend via WS; backend yang akses Redis.
+  redis:
+    image: redis:7-alpine
+    container_name: aiagent_redis
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
   # ── Ollama: AI model server ─────────────────────────────────────────────────
   ollama:
     image: ollama/ollama:latest
@@ -11,8 +27,12 @@ services:
       # Pin model di memory supaya tidak load-unload setiap request.
       # 24h = praktisnya selalu hangat selama backend hidup.
       OLLAMA_KEEP_ALIVE: "24h"
-      # Maximize concurrency untuk request kecil tapi banyak (intent + chat).
-      OLLAMA_NUM_PARALLEL: "2"
+      # 1 slot saja — supaya tidak alokasi context dobel (qwen 1.5b @ 32k ctx
+      # ~1.5GB per slot; dengan 2 slot llama runner di-SIGKILL OOM).
+      OLLAMA_NUM_PARALLEL: "1"
+      # Context window yang masuk akal untuk chat ringan + intent — default
+      # 32k boros memory dan kita tidak butuh sebesar itu.
+      OLLAMA_NUM_CTX: "4096"
     # Catatan: ``deploy.resources`` cuma dipakai di swarm mode. Untuk
     # ``docker compose up`` biasa pakai ``mem_limit`` & ``mem_reservation``.
     mem_limit: 4g
@@ -49,6 +69,7 @@ services:
     env_file: .env
     environment:
       OLLAMA_HOST: http://ollama:11434
+      REDIS_URL: redis://redis:6379/0
       # Untuk full-access agent di Docker, set PROJECT_DIR/AGENT_WORKDIR/TERMINAL_WORKDIR=/workspace di .env.
       # HOST_PROJECT_DIR default "." berarti repo saat ini akan tersedia di /workspace.
     depends_on:
@@ -56,15 +77,13 @@ services:
         condition: service_healthy
       ollama-init:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     volumes:
       - ${HOST_PROJECT_DIR:-.}:/workspace:rw
-    # Tidak ada bind mount /app/data — DB pindah ke Postgres (Neon),
-    # log via `docker logs aiagent_bot` atau Grafana/Loki.
-    # FastAPI (OAuth login + webhook) selalu aktif di port ini.
-    # Arahkan reverse proxy (nginx/caddy) ke port ini untuk HTTPS.
-    ports:
-      - "${PORT:-8080}:${PORT:-8080}"
+    # Port tidak di-expose ke host — hanya Caddy yang bisa akses bot via internal network.
+    # Ini yang memungkinkan zero-downtime deploy: Caddy tetap jalan saat bot direstart.
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:${PORT:-8080}/health || exit 1"]
       interval: 10s
@@ -72,6 +91,46 @@ services:
       retries: 6
       start_period: 20s
 
+  # ── Caddy: reverse proxy ──────────────────────────────────────────────────────
+  # Satu-satunya service yang expose port ke host.
+  # Tetap jalan saat bot direstart → tidak ada port conflict saat deploy ulang.
+  #
+  # Mode HTTP (default): akses via http://server-ip:PORT
+  # Mode HTTPS: isi DOMAIN=your.domain.com di .env, aktifkan blok HTTPS di Caddyfile,
+  #             lalu uncomment port 80 & 443 di bawah.
+  caddy:
+    image: caddy:2-alpine
+    container_name: aiagent_caddy
+    environment:
+      # Caddyfile pakai placeholder ``{$PORT}`` — perlu env var di container
+      # supaya placeholder ke-expand. Default 8080 kalau .env tidak set.
+      PORT: ${PORT:-8080}
+    ports:
+      - "${PORT:-8080}:${PORT:-8080}"
+      # Uncomment untuk HTTPS dengan domain:
+      # - "80:80"
+      # - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      bot:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:${PORT:-8080}/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+
 volumes:
   ollama_data:
     name: aiagent_ollama_data
+  redis_data:
+    name: aiagent_redis_data
+  caddy_data:
+    name: aiagent_caddy_data
+  caddy_config:
+    name: aiagent_caddy_config

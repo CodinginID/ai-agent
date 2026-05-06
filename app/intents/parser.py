@@ -74,6 +74,9 @@ Available intents (pick exactly one):
 - git_pull        : pull latest code from remote  [MEDIUM RISK]
 - list_files      : list files in project directory
 - whoami          : show bot user, working directory, and hostname
+- agent_code      : delegate to Codex CLI on user's machine — refactor, write code, fix bugs
+- agent_review    : delegate to Claude CLI on user's machine — code review, audit
+- agent_architect : delegate to GLM/architect agent — design discussion, planning
 - chat            : greetings, general conversation, explanations, or unrelated questions
 - unknown         : does not match any available action
 
@@ -168,6 +171,14 @@ def _parse_local(text: str, project_id: str) -> Intent | None:
 
     if _has_word(t, "status", "uptime", "health", "sehat", "server", "load", "cpu"):
         return _make("server_status", project_id, 0.9, False, "Server status query")
+
+    # Agent role triggers — eksekusi via Codex/Claude/GLM di mesin user.
+    if _has_phrase(t, "/code ", "/refactor ") or t.startswith(("/code", "/refactor")):
+        return _make("agent_code", project_id, 0.95, False, "Codex code task")
+    if _has_phrase(t, "/review ") or t.startswith("/review"):
+        return _make("agent_review", project_id, 0.95, False, "Claude review task")
+    if _has_phrase(t, "/architect ") or t.startswith("/architect"):
+        return _make("agent_architect", project_id, 0.95, False, "GLM architect task")
 
     return None
 

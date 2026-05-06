@@ -22,6 +22,9 @@ class ChatEventType(str, Enum):
     TEXT_CHUNK = "text_chunk"
     FINAL = "final"
     ERROR = "error"
+    # Use case yield event ini saat intent agent_* — handler luar (chat.py SSE
+    # / bot.py handle_text) yang ngeksekusi via worker tunnel.
+    DELEGATE_TO_AGENT = "delegate_to_agent"
 
 
 @dataclass(frozen=True)
@@ -81,3 +84,16 @@ class ChatEvent:
     @classmethod
     def error(cls, message: str) -> ChatEvent:
         return cls(ChatEventType.ERROR, {"message": message})
+
+    @classmethod
+    def delegate_to_agent(
+        cls,
+        agent: str,
+        prompt: str,
+        intent: str,
+        role: str = "",
+    ) -> ChatEvent:
+        return cls(
+            ChatEventType.DELEGATE_TO_AGENT,
+            {"agent": agent, "prompt": prompt, "intent": intent, "role": role},
+        )

@@ -24,6 +24,8 @@ from app.tui import _state
 from app.tui._chat import send_chat
 from app.tui._commands import (
     cmd_admin_logout,
+    cmd_agents,
+    cmd_audit,
     cmd_help,
     cmd_login,
     cmd_logout_session,
@@ -286,6 +288,10 @@ def run() -> None:
         assert _state.app is not None
         _state.app.create_background_task(_init())
         _state.app.create_background_task(status_loop())
+        # Worker loop: maintain WS connection ke backend supaya bisa terima
+        # job dispatch (codex/claude/glm). Auto-reconnect kalau drop.
+        from app.tui._worker import run_worker_loop
+        _state.app.create_background_task(run_worker_loop())
         await _state.app.run_async()
 
     import asyncio
@@ -315,6 +321,9 @@ async def _dispatch(
             else lambda: cmd_admin_logout(args)  # backwards compat: /logout <email>
         ),
         "me":             cmd_me,
+        "agents":         lambda: cmd_agents(args),
+        "agent":          lambda: cmd_agents(args),
+        "audit":          lambda: cmd_audit(args),
         "pair-telegram":  cmd_pair_telegram,
         "pair":           cmd_pair_telegram,
         "status":         cmd_status,

@@ -89,6 +89,9 @@ class Settings:
     google_client_id: str
     google_client_secret: str
     admin_token: str
+    redis_url: str
+    worker_concurrency: int
+    instance_id: str
 
 
 _DEFAULT_MANUAL_COMMANDS: frozenset[str] = frozenset({
@@ -171,6 +174,15 @@ def load_settings() -> Settings:
         google_client_id=os.getenv("GOOGLE_CLIENT_ID", "").strip(),
         google_client_secret=os.getenv("GOOGLE_CLIENT_SECRET", "").strip(),
         admin_token=os.getenv("ADMIN_TOKEN", "").strip(),
+        redis_url=os.getenv("REDIS_URL", "redis://localhost:6379/0").strip(),
+        worker_concurrency=max(1, int(os.getenv("WORKER_CONCURRENCY", "1"))),
+        # INSTANCE_ID: identifier unik untuk backend instance (multi-instance).
+        # Default = hostname kalau gak diset, fallback random.
+        instance_id=(
+            os.getenv("INSTANCE_ID", "").strip()
+            or os.uname().nodename
+            or "backend-default"
+        ),
     )
 
 

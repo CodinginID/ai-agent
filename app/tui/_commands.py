@@ -24,7 +24,7 @@ from app.tui._completer import TuiCompleter
 from app.tui._http import client, fmt_http_error
 from app.tui._output import print_parts, println
 from app.tui._session import (
-    LoginAborted,
+    LoginAbortedError,
     Session,
     clear_session,
     poll_pair_code,
@@ -218,7 +218,7 @@ async def cmd_login() -> None:
         while asyncio.get_event_loop().time() < deadline and _state.running[0]:
             try:
                 token = await poll_pair_code(code)
-            except LoginAborted as exc:
+            except LoginAbortedError as exc:
                 println("class:err", f"  login dibatalkan: {exc}")
                 return
             if token:
@@ -445,3 +445,156 @@ async def cmd_shell() -> None:
         print("  kembali ke TUI.")
 
     await run_in_terminal(_shell_fn)
+
+
+# ── /agents — per-user agent config ──────────────────────────────────────────
+
+async def cmd_agents(args: list[str]) -> None:
+    """List agents atau toggle/configure.
+
+    Usage:
+      /agents                       — list semua agent
+      /agents <name> on|off         — enable/disable
+      /agents <name> role <role>    — set role (engineer/reviewer/architect)
+      /agents <name> model <model>  — override model name
+    """
+    session = _state.active_session
+    if session is None:
+        println("class:warn", "  login dulu via /login")
+        return
+
+    if not args:
+        await _agents_list(session.token)
+        return
+
+    name = args[0].lower()
+    if len(args) == 1:
+        println("class:warn", f"  usage: /agents {name} on|off|role <role>|model <model>")
+        return
+
+    op = args[1].lower()
+    if op in ("on", "off", "enable", "disable"):
+        await _agents_update(session.token, name, {"enabled": op in ("on", "enable")})
+    elif op == "role" and len(args) >= 3:
+        await _agents_update(session.token, name, {"role": args[2].lower()})
+    elif op == "model" and len(args) >= 3:
+        await _agents_update(session.token, name, {"model": args[2]})
+    else:
+        println("class:warn", f"  unknown op: {op}")
+
+
+async def _agents_list(token: str) -> None:
+    try:
+        async with httpx.AsyncClient(timeout=10.0, trust_env=False) as c:
+            r = await c.get(
+                f"{settings.app_url}/auth/me/agents",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    except httpx.HTTPError as exc:
+        println("class:err", f"  request gagal: {fmt_http_error(exc)}")
+        return
+    if r.status_code != 200:
+        println("class:err", f"  HTTP {r.status_code}: {r.text[:200]}")
+        return
+    agents = r.json().get("agents", [])
+    println("class:section", "  Agent Config")
+    println("class:rule", "  " + "─" * 60)
+    print_parts([
+        ("class:table.hdr", f"  {'agent':<10}{'enabled':<10}{'role':<14}{'workers':<10}"),
+        ("class:table.hdr", "model"),
+    ])
+    println("class:rule", "  " + "─" * 60)
+    for a in agents:
+        en = "yes" if a["enabled"] else "no"
+        en_class = "ok" if a["enabled"] else "dim"
+        n_workers = a.get("installed_on_workers", 0)
+        # Warning kalau enabled tapi tidak ada worker yang punya CLI installed.
+        if a["enabled"] and n_workers == 0:
+            workers_str = "0 ⚠️"
+            workers_class = "warn"
+        elif a["enabled"]:
+            workers_str = f"{n_workers}"
+            workers_class = "ok"
+        else:
+            workers_str = f"{n_workers}"
+            workers_class = "dim"
+        print_parts([
+            ("class:cmd.name",       f"  {a['agent_id']:<10}"),
+            (f"class:{en_class}",    f"{en:<10}"),
+            ("",                     f"{(a.get('role') or '-'):<14}"),
+            (f"class:{workers_class}", f"{workers_str:<10}"),
+            ("class:dim",            f"{a.get('model') or '(default)'}"),
+        ])
+    println("", "")
+    if any(a["enabled"] and a.get("installed_on_workers", 0) == 0 for a in agents):
+        println("class:warn", "  ⚠️  Ada agent enabled tapi belum terinstall di mesin worker manapun.")
+        println("class:dim", "    Install CLI di mesin TUI kamu, atau /agents <name> off.")
+        println("", "")
+    println("class:dim", "  Toggle:  /agents codex on    /agents codex off")
+    println("class:dim", "  Role:    /agents codex role engineer")
+    println("class:dim", "  Model:   /agents codex model gpt-4o-mini")
+
+
+async def _agents_update(token: str, agent_id: str, payload: dict) -> None:
+    try:
+        async with httpx.AsyncClient(timeout=10.0, trust_env=False) as c:
+            r = await c.put(
+                f"{settings.app_url}/auth/me/agents/{agent_id}",
+                headers={"Authorization": f"Bearer {token}"},
+                json=payload,
+            )
+    except httpx.HTTPError as exc:
+        println("class:err", f"  request gagal: {fmt_http_error(exc)}")
+        return
+    if r.status_code != 200:
+        println("class:err", f"  HTTP {r.status_code}: {r.text[:200]}")
+        return
+    cfg = r.json()
+    println("class:ok",
+            f"  ✓ {cfg['agent_id']}: enabled={cfg['enabled']} role={cfg.get('role') or '-'} "
+            f"model={cfg.get('model') or '(default)'}")
+
+
+# ── /audit — Redis Streams audit log ─────────────────────────────────────────
+
+async def cmd_audit(args: list[str]) -> None:
+    """Tampilkan recent audit events (admin only — pakai ADMIN_TOKEN)."""
+    if not settings.admin_token:
+        println("class:warn", "  ADMIN_TOKEN belum diset di .env.")
+        return
+    n = 30
+    if args and args[0].isdigit():
+        n = int(args[0])
+
+    try:
+        async with client() as c:
+            r = await c.get(f"/admin/audit?n={n}")
+    except httpx.HTTPError as exc:
+        println("class:err", f"  request gagal: {fmt_http_error(exc)}")
+        return
+    if r.status_code != 200:
+        println("class:err", f"  HTTP {r.status_code}: {r.text[:200]}")
+        return
+
+    events = r.json().get("events", [])
+    if not events:
+        println("class:dim", "  belum ada audit event.")
+        return
+
+    println("class:section", f"  Audit Log ({len(events)} events)")
+    println("class:rule", "  " + "─" * 70)
+    for ev in events:
+        ts = ev.get("ts", "")[:19].replace("T", " ")
+        event = ev.get("event", "?")
+        agent = ev.get("agent") or ev.get("intent") or "-"
+        status = ev.get("status", "")
+        preview = ev.get("prompt_preview") or ev.get("detail") or ""
+        sty = "ok" if status == "ok" else ("err" if status == "error" else "dim")
+        print_parts([
+            ("class:dim",         f"  {ts:<20}"),
+            ("class:cmd.name",    f"{event:<18}"),
+            ("",                  f"{agent:<10}"),
+            (f"class:{sty}",      f"{status:<8}"),
+            ("class:dim",         preview[:80]),
+        ])
+    println("", "")
