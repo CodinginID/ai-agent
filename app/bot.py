@@ -9,20 +9,11 @@ import socket
 import subprocess
 import time
 from pathlib import Path
-from urllib.parse import urlparse
 
 import psutil
 import requests
 from telegram import Update
-from telegram.ext import (
-    Application,
-    ApplicationBuilder,
-    CommandHandler,
-    ContextTypes,
-    MessageHandler,
-    filters,
-)
-from telegram.request import HTTPXRequest
+from telegram.ext import ContextTypes
 
 from app.adapters.agent_discovery import CliAgentDefinition, CliAgentDiscoveryAdapter
 from app.adapters.database.repositories import ControlPlaneRepository, DatabaseConflictError
@@ -45,7 +36,6 @@ project_store = ProjectStore(BASE_DIR / "data")
 plan_generator = PlanGenerator()
 pending_plans = PendingPlanStore()
 
-TOKEN = settings.telegram_bot_token
 OLLAMA_HOST = settings.ollama_host
 
 # DB session factory — lazy init saat /start pertama kali dipanggil
@@ -92,8 +82,6 @@ TERMINAL_WORKDIR = settings.terminal_workdir
 TERMINAL_ALLOWED_COMMANDS = settings.terminal_allowed_commands
 ADMIN_USER_IDS = settings.admin_user_ids
 ALLOWED_MANUAL_COMMANDS = settings.allowed_manual_commands
-
-PLACEHOLDER_TOKENS = {"", "ISI_TOKEN_KAMU_DI_SINI", "ISI_TOKEN_TELEGRAM_KAMU_DI_SINI"}
 
 VALID_CODEX_SANDBOXES = {"read-only", "workspace-write", "danger-full-access"}
 CODEX_SANDBOX_ALIASES = {
@@ -748,6 +736,10 @@ _ACTION_METADATA: list[tuple[str, str, str]] = [
 
 
 def _build_registry() -> ActionRegistry:
+    from app.actions.docker_ops import register_docker_ops
+    from app.actions.file_ops import register_file_ops
+    from app.actions.git_ops import register_git_ops
+
     registry = ActionRegistry()
     for name, desc, risk in _ACTION_METADATA:
         registry.register(ActionMeta(
@@ -757,6 +749,30 @@ def _build_registry() -> ActionRegistry:
             requires_approval=(risk != "low"),
             handler=ACTIONS[name],
         ))
+
+    # Extended file operations
+    allowed_roots = (PROJECT_DIR, TERMINAL_WORKDIR)
+    register_file_ops(registry, allowed_roots=allowed_roots)
+
+    # Extended git operations
+    register_git_ops(registry, project_dir=PROJECT_DIR)
+
+    # Extended docker operations
+    register_docker_ops(registry, project_dir=PROJECT_DIR)
+
+    # GitHub issues (only when explicitly enabled and configured)
+    if settings.enable_github and settings.github_token and settings.github_repo:
+        from app.actions.github_ops import register_github_ops
+        from app.adapters.github import GitHubAdapter, GitHubUnavailableError
+        try:
+            gh = GitHubAdapter(
+                token=settings.github_token,
+                repo=settings.github_repo,
+            )
+            register_github_ops(registry, github=gh)
+        except GitHubUnavailableError:
+            pass  # Misconfigured — skip silently; admin can check /tools
+
     return registry
 
 
@@ -1682,66 +1698,3 @@ async def pending_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("\n".join(lines))
 
 
-_PROXY_ENV_KEYS = ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy")
-
-
-def _resolve_proxy() -> str | None:
-    proxy_url = next((os.getenv(k) for k in _PROXY_ENV_KEYS if os.getenv(k)), None)
-    if not proxy_url:
-        return None
-    try:
-        p = urlparse(proxy_url)
-        host = p.hostname or "127.0.0.1"
-        port = p.port or 8080
-        with socket.create_connection((host, port), timeout=1):
-            return proxy_url
-    except OSError:
-        # Proxy not reachable — clear env vars so httpx doesn't pick them up either
-        for key in _PROXY_ENV_KEYS:
-            os.environ.pop(key, None)
-        return None
-
-
-def build_application() -> Application:
-    if TOKEN in PLACEHOLDER_TOKENS:
-        raise RuntimeError("TELEGRAM_BOT_TOKEN belum diisi. Buat .env dari .env.example lalu isi token bot.")
-
-    proxy_url = _resolve_proxy()
-    request = HTTPXRequest(
-        proxy=proxy_url,
-        connect_timeout=30,
-        read_timeout=30,
-        write_timeout=30,
-        pool_timeout=30,
-    )
-    app = ApplicationBuilder().token(TOKEN).request(request).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", start))
-    app.add_handler(CommandHandler("whoami", whoami))
-    app.add_handler(CommandHandler("cmd", cmd))
-    app.add_handler(CommandHandler("ask", ask))
-    app.add_handler(CommandHandler("agents", agents))
-    app.add_handler(CommandHandler("tools", tools))
-    app.add_handler(CommandHandler("tool", tool))
-    app.add_handler(CommandHandler("btop", btop))
-    app.add_handler(CommandHandler("spf", spf))
-    app.add_handler(CommandHandler("codex", codex))
-    app.add_handler(CommandHandler("claude", claude))
-    app.add_handler(CommandHandler("reset", reset_chat))
-    app.add_handler(CommandHandler("project", project_cmd))
-    app.add_handler(CommandHandler("projects", projects_cmd))
-    app.add_handler(CommandHandler("project_add", project_add_cmd))
-    app.add_handler(CommandHandler("project_info", project_info_cmd))
-    app.add_handler(CommandHandler("approve", approve_cmd))
-    app.add_handler(CommandHandler("reject", reject_cmd))
-    app.add_handler(CommandHandler("pending", pending_cmd))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-    return app
-
-
-def main() -> None:
-    build_application().run_polling()
-
-
-if __name__ == "__main__":
-    main()

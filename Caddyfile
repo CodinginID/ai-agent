@@ -1,16 +1,27 @@
 # ── Mode HTTP (default) ──────────────────────────────────────────────────────
-# Caddy menerima koneksi di PORT lalu meneruskan ke container bot secara internal.
-# Tidak ada TLS — cocok untuk setup di belakang load-balancer atau saat testing.
+# Aktif saat DOMAIN belum diset. Cocok untuk akses via IP atau testing lokal.
+# Untuk switch ke HTTPS: comment blok ini, uncomment blok HTTPS di bawah.
 :{$PORT:-8080} {
     reverse_proxy bot:{$PORT:-8080}
 }
 
-# ── Mode HTTPS dengan auto-TLS (aktifkan jika punya domain) ──────────────────
+# ── Mode HTTPS dengan auto-TLS ────────────────────────────────────────────────
+# Cara aktifkan:
 # 1. Isi DOMAIN=your.domain.com di .env
-# 2. Pastikan A-record domain mengarah ke IP VPS
-# 3. Expose port 80 & 443 di docker-compose (lihat komentar di compose file)
-# 4. Ganti blok di atas dengan blok ini:
+# 2. Pastikan A-record domain → IP VPS
+# 3. Uncomment port 80 & 443 di docker-compose.yml
+# 4. Comment blok HTTP di atas
+# 5. Uncomment blok ini
+# 6. make deploy
+#
+# Caddy auto-urus Let's Encrypt — tidak perlu setup cert manual.
 #
 # {$DOMAIN} {
 #     reverse_proxy bot:{$PORT:-8080}
+#
+#     header {
+#         Strict-Transport-Security "max-age=31536000; includeSubDomains"
+#         X-Content-Type-Options "nosniff"
+#         X-Frame-Options "DENY"
+#     }
 # }

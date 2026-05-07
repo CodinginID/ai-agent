@@ -25,6 +25,10 @@ class ChatEventType(str, Enum):
     # Use case yield event ini saat intent agent_* — handler luar (chat.py SSE
     # / bot.py handle_text) yang ngeksekusi via worker tunnel.
     DELEGATE_TO_AGENT = "delegate_to_agent"
+    # Execution loop events — emitted by ExecutionLoop for complex requests.
+    OBSERVING = "observing"
+    REFLECTING = "reflecting"
+    RETRYING = "retrying"
 
 
 @dataclass(frozen=True)
@@ -97,3 +101,15 @@ class ChatEvent:
             ChatEventType.DELEGATE_TO_AGENT,
             {"agent": agent, "prompt": prompt, "intent": intent, "role": role},
         )
+
+    @classmethod
+    def observing(cls, message: str) -> ChatEvent:
+        return cls(ChatEventType.OBSERVING, {"message": message})
+
+    @classmethod
+    def reflecting(cls, message: str) -> ChatEvent:
+        return cls(ChatEventType.REFLECTING, {"message": message})
+
+    @classmethod
+    def retrying(cls, attempt: int, reason: str) -> ChatEvent:
+        return cls(ChatEventType.RETRYING, {"attempt": attempt, "reason": reason})

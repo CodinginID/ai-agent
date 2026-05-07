@@ -21,6 +21,8 @@ from app.adapters.ollama import OllamaAdapter
 from app.config import settings
 from app.domain.use_cases import HandleMessageUseCase
 from app.executor.actions import ActionRegistry
+from app.executor.context import ContextCollector
+from app.executor.loop import ExecutionLoop
 from app.intents.parser import IntentParser
 from app.orchestrator.approval import PendingPlanStore
 from app.orchestrator.plans import PlanGenerator
@@ -60,6 +62,20 @@ def _build_pending_plans() -> PendingPlanStore:
     return _store
 
 
+@lru_cache(maxsize=1)
+def _context_collector() -> ContextCollector:
+    return ContextCollector(working_dir=settings.project_dir)
+
+
+@lru_cache(maxsize=1)
+def _execution_loop() -> ExecutionLoop:
+    return ExecutionLoop(
+        ai=_ollama(),
+        context_collector=_context_collector(),
+        working_dir=settings.project_dir,
+    )
+
+
 def build_use_case() -> HandleMessageUseCase:
     """Compose use case dengan semua dependensi konkret."""
     ollama = _ollama()
@@ -71,4 +87,5 @@ def build_use_case() -> HandleMessageUseCase:
         pending_plans=_build_pending_plans(),
         history=SqlAlchemyChatHistory(_session_factory()),
         history_limit=settings.chat_history_limit,
+        execution_loop=_execution_loop(),
     )

@@ -105,6 +105,11 @@ def k_agent_ctx_role(user_id: str, role: str) -> str:
     return f"agent:ctx:{user_id}:{role}"
 
 
+def k_tg_pair(code: str) -> str:
+    """Key untuk Telegram pair code (TTL 15 menit)."""
+    return f"tg:pair:{code}"
+
+
 def k_backend_channel(instance_id: str) -> str:
     """Pub/sub channel untuk routing reply antar backend instance."""
     return f"backend:{instance_id}"

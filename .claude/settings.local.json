@@ -124,7 +124,21 @@
       "Bash(env/bin/python -m py_compile app/tui/_worker.py)",
       "Bash(env/bin/python -m py_compile app/bot.py app/interfaces/chat.py app/domain/use_cases.py app/domain/messaging.py app/intents/parser.py app/intents/schemas.py app/tui/_worker.py)",
       "Bash(env/bin/python *)",
-      "Bash(make deploy *)"
+      "Bash(make deploy *)",
+      "Bash(pytest --version)",
+      "Bash(ls pyproject.toml requirements*.txt)",
+      "Bash(pip3 install *)",
+      "Bash(.venv/bin/pytest tests/ -v)",
+      "Bash(.venv/bin/pytest tests/executor/ -v)",
+      "Bash(go mod *)",
+      "Bash(.venv/bin/pytest tests/test_domain.py tests/actions/test_file_ops.py tests/actions/test_git_ops.py tests/agents/test_pm_agent.py -v)",
+      "Bash(.venv/bin/pytest tests/ -v --ignore=tests/adapters/test_github.py)",
+      "Bash(go build *)",
+      "Bash(.venv/bin/pytest tests/adapters/test_github.py -v)",
+      "Bash(./bin/octopus --version)",
+      "Bash(./bin/octopus --help)",
+      "Bash(go work *)",
+      "Bash(go vet *)"
     ]
   }
 }

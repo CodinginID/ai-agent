@@ -12,7 +12,6 @@ from alembic.config import Config
 
 from app.config import BASE_DIR, settings
 from app.interfaces.gateway import app as gateway_app
-from app.setup.wizard import needs_setup, run_setup_wizard
 
 
 def _is_dev() -> bool:
@@ -42,18 +41,6 @@ def _run_migrations() -> None:
 
 
 def main() -> None:
-    # First-run: no token → interactive setup wizard
-    if needs_setup(settings.telegram_bot_token):
-        if not sys.stdin.isatty():
-            print(
-                "ERROR: TELEGRAM_BOT_TOKEN belum diisi.\n"
-                "Set env var atau isi .env sebelum menjalankan bot.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        run_setup_wizard(BASE_DIR / ".env")
-        # wizard exits after saving .env — user reruns make dev
-
     _run_migrations()
     _setup_file_logging(BASE_DIR / "data")
 

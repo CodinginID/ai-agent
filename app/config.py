@@ -40,7 +40,6 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 @dataclass(frozen=True)
 class Settings:
-    telegram_bot_token: str
     ollama_host: str
     qwen_url: str
     qwen_model: str
@@ -84,6 +83,10 @@ class Settings:
     port: int
     database_url: str
     database_migration_url: str
+
+    github_token: str
+    github_repo: str
+    enable_github: bool
 
     app_url: str
     google_client_id: str
@@ -129,7 +132,6 @@ def load_settings() -> Settings:
     )
 
     return Settings(
-        telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", "").strip(),
         ollama_host=ollama_host,
         qwen_url=os.getenv("QWEN_URL", f"{ollama_host}/api/generate"),
         qwen_model=os.getenv("QWEN_MODEL", os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")),
@@ -170,6 +172,9 @@ def load_settings() -> Settings:
         port=int(os.getenv("PORT", "8080")),
         database_url=database_url,
         database_migration_url=os.getenv("DATABASE_MIGRATION_URL", database_url),
+        github_token=os.getenv("GITHUB_TOKEN", "").strip(),
+        github_repo=os.getenv("GITHUB_REPO", "").strip(),
+        enable_github=_env_bool("ENABLE_GITHUB"),
         app_url=os.getenv("APP_URL", "http://localhost:8080").rstrip("/"),
         google_client_id=os.getenv("GOOGLE_CLIENT_ID", "").strip(),
         google_client_secret=os.getenv("GOOGLE_CLIENT_SECRET", "").strip(),

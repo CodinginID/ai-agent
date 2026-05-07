@@ -51,16 +51,12 @@ class _PairCode:
     user_id: str | None = None
 
 
-@dataclass
-class _TgPairCode:
-    created_at: datetime
-    user_id: str  # user yang inisiasi (sudah login lewat session)
-
-
 # In-memory store — single process dev; pakai Redis di produksi multi-instance.
 _pending_states: dict[str, _PendingState] = {}
 _pair_codes: dict[str, _PairCode] = {}
-_tg_pair_codes: dict[str, _TgPairCode] = {}
+
+# Telegram pair codes disimpan di Redis supaya tidak hilang saat container restart.
+_TG_PAIR_TTL: int = int(_TUI_CODE_TTL.total_seconds())  # 900 detik
 
 
 def _redirect_uri() -> str:
@@ -82,8 +78,7 @@ def _purge_expired() -> None:
     for k in pair_to_drop:
         del _pair_codes[k]
 
-    for k in [k for k, v in _tg_pair_codes.items() if now - v.created_at > _TUI_CODE_TTL]:
-        del _tg_pair_codes[k]
+    # _tg_pair_codes sudah di Redis — TTL diurus otomatis, tidak perlu purge manual.
 
 
 def _new_pair_code() -> str:
@@ -98,14 +93,15 @@ def _new_tg_pair_code() -> str:
     return f"TG-{raw}"
 
 
-def claim_telegram_pair_code(code: str) -> str | None:
-    """Public helper untuk bot.py: klaim code → return user_id.
-
-    Code dihapus setelah klaim (one-shot). Return None kalau tidak valid.
-    """
-    _purge_expired()
-    entry = _tg_pair_codes.pop(code.strip(), None)
-    return entry.user_id if entry else None
+async def claim_telegram_pair_code_async(code: str) -> str | None:
+    """Klaim Telegram pair code dari Redis → return user_id. One-shot (key dihapus)."""
+    from app.adapters.redis_client import get_client, k_tg_pair
+    redis = get_client()
+    key = k_tg_pair(code.strip().upper())
+    user_id = await redis.getdel(key)
+    if user_id is None:
+        return None
+    return user_id.decode() if isinstance(user_id, bytes) else str(user_id)
 
 
 # Cached engine + factory — bikin baru tiap request mahal di Neon Postgres
@@ -495,13 +491,13 @@ async def tui_logout(authorization: str | None = Header(default=None)) -> JSONRe
 
 @router.post("/telegram/pair-init")
 async def telegram_pair_init(
+    payload: dict[str, Any] = Body(default_factory=dict),
     authorization: str | None = Header(default=None),
 ) -> JSONResponse:
     """User yang sudah login Google minta pair code Telegram.
 
-    Return code + deep link ``t.me/<bot>?start=<code>``. User scan QR/buka link
-    di HP → Telegram kirim ``/start <code>`` ke bot → bot link telegram_user_id
-    ke user_id ini.
+    Body (optional): {"bot_username": "nama_bot"}  — TUI fetch via getMe lalu kirim ke sini.
+    Return: {code, deep_link (kalau bot_username tersedia), expires_in_sec}
     """
     resolved = _resolve_session_user(authorization)
     if resolved is None:
@@ -512,25 +508,132 @@ async def telegram_pair_init(
         )
     user_id, _ = resolved
 
+    from app.adapters.redis_client import get_client, k_tg_pair
+    redis = get_client()
+
     _purge_expired()
     code = _new_tg_pair_code()
-    while code in _tg_pair_codes:
+    # Pastikan unik — Redis SET NX (not exists)
+    while not await redis.set(k_tg_pair(code), user_id, ex=_TG_PAIR_TTL, nx=True):
         code = _new_tg_pair_code()
-    _tg_pair_codes[code] = _TgPairCode(
-        created_at=datetime.now(UTC), user_id=user_id
-    )
 
-    from app.adapters.telegram_info import get_bot_username
-    bot_username = await get_bot_username() or "your_bot"
-    deep_link = f"https://t.me/{bot_username}?start={urllib.parse.quote(code)}"
+    # bot_username dikirim TUI setelah validasi token via Telegram getMe.
+    # Kalau tidak ada, return code saja — TUI tampilkan instruksi manual.
+    bot_username = str(payload.get("bot_username", "")).strip().lstrip("@")
+    result: dict[str, Any] = {
+        "code": code,
+        "expires_in_sec": int(_TUI_CODE_TTL.total_seconds()),
+    }
+    if bot_username:
+        result["deep_link"] = f"https://t.me/{bot_username}?start={urllib.parse.quote(code)}"
+        result["bot_username"] = bot_username
 
-    return JSONResponse(
-        {
-            "code": code,
-            "deep_link": deep_link,
-            "expires_in_sec": int(_TUI_CODE_TTL.total_seconds()),
-        }
-    )
+    return JSONResponse(result)
+
+
+# ── Telegram adapter endpoints ───────────────────────────────────────────────
+# Dipakai oleh telegram-adapter (proses terpisah) untuk:
+# 1. Menyelesaikan pairing setelah user klik deep link
+# 2. Resolve Telegram user_id → Core user sebelum tiap pesan
+
+def _require_admin_token(authorization: str | None) -> None:
+    """Raise 401 kalau bukan admin token."""
+    if not settings.admin_token:
+        return  # admin_token kosong = dev mode, skip check
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="admin token required")
+    token = authorization.split(" ", 1)[1].strip()
+    if token != settings.admin_token:
+        raise HTTPException(status_code=401, detail="invalid admin token")
+
+
+@router.post("/telegram/pair-complete")
+async def telegram_pair_complete(
+    payload: dict[str, Any] = Body(...),
+    authorization: str | None = Header(default=None),
+) -> JSONResponse:
+    """Telegram adapter memanggil ini setelah user kirim /start <code>.
+
+    Body: {code, telegram_user_id, username?, first_name?}
+    Return: {user_id, email, display_name}
+    """
+    _require_admin_token(authorization)
+
+    code = str(payload.get("code", "")).strip()
+    telegram_user_id = int(payload.get("telegram_user_id", 0))
+    if not code or not telegram_user_id:
+        raise HTTPException(status_code=400, detail="code dan telegram_user_id wajib diisi")
+
+    user_id = await claim_telegram_pair_code_async(code)
+    if user_id is None:
+        raise HTTPException(status_code=410, detail="code tidak valid atau sudah kedaluwarsa")
+
+    factory = _session_factory_lazy()
+    try:
+        from app.adapters.database.repositories import ControlPlaneRepository, DatabaseConflictError
+        from app.adapters.database.models import UserModel
+        from sqlalchemy import select
+
+        with session_scope(factory) as session:
+            repo = ControlPlaneRepository(session)
+            try:
+                repo.link_telegram_account(
+                    user_id=user_id,
+                    telegram_user_id=telegram_user_id,
+                    username=str(payload.get("username", "") or ""),
+                    first_name=str(payload.get("first_name", "") or ""),
+                )
+            except DatabaseConflictError:
+                pass  # sudah linked sebelumnya — tidak apa-apa
+
+        with session_scope(factory) as session:
+            user = session.scalar(select(UserModel).where(UserModel.id == user_id))
+            if user is None:
+                raise HTTPException(status_code=404, detail="user not found")
+            return JSONResponse({
+                "user_id": user.id,
+                "email": user.email,
+                "display_name": user.display_name,
+            })
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("telegram pair-complete failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/telegram/user/{telegram_user_id}")
+async def telegram_resolve_user(
+    telegram_user_id: int,
+    authorization: str | None = Header(default=None),
+) -> JSONResponse:
+    """Telegram adapter cek apakah Telegram user sudah linked ke Core user.
+
+    Return: {user_id, email, display_name}
+    404 kalau belum pernah pair.
+    """
+    _require_admin_token(authorization)
+
+    factory = _session_factory_lazy()
+    from app.adapters.database.repositories import ControlPlaneRepository
+    from app.adapters.database.models import UserModel
+    from sqlalchemy import select
+
+    with session_scope(factory) as session:
+        repo = ControlPlaneRepository(session)
+        identity = repo.resolve_by_telegram_user_id(telegram_user_id)
+        if identity is None:
+            raise HTTPException(status_code=404, detail="telegram user belum pair")
+
+        user = session.scalar(select(UserModel).where(UserModel.id == identity.user_id))
+        if user is None:
+            raise HTTPException(status_code=404, detail="user not found")
+
+        return JSONResponse({
+            "user_id": user.id,
+            "email": user.email,
+            "display_name": user.display_name,
+        })
 
 
 # ── Per-user agent configuration ─────────────────────────────────────────────

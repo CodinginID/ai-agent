@@ -4,6 +4,7 @@ Flow:
 1. Classify intent via AI (``IntentParser``).
 2. Kalau ``chat``/``unknown`` → stream chat reply dari AI.
 3. Kalau action → generate plan, cek approval, eksekusi, ringkas hasil pakai AI.
+4. Kalau request kompleks → delegasi ke ``ExecutionLoop`` (observe/think/reflect/retry).
 
 Use case yield ``ChatEvent`` sehingga setiap medium (Telegram, TUI, HTTP/SSE)
 render sesuai kemampuan mereka.
@@ -11,10 +12,11 @@ render sesuai kemampuan mereka.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from app.domain.messaging import ChatEvent, MessageContext
+from app.domain.messaging import ChatEvent, ChatEventType, MessageContext
 from app.executor.actions import ActionRegistry
 from app.intents.parser import IntentParser
 from app.intents.schemas import EXECUTABLE_ACTIONS, Intent
@@ -22,6 +24,7 @@ from app.orchestrator.approval import PendingPlanStore
 from app.orchestrator.plans import PlanGenerator
 from app.ports.ai_provider import AIProvider
 from app.ports.chat_history import ChatHistoryStore
+from app.ports.execution_loop import ExecutionLoopPort
 
 _CHAT_PROMPT_TEMPLATE = (
     "Kamu Octopus, AI orchestrator yang dipakai operator server lewat Telegram & TUI.\n"
@@ -47,6 +50,79 @@ _SUMMARIZE_PROMPT = (
 )
 
 
+# Signals that indicate a request needs multi-step reasoning rather than a
+# single predefined action. These are heuristic patterns — false positives are
+# safe because the loop will still produce a result.
+_COMPLEX_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bkenapa\b|\bwhy\b|\bpenyebab\b|\bcause\b", re.IGNORECASE),
+    re.compile(r"\banalisa?\b|\banalyze?\b|\binvestigat\b", re.IGNORECASE),
+    re.compile(r"\bdiagnos\b|\bdebug\b|\btrace\b|\btroubleshoot\b", re.IGNORECASE),
+    re.compile(r"\bberapa\s+kali\b|\bhow\s+many\b|\bhow\s+much\b", re.IGNORECASE),
+    re.compile(r"\bapa\s+yang\s+(terjadi|salah|error)\b", re.IGNORECASE),
+    re.compile(r"\bwhat\s+(happened|went\s+wrong|is\s+wrong)\b", re.IGNORECASE),
+    re.compile(r"\bdan\s+kemudian\b|\bdan\s+juga\b|\blalu\b|\bthen\b", re.IGNORECASE),
+    re.compile(r"\bstep\s+by\s+step\b|\blangkah\s+demi\s+langkah\b", re.IGNORECASE),
+    re.compile(r"\bsetelah\s+itu\b|\bafter\s+that\b", re.IGNORECASE),
+    re.compile(r"\berror\s+log\b|\blog\s+error\b", re.IGNORECASE),
+    re.compile(r"\bjika\s+.+\s+maka\b|\bif\s+.+\s+then\b", re.IGNORECASE),
+    re.compile(r"\bapa\s+isi\s+file\b|\bread\s+file\b|\bshow\s+file\b", re.IGNORECASE),
+    re.compile(r"\bbandingkan?\b|\bcompare\b|\bdiff\b", re.IGNORECASE),
+)
+
+_EXPLICIT_SIMPLE_INTENTS: frozenset[str] = frozenset({
+    "server_status", "memory", "disk", "processes",
+    "docker_ps", "docker_images", "docker_stats", "docker_logs",
+    "git_status", "list_files", "whoami",
+})
+
+
+def _is_complex_request(text: str, intent_name: str) -> bool:
+    """Heuristic: return True if the request warrants multi-step execution loop.
+
+    Simple direct action lookups (memory, docker ps, git status, dsb.) use the
+    existing intent→action path. Everything else that matches complexity signals
+    — or that resolved to ``unknown`` — goes through the loop.
+    """
+    if intent_name in _EXPLICIT_SIMPLE_INTENTS:
+        return False
+    if intent_name == "unknown":
+        return True
+    return any(p.search(text) for p in _COMPLEX_PATTERNS)
+
+
+def _loop_event_to_chat_event(loop_event_type: str, loop_data: dict) -> ChatEvent | None:
+    """Bridge a LoopEvent into a ChatEvent for the SSE stream.
+
+    Returns None for event types that have no ChatEvent equivalent.
+    """
+    if loop_event_type == "observing":
+        return ChatEvent.observing(str(loop_data.get("message", "")))
+    if loop_event_type == "thinking":
+        return ChatEvent.thinking(str(loop_data.get("message", "")))
+    if loop_event_type == "action_started":
+        action = str(loop_data.get("action", ""))
+        cmd = str(loop_data.get("command", loop_data.get("path", "")))
+        return ChatEvent.action_started(f"{action}: {cmd}" if cmd else action)
+    if loop_event_type == "action_result":
+        action = str(loop_data.get("action", ""))
+        output = str(loop_data.get("output", ""))
+        return ChatEvent.action_result(action, output)
+    if loop_event_type == "reflecting":
+        return ChatEvent.reflecting(str(loop_data.get("message", "")))
+    if loop_event_type == "retrying":
+        return ChatEvent.retrying(
+            attempt=int(loop_data.get("attempt", 0)),
+            reason=str(loop_data.get("reason", "")),
+        )
+    if loop_event_type == "text_chunk":
+        return ChatEvent.text_chunk(str(loop_data.get("text", "")))
+    if loop_event_type == "final":
+        return ChatEvent.final(str(loop_data.get("text", "")))
+    if loop_event_type == "error":
+        return ChatEvent.error(str(loop_data.get("message", "")))
+    return None
+
+
 @dataclass
 class HandleMessageUseCase:
     """Orchestrator: pesan masuk → events keluar.
@@ -62,6 +138,8 @@ class HandleMessageUseCase:
     pending_plans: PendingPlanStore
     history: ChatHistoryStore
     history_limit: int = 6
+    # Optional: when provided, complex requests are routed through the agentic loop.
+    execution_loop: ExecutionLoopPort | None = field(default=None)
 
     def handle(self, text: str, ctx: MessageContext) -> Iterator[ChatEvent]:
         """Pure synchronous generator — adapter layer adapts ke async kalau perlu."""
@@ -112,10 +190,42 @@ class HandleMessageUseCase:
             yield from self._handle_chat(text, ctx)
             return
 
-        # ── 4. Action path ────────────────────────────────────────────────────
+        # ── 4. Complex request → Execution Loop ──────────────────────────────
+        if self.execution_loop is not None and _is_complex_request(text, intent.intent):
+            yield from self._handle_loop(text, ctx)
+            return
+
+        # ── 5. Simple action path ─────────────────────────────────────────────
         yield from self._handle_action(text, intent, ctx)
 
     # ── private ───────────────────────────────────────────────────────────────
+
+    def _handle_loop(self, text: str, ctx: MessageContext) -> Iterator[ChatEvent]:
+        """Route complex request through ExecutionLoop. Bridge LoopEvents → ChatEvents."""
+        assert self.execution_loop is not None  # caller checks before routing here
+
+        history_lines: list[str] = []
+        for msg in self.history.recent(ctx.user_id, self.history_limit):
+            role = "User" if msg.role == "user" else "Assistant"
+            history_lines.append(f"{role}: {msg.content}")
+        history_text = "\n".join(history_lines)
+
+        self.history.append(ctx.user_id, "user", text)
+
+        final_text = ""
+        try:
+            for loop_ev in self.execution_loop.run(text, history=history_text):
+                chat_ev = _loop_event_to_chat_event(loop_ev.type, loop_ev.data)
+                if chat_ev is not None:
+                    if chat_ev.type == ChatEventType.FINAL:
+                        final_text = str(chat_ev.payload.get("text", ""))
+                    yield chat_ev
+        except Exception as exc:
+            yield ChatEvent.error(f"Execution loop failed: {exc}")
+            return
+
+        if final_text:
+            self.history.append(ctx.user_id, "assistant", final_text)
 
     def _handle_chat(self, text: str, ctx: MessageContext) -> Iterator[ChatEvent]:
         history_lines = []

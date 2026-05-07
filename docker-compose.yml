@@ -91,6 +91,31 @@ services:
       retries: 6
       start_period: 20s
 
+  # ── Telegram Adapter: opsional, aktifkan dengan `--profile telegram` ──────────
+  # Standalone bot yang forward pesan ke Core /chat/send.
+  # User bawa token bot sendiri — Core tidak punya TELEGRAM_BOT_TOKEN.
+  #
+  # Cara aktifkan:
+  #   docker compose --profile telegram up -d telegram-adapter
+  #
+  # Env yang dibutuhkan di .env:
+  #   TELEGRAM_BOT_TOKEN     — token bot Telegram milik user
+  #   OCTOPUS_ADMIN_TOKEN    — sama dengan ADMIN_TOKEN di Core
+  #   TELEGRAM_BOT_USERNAME  — username bot (tanpa @), untuk deep link pairing
+  # Tidak perlu OCTOPUS_USER_EMAIL — user pair sendiri via /start di Telegram.
+  telegram-adapter:
+    build: ./telegram-adapter
+    container_name: aiagent_telegram
+    env_file: .env
+    environment:
+      OCTOPUS_CORE_URL: http://bot:${PORT:-8080}
+    depends_on:
+      bot:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - telegram
+
   # ── Caddy: reverse proxy ──────────────────────────────────────────────────────
   # Satu-satunya service yang expose port ke host.
   # Tetap jalan saat bot direstart → tidak ada port conflict saat deploy ulang.
@@ -107,7 +132,7 @@ services:
       PORT: ${PORT:-8080}
     ports:
       - "${PORT:-8080}:${PORT:-8080}"
-      # Uncomment untuk HTTPS dengan domain:
+      # Uncomment dua baris di bawah kalau DOMAIN diset di .env (mode HTTPS):
       # - "80:80"
       # - "443:443"
     volumes:
