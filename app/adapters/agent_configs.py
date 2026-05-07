@@ -7,10 +7,12 @@ row sendiri per agent_id, di-manage via Telegram & TUI commands.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
-from sqlalchemy.orm import sessionmaker
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import sessionmaker
 
 from app.adapters.database.models import UserAgentConfigModel
 

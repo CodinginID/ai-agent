@@ -387,6 +387,7 @@ def _maybe_prepend_handoff(user_id: str, current_role: str, prompt: str) -> str:
         return prompt
     # Sync wrapper supaya bisa di-call dari sync use case generator.
     import asyncio
+
     from app.adapters.agent_context import build_handoff_prefix, fetch_role
     try:
         prev = asyncio.run(fetch_role(user_id, prev_role))

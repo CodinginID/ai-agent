@@ -52,7 +52,7 @@ class GitHubCreateIssueAction:
         title = str(params.get("title", "")).strip()
         body = str(params.get("body", ""))
         labels_raw = params.get("labels", [])
-        labels = [str(l) for l in labels_raw] if isinstance(labels_raw, list) else []
+        labels = [str(lbl) for lbl in labels_raw] if isinstance(labels_raw, list) else []
 
         if not title:
             return "Error: parameter 'title' wajib diisi."

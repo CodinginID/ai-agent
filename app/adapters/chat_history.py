@@ -9,10 +9,12 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
-from sqlalchemy.orm import sessionmaker
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import sessionmaker
 
 from app.adapters.database.models import ChatMessageModel
 from app.ports.chat_history import ChatHistoryStore, ChatMessage, Role

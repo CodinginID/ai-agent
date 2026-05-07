@@ -46,12 +46,12 @@ from app.tui._output import (
     print_parts,
     println,
 )
+from app.tui._session import clear_session, load_session, validate_session
 from app.tui._statusbar import (
     get_status_bar_text,
     status_loop,
     update_status,
 )
-from app.tui._session import clear_session, load_session, validate_session
 
 _HISTORY_FILE: Path = BASE_DIR / "data" / ".tui_history"
 

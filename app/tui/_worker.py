@@ -18,6 +18,7 @@ Agent yang didukung:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import shutil
@@ -89,7 +90,7 @@ async def _spawn_streaming(
                 else f"failed with exit {proc.returncode}"
             ),
         }
-    except asyncio.TimeoutError:
+    except TimeoutError:
         proc.kill()
         await proc.wait()
         yield {
@@ -239,14 +240,12 @@ async def _execute_agent(
         raise
     except Exception as exc:
         logger.exception("agent %s crashed", agent)
-        try:
+        with contextlib.suppress(ConnectionClosed):
             await ws.send(json.dumps({
                 "type": "job_error",
                 "job_id": job_id,
                 "message": f"{type(exc).__name__}: {exc}",
             }))
-        except ConnectionClosed:
-            pass
 
 
 # ── main worker loop ─────────────────────────────────────────────────────────
@@ -262,10 +261,8 @@ async def _handle_message(ws: websockets.ClientConnection, raw: str) -> None:
         worker_id = msg.get("worker_id", "?")
         logger.info("worker registered: id=%s", worker_id)
         # Tampilkan ke user juga (ringan, tidak block UI)
-        try:
+        with contextlib.suppress(Exception):
             println("class:dim", f"  ✓ worker terhubung ke backend (id={worker_id})")
-        except Exception:
-            pass
     elif kind == "heartbeat_ack":
         pass
     elif kind == "job":
@@ -273,7 +270,7 @@ async def _handle_message(ws: websockets.ClientConnection, raw: str) -> None:
         agent = str(msg.get("agent", ""))
         prompt = str(msg.get("prompt", ""))
         if job_id and agent:
-            asyncio.create_task(_execute_agent(ws, job_id, agent, prompt))
+            _task = asyncio.create_task(_execute_agent(ws, job_id, agent, prompt))
     else:
         logger.debug("unknown msg from backend: %s", kind)
 
@@ -332,10 +329,8 @@ async def _connection_session(token: str) -> None:
                 await _handle_message(ws, raw)
         finally:
             hb_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await hb_task
-            except asyncio.CancelledError:
-                pass
 
 
 async def run_worker_loop() -> None:

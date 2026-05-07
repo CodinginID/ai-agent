@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -17,7 +16,6 @@ from app.executor.context import ContextCollector, EnvironmentContext
 from app.executor.loop import (
     ExecutionLoop,
     LoopEvent,
-    ReflectionResult,
     _execute_file_read,
     _parse_decision,
     _parse_reflection,

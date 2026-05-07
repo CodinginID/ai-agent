@@ -19,6 +19,7 @@ routing — tidak relevan sekarang karena baru satu replica.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import random
@@ -140,11 +141,9 @@ async def _pubsub_listener_loop() -> None:
     except asyncio.CancelledError:
         pass
     finally:
-        try:
+        with contextlib.suppress(Exception):
             await pubsub.unsubscribe(channel)
             await pubsub.aclose()
-        except Exception:
-            pass
 
 
 async def start_pubsub_listener() -> None:
@@ -158,10 +157,8 @@ async def stop_pubsub_listener() -> None:
     global _pubsub_task
     if _pubsub_task is not None:
         _pubsub_task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await _pubsub_task
-        except asyncio.CancelledError:
-            pass
         _pubsub_task = None
 
 
@@ -388,7 +385,7 @@ async def dispatch_agent_job(
             while True:
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=timeout_sec)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     await job_store.update_status(
                         job_id, "error",
                         error=f"timeout {timeout_sec:.0f}s — worker tidak balas",

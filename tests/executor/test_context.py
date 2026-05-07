@@ -6,8 +6,6 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from app.executor.context import ContextCollector, EnvironmentContext, _run_quietly
 
 
@@ -22,7 +20,6 @@ def test_run_quietly_returns_stdout_on_success() -> None:
 
 
 def test_run_quietly_returns_error_message_when_command_not_found() -> None:
-    import subprocess
     with patch("subprocess.run", side_effect=FileNotFoundError):
         result = _run_quietly(["nonexistent-command"])
     assert "not found" in result

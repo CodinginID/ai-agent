@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from app.executor.context import ContextCollector, EnvironmentContext
+from app.executor.context import ContextCollector
 from app.executor.runner import DEFAULT_TIMEOUT, run_safe
 from app.ports.ai_provider import AIProvider
 
@@ -236,6 +236,7 @@ class ExecutionLoop:
             logger.warning("context collection failed: %s", exc)
             # Build minimal fallback context so we can still proceed.
             from datetime import datetime
+
             from app.executor.context import EnvironmentContext
             env_ctx = EnvironmentContext(
                 git_status="(unavailable)",

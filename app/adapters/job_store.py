@@ -15,7 +15,6 @@ TTL hash: ~1 jam — cukup untuk debug, gak grow infinite.
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import UTC, datetime
 from typing import Any

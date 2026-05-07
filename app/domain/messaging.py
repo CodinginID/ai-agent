@@ -8,12 +8,12 @@ adapter (Telegram/HTTP/TUI) terjemahkan ke output mereka masing-masing.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
 
-class ChatEventType(str, Enum):
+class ChatEventType(StrEnum):
     THINKING = "thinking"
     INTENT_CLASSIFIED = "intent_classified"
     APPROVAL_REQUIRED = "approval_required"

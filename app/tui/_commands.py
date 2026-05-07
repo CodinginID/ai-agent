@@ -416,7 +416,7 @@ async def cmd_logs(args: list[str]) -> None:
 
     try:
         stdout_bytes, _ = await asyncio.wait_for(proc.communicate(), timeout=10.0)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         proc.kill()
         await proc.wait()
         println("class:warn", "  docker logs timeout (10s).")

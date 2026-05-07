@@ -8,9 +8,11 @@ tidak ikut import adapter.
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import TYPE_CHECKING
 
-from sqlalchemy import Engine
-from sqlalchemy.orm import sessionmaker
+if TYPE_CHECKING:
+    from sqlalchemy import Engine
+    from sqlalchemy.orm import sessionmaker
 
 from app.adapters.chat_history import SqlAlchemyChatHistory
 from app.adapters.database.session import (

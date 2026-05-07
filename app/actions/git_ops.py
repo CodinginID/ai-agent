@@ -114,7 +114,7 @@ class GitAddAction:
             file_list = ["."]
 
         output, returncode = run_safe(
-            ["git", "add", "--"] + file_list,
+            ["git", "add", "--", *file_list],
             cwd=self.project_dir,
         )
         if returncode != 0:

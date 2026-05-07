@@ -61,7 +61,7 @@ def _safe_url(url: str) -> str:
     if "@" not in url:
         return url
     scheme, rest = url.split("://", 1)
-    creds, host = rest.split("@", 1)
+    _, host = rest.split("@", 1)
     return f"{scheme}://***@{host}"
 
 

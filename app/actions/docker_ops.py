@@ -167,7 +167,7 @@ class DockerExecAction:
             return f"Command tidak valid: {exc}"
 
         output, returncode = run_safe(
-            ["docker", "exec", container] + cmd_parts
+            ["docker", "exec", container, *cmd_parts]
         )
         if returncode != 0:
             return f"docker exec gagal:\n{output}"

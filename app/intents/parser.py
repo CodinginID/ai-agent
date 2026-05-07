@@ -48,10 +48,7 @@ _ACTION_KEYWORDS = (
 
 def _has_word(text: str, *words: str) -> bool:
     """Word-boundary match — hindari substring false-positive (disk vs diskusi)."""
-    for w in words:
-        if re.search(rf"\b{re.escape(w)}\b", text, re.IGNORECASE):
-            return True
-    return False
+    return any(re.search(rf"\b{re.escape(w)}\b", text, re.IGNORECASE) for w in words)
 
 
 def _has_phrase(text: str, *phrases: str) -> bool:

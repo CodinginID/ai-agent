@@ -20,6 +20,7 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
+from typing import Annotated
 
 from fastapi import APIRouter, Body, Header, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -98,13 +99,12 @@ async def _stream_events(text: str, ctx: MessageContext) -> AsyncIterator[str]:
     Saat use case yield ``DELEGATE_TO_AGENT``, kita sambung ke worker tunnel
     user-nya (via WS dispatcher) — relay chunks balik sebagai SSE event biasa.
     """
+    from app.adapters.audit import log_event
     from app.domain.messaging import ChatEventType
     from app.interfaces.worker_ws import (
         NoWorkerAvailableError,
         dispatch_agent_job,
     )
-
-    from app.adapters.audit import log_event
 
     await log_event(
         "chat_send",
@@ -207,7 +207,7 @@ async def _stream_events(text: str, ctx: MessageContext) -> AsyncIterator[str]:
 
 @router.post("/send")
 async def chat_send(
-    req: ChatSendRequest = Body(...),
+    req: Annotated[ChatSendRequest, Body(...)],
     authorization: str | None = Header(default=None),
 ) -> StreamingResponse:
     text = req.text.strip()

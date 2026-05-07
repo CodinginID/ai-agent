@@ -9,6 +9,7 @@ yield ke loop di tengah-tengah. HTTP call ke backend async.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 from dataclasses import dataclass
@@ -64,18 +65,13 @@ def load_session() -> Session | None:
 def save_session(session: Session) -> None:
     _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     _SESSION_FILE.write_text(json.dumps(session.to_dict(), indent=2))
-    try:
+    with contextlib.suppress(OSError):
         os.chmod(_SESSION_FILE, 0o600)
-    except OSError:
-        # Windows atau filesystem tanpa POSIX perms — abaikan.
-        pass
 
 
 def clear_session() -> None:
-    try:
+    with contextlib.suppress(FileNotFoundError):
         _SESSION_FILE.unlink()
-    except FileNotFoundError:
-        pass
 
 
 # ── HTTP API ke backend ──────────────────────────────────────────────────────

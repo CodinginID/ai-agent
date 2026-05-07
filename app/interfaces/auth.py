@@ -1,17 +1,20 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import secrets
 import urllib.parse
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 import httpx
-from fastapi import APIRouter, Body, Header, HTTPException, status
+from fastapi import APIRouter, Body, Header, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from sqlalchemy import select
 
-from app.adapters.database.repositories import ControlPlaneRepository
+from app.adapters.database.models import UserModel
+from app.adapters.database.repositories import ControlPlaneRepository, DatabaseConflictError
 from app.adapters.database.session import (
     create_database_engine,
     create_session_factory,
@@ -71,9 +74,8 @@ def _purge_expired() -> None:
     pair_to_drop: list[str] = []
     for k, v in _pair_codes.items():
         age = now - v.created_at
-        if v.status == "paired" and age > _TUI_PAIRED_TTL:
-            pair_to_drop.append(k)
-        elif v.status != "paired" and age > _TUI_CODE_TTL:
+        ttl = _TUI_PAIRED_TTL if v.status == "paired" else _TUI_CODE_TTL
+        if age > ttl:
             pair_to_drop.append(k)
     for k in pair_to_drop:
         del _pair_codes[k]
@@ -414,7 +416,7 @@ async def tui_login(code: str | None = None) -> HTMLResponse:
 
 
 @router.post("/tui/poll")
-async def tui_poll(payload: dict[str, str] = Body(...)) -> JSONResponse:
+async def tui_poll(payload: Annotated[dict[str, str], Body(...)]) -> JSONResponse:
     """TUI polling: kalau sudah paired, return session_token."""
     code = payload.get("code", "").strip()
     if not code:
@@ -460,9 +462,6 @@ async def auth_me(authorization: str | None = Header(default=None)) -> JSONRespo
     user_id, _ = resolved
     factory = _session_factory_lazy()
     with session_scope(factory) as session:
-        from app.adapters.database.models import UserModel
-        from sqlalchemy import select
-
         user = session.scalar(select(UserModel).where(UserModel.id == user_id))
         if user is None:
             raise HTTPException(status_code=404, detail="user not found")
@@ -491,7 +490,7 @@ async def tui_logout(authorization: str | None = Header(default=None)) -> JSONRe
 
 @router.post("/telegram/pair-init")
 async def telegram_pair_init(
-    payload: dict[str, Any] = Body(default_factory=dict),
+    payload: Annotated[dict[str, Any], Body(default_factory=dict)],
     authorization: str | None = Header(default=None),
 ) -> JSONResponse:
     """User yang sudah login Google minta pair code Telegram.
@@ -549,7 +548,7 @@ def _require_admin_token(authorization: str | None) -> None:
 
 @router.post("/telegram/pair-complete")
 async def telegram_pair_complete(
-    payload: dict[str, Any] = Body(...),
+    payload: Annotated[dict[str, Any], Body(...)],
     authorization: str | None = Header(default=None),
 ) -> JSONResponse:
     """Telegram adapter memanggil ini setelah user kirim /start <code>.
@@ -570,21 +569,15 @@ async def telegram_pair_complete(
 
     factory = _session_factory_lazy()
     try:
-        from app.adapters.database.repositories import ControlPlaneRepository, DatabaseConflictError
-        from app.adapters.database.models import UserModel
-        from sqlalchemy import select
-
         with session_scope(factory) as session:
             repo = ControlPlaneRepository(session)
-            try:
+            with contextlib.suppress(DatabaseConflictError):
                 repo.link_telegram_account(
                     user_id=user_id,
                     telegram_user_id=telegram_user_id,
                     username=str(payload.get("username", "") or ""),
                     first_name=str(payload.get("first_name", "") or ""),
                 )
-            except DatabaseConflictError:
-                pass  # sudah linked sebelumnya — tidak apa-apa
 
         with session_scope(factory) as session:
             user = session.scalar(select(UserModel).where(UserModel.id == user_id))
@@ -615,10 +608,6 @@ async def telegram_resolve_user(
     _require_admin_token(authorization)
 
     factory = _session_factory_lazy()
-    from app.adapters.database.repositories import ControlPlaneRepository
-    from app.adapters.database.models import UserModel
-    from sqlalchemy import select
-
     with session_scope(factory) as session:
         repo = ControlPlaneRepository(session)
         identity = repo.resolve_by_telegram_user_id(telegram_user_id)
@@ -679,7 +668,7 @@ async def list_my_agents(
 @router.put("/me/agents/{agent_id}")
 async def upsert_my_agent(
     agent_id: str,
-    payload: dict[str, Any] = Body(...),
+    payload: Annotated[dict[str, Any], Body(...)],
     authorization: str | None = Header(default=None),
 ) -> JSONResponse:
     """Update konfigurasi agent untuk user.
