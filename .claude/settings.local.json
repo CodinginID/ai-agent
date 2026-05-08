@@ -138,7 +138,9 @@
       "Bash(./bin/octopus --version)",
       "Bash(./bin/octopus --help)",
       "Bash(go work *)",
-      "Bash(go vet *)"
+      "Bash(go vet *)",
+      "Bash(.venv/bin/pytest tests/ -q --tb=no)",
+      "Bash(.venv/bin/pytest *)"
     ]
   }
 }

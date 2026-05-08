@@ -22,6 +22,7 @@ import contextlib
 import json
 import logging
 import shutil
+import socket
 from collections.abc import AsyncIterator
 from typing import Any
 from urllib.parse import urlparse, urlunparse
@@ -323,6 +324,7 @@ async def _connection_session(token: str) -> None:
         # warn kalau user enable agent tapi binary-nya belum terpasang.
         await ws.send(json.dumps({
             "type": "capabilities",
+            "device_name": socket.gethostname(),
             "agents": _detect_capabilities(),
         }))
         hb_task = asyncio.create_task(_heartbeat_loop(ws))

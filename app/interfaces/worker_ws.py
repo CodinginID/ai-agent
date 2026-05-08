@@ -170,6 +170,47 @@ class JobTimeoutError(Exception):
     """Worker tidak balas dalam batas waktu."""
 
 
+_AGENT_DISPLAY: dict[str, tuple[str, str]] = {
+    "codex":  ("OpenAI Codex", "openai"),
+    "claude": ("Claude (Anthropic)", "anthropic"),
+    "glm":    ("GLM (Zhipu)", "zhipu"),
+}
+
+
+def _persist_capabilities(
+    user_id: str,
+    device_name: str,
+    agents_caps: dict[str, Any],
+) -> None:
+    """Persist per-device agent installation state to the DB (runs in thread)."""
+    from app.adapters.database.repositories import ControlPlaneRepository
+    from app.composition import _session_factory
+
+    factory = _session_factory()
+    with factory() as session:
+        repo = ControlPlaneRepository(session)
+        device = repo.find_or_create_device_by_name(user_id, device_name)
+        for agent_id, info in agents_caps.items():
+            if not isinstance(info, dict):
+                continue
+            display_name, provider = _AGENT_DISPLAY.get(agent_id, (agent_id, "unknown"))
+            installed = bool(info.get("installed"))
+            executable = info.get("path") or info.get("bin") or None
+            repo.upsert_agent_integration(
+                device_id=device.id,
+                agent_id=agent_id,
+                display_name=display_name,
+                provider=provider,
+                executable=executable,
+                installed=installed,
+                enabled=False,
+                probe_ok=installed,
+                status="installed" if installed else "not_installed",
+                capabilities=info,
+            )
+        session.commit()
+
+
 async def _resolve_session(token: str) -> str | None:
     """Validate session token via existing UserSessionRepository."""
     if not token:
@@ -233,6 +274,9 @@ async def worker_socket(
                 from app.adapters.redis_client import get_client, k_caps
                 from app.adapters.worker_registry import WORKER_TTL_SEC
                 agents_caps = msg.get("agents", {}) or {}
+                device_name = msg.get("device_name") or worker_id
+
+                # Redis presence (fast path for /me/agents)
                 client = get_client()
                 pipe = client.pipeline()
                 for aid, info in agents_caps.items():
@@ -244,6 +288,11 @@ async def worker_socket(
                     else:
                         pipe.srem(k_caps(user_id, aid), worker_id)
                 await pipe.execute()
+
+                # DB persistence (per-device agent integration registry)
+                await asyncio.to_thread(
+                    _persist_capabilities, user_id, device_name, agents_caps
+                )
                 logger.debug("worker %s capabilities: %s", worker_id, list(agents_caps))
             elif kind in ("job_chunk", "job_done", "job_error"):
                 if not msg.get("job_id"):

@@ -123,6 +123,44 @@ class ControlPlaneRepository:
         self._session.flush()
         return project
 
+    def find_or_create_device_by_name(self, user_id: str, name: str) -> DeviceModel:
+        """Find existing device by (user_id, name) or create one for WS auto-registration."""
+        import hashlib
+
+        existing = self._session.scalar(
+            select(DeviceModel).where(
+                DeviceModel.user_id == user_id,
+                DeviceModel.name == name,
+            )
+        )
+        if existing is not None:
+            return existing
+        token_hash = hashlib.sha256(f"ws:{user_id}:{name}".encode()).hexdigest()[:64]
+        device = DeviceModel(user_id=user_id, name=name, device_token_hash=token_hash)
+        self._session.add(device)
+        self._session.flush()
+        return device
+
+    def list_devices(self, user_id: str) -> list[DeviceModel]:
+        return list(self._session.scalars(
+            select(DeviceModel).where(DeviceModel.user_id == user_id)
+        ))
+
+    def get_device(self, device_id: str, user_id: str) -> DeviceModel | None:
+        return self._session.scalar(
+            select(DeviceModel).where(
+                DeviceModel.id == device_id,
+                DeviceModel.user_id == user_id,
+            )
+        )
+
+    def list_agent_integrations(self, device_id: str) -> list[AgentIntegrationModel]:
+        return list(self._session.scalars(
+            select(AgentIntegrationModel).where(
+                AgentIntegrationModel.device_id == device_id
+            )
+        ))
+
     def upsert_agent_integration(
         self,
         device_id: str,

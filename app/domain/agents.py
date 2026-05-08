@@ -82,3 +82,17 @@ def agent_status_detail(capability: AgentCapability) -> str:
     if capability.enabled:
         return "enabled in configuration but executable is missing"
     return "disabled in configuration and executable is missing"
+
+
+def readiness_message(assignments: Sequence[AgentRoleAssignment]) -> str:
+    """Return a human-readable summary of assigned agents' readiness."""
+    if not assignments:
+        return "No agents assigned."
+    ready = [a for a in assignments if a.ready]
+    not_ready = [a for a in assignments if not a.ready]
+    parts: list[str] = []
+    if ready:
+        parts.append(f"{len(ready)} agent(s) ready: " + ", ".join(a.agent_id for a in ready))
+    if not_ready:
+        parts.append(f"{len(not_ready)} not ready: " + ", ".join(a.agent_id for a in not_ready))
+    return ". ".join(parts) + "."

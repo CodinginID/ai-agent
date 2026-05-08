@@ -664,6 +664,77 @@ async def list_my_agents(
     return JSONResponse({"agents": agents})
 
 
+@router.get("/me/devices")
+async def list_my_devices(
+    authorization: str | None = Header(default=None),
+) -> JSONResponse:
+    """List semua device yang pernah connect sebagai worker untuk user ini."""
+    resolved = _resolve_session_user(authorization)
+    if resolved is None:
+        raise HTTPException(status_code=401, detail="invalid or expired session")
+    user_id, _ = resolved
+
+    from app.adapters.database.repositories import ControlPlaneRepository
+
+    factory = _session_factory_lazy()
+    with factory() as session:
+        repo = ControlPlaneRepository(session)
+        devices = repo.list_devices(user_id)
+        return JSONResponse({
+            "devices": [
+                {
+                    "device_id": d.id,
+                    "name": d.name,
+                    "status": d.status,
+                    "last_seen_at": d.last_seen_at.isoformat() if d.last_seen_at else None,
+                    "created_at": d.created_at.isoformat(),
+                }
+                for d in devices
+            ]
+        })
+
+
+@router.get("/me/devices/{device_id}/agents")
+async def list_device_agents(
+    device_id: str,
+    authorization: str | None = Header(default=None),
+) -> JSONResponse:
+    """List agent integrations yang terdeteksi di sebuah device."""
+    resolved = _resolve_session_user(authorization)
+    if resolved is None:
+        raise HTTPException(status_code=401, detail="invalid or expired session")
+    user_id, _ = resolved
+
+    from app.adapters.database.repositories import ControlPlaneRepository
+
+    factory = _session_factory_lazy()
+    with factory() as session:
+        repo = ControlPlaneRepository(session)
+        device = repo.get_device(device_id, user_id)
+        if device is None:
+            raise HTTPException(status_code=404, detail="device not found")
+        integrations = repo.list_agent_integrations(device_id)
+        return JSONResponse({
+            "device_id": device_id,
+            "device_name": device.name,
+            "agents": [
+                {
+                    "agent_id": i.agent_id,
+                    "display_name": i.display_name,
+                    "provider": i.provider,
+                    "installed": i.installed,
+                    "enabled": i.enabled,
+                    "ready": i.ready,
+                    "status": i.status,
+                    "version": i.version,
+                    "executable": i.executable,
+                    "last_probe_at": i.last_probe_at.isoformat() if i.last_probe_at else None,
+                }
+                for i in integrations
+            ],
+        })
+
+
 @router.put("/me/agents/{agent_id}")
 async def upsert_my_agent(
     agent_id: str,
