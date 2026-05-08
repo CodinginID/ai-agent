@@ -17,10 +17,13 @@ import json
 import logging
 import os
 import sys
+from typing import TYPE_CHECKING
 
 import httpx
-from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+
+if TYPE_CHECKING:
+    from telegram import Update
 
 logging.basicConfig(
     level=logging.INFO,
@@ -100,49 +103,48 @@ async def _call_core(user_email: str, user_text: str) -> tuple[str, list[str]]:
     status_log: list[str] = []
     event_type = ""
 
-    async with httpx.AsyncClient(timeout=120) as client:
-        async with client.stream(
-            "POST", f"{CORE_URL}/chat/send",
-            headers=headers, json=payload,
-        ) as resp:
-            resp.raise_for_status()
-            async for line in resp.aiter_lines():
-                line = line.strip()
-                if not line:
-                    continue
-                if line.startswith("event: "):
-                    event_type = line[7:].strip()
-                    continue
-                if not line.startswith("data: "):
-                    continue
-                raw = line[6:].strip()
-                if raw in ("{}", ""):
-                    continue
-                try:
-                    data: dict = json.loads(raw)
-                except json.JSONDecodeError:
-                    continue
+    async with (
+        httpx.AsyncClient(timeout=120) as client,
+        client.stream("POST", f"{CORE_URL}/chat/send", headers=headers, json=payload) as resp,
+    ):
+        resp.raise_for_status()
+        async for line in resp.aiter_lines():
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith("event: "):
+                event_type = line[7:].strip()
+                continue
+            if not line.startswith("data: "):
+                continue
+            raw = line[6:].strip()
+            if raw in ("{}", ""):
+                continue
+            try:
+                data: dict = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
 
-                if event_type == "action_started":
-                    action = data.get("action", "")
-                    cmd = str(data.get("command", data.get("path", "")))
-                    status_log.append(f"⚙️ `{action}`: `{cmd[:80]}`")
+            if event_type == "action_started":
+                action = data.get("action", "")
+                cmd = str(data.get("command", data.get("path", "")))
+                status_log.append(f"⚙️ `{action}`: `{cmd[:80]}`")
 
-                elif event_type == "action_result":
-                    out = str(data.get("output", "")).strip()
-                    if out:
-                        status_log.append(f"```\n{out[:300]}\n```")
+            elif event_type == "action_result":
+                out = str(data.get("output", "")).strip()
+                if out:
+                    status_log.append(f"```\n{out[:300]}\n```")
 
-                elif event_type == "retrying":
-                    attempt = data.get("attempt", 0)
-                    reason = str(data.get("reason", ""))
-                    status_log.append(f"🔄 Retry {attempt}: {reason[:80]}")
+            elif event_type == "retrying":
+                attempt = data.get("attempt", 0)
+                reason = str(data.get("reason", ""))
+                status_log.append(f"🔄 Retry {attempt}: {reason[:80]}")
 
-                elif event_type == "final":
-                    final_text = str(data.get("text", "")).strip()
+            elif event_type == "final":
+                final_text = str(data.get("text", "")).strip()
 
-                elif event_type == "error":
-                    raise RuntimeError(str(data.get("message", "unknown error")))
+            elif event_type == "error":
+                raise RuntimeError(str(data.get("message", "unknown error")))
 
     return final_text, status_log
 
