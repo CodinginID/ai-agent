@@ -5,8 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from app.actions.git_ops import (
     GitAddAction,
     GitBranchAction,
@@ -16,7 +14,6 @@ from app.actions.git_ops import (
     GitPushAction,
     GitStatusAction,
 )
-
 
 _PROJECT = Path("/fake/project")
 

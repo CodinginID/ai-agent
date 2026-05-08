@@ -8,12 +8,11 @@ import httpx
 import pytest
 
 from app.adapters.github import (
-    GitHubAPIError,
     GitHubAdapter,
+    GitHubAPIError,
     GitHubIssue,
     GitHubUnavailableError,
 )
-
 
 # ── Constructor validation ─────────────────────────────────────────────────────
 

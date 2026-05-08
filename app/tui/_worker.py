@@ -39,6 +39,8 @@ _RECONNECT_INITIAL_DELAY = 2.0
 _RECONNECT_MAX_DELAY = 60.0
 _HEARTBEAT_INTERVAL_SEC = 30.0
 
+_background_tasks: set[asyncio.Task[None]] = set()
+
 
 def _ws_url(token: str) -> str:
     """Convert HTTP APP_URL ke WS URL."""
@@ -270,7 +272,9 @@ async def _handle_message(ws: websockets.ClientConnection, raw: str) -> None:
         agent = str(msg.get("agent", ""))
         prompt = str(msg.get("prompt", ""))
         if job_id and agent:
-            _task = asyncio.create_task(_execute_agent(ws, job_id, agent, prompt))
+            task = asyncio.create_task(_execute_agent(ws, job_id, agent, prompt))
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
     else:
         logger.debug("unknown msg from backend: %s", kind)
 

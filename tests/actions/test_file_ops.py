@@ -15,7 +15,6 @@ from app.actions.file_ops import (
     _resolve_safe,
 )
 
-
 # ── _resolve_safe ──────────────────────────────────────────────────────────────
 
 def test_resolve_safe_rejects_dotdot_in_path() -> None:

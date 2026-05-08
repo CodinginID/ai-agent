@@ -8,7 +8,6 @@ from unittest.mock import patch
 
 from app.executor.context import ContextCollector, EnvironmentContext, _run_quietly
 
-
 # ── _run_quietly unit tests ────────────────────────────────────────────────────
 
 def test_run_quietly_returns_stdout_on_success() -> None:

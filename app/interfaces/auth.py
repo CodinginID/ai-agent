@@ -642,7 +642,6 @@ async def list_my_agents(
         KNOWN_AGENTS,
         UserAgentConfigRepository,
     )
-
     from app.adapters.redis_client import get_client, k_caps
 
     repo = UserAgentConfigRepository(_session_factory_lazy())

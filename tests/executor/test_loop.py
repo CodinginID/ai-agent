@@ -21,7 +21,6 @@ from app.executor.loop import (
     _parse_reflection,
 )
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _stub_env() -> EnvironmentContext:

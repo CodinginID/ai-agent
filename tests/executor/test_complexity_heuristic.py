@@ -6,7 +6,6 @@ import pytest
 
 from app.domain.use_cases import _is_complex_request
 
-
 # ── Simple requests — should NOT trigger the loop ────────────────────────────
 
 @pytest.mark.parametrize("text,intent", [
