@@ -147,7 +147,8 @@
       "Bash(gh variable *)",
       "Bash(echo \"exit code: $?\")",
       "Bash(git tag *)",
-      "Bash(git remote *)"
+      "Bash(git remote *)",
+      "Bash(bash -n /Users/anonymous/Documents/office/codinginid/ai-agent/octopus-cli/install.sh)"
     ]
   }
 }
