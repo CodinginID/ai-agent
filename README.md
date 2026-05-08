@@ -5,6 +5,8 @@
 
 Octopus lets you monitor and control your server through natural language — from Telegram or a terminal TUI. Type what you want in plain text; Octopus figures out what to run and asks for confirmation before anything risky happens.
 
+The Octopus backend is hosted centrally. You only need to install the CLI worker on your own machine.
+
 ---
 
 ## What you can do
@@ -24,8 +26,8 @@ Octopus lets you monitor and control your server through natural language — fr
 - Health check any HTTP endpoint
 
 **AI agents on your device**
-- Register your machine as a worker, Octopus detects which AI CLIs you have installed (Codex, Claude, GLM)
-- View per-device agent status and readiness
+- Octopus detects which AI CLIs you have installed (Codex, Claude, GLM) and reports their readiness
+- Each device is registered separately — you can have multiple machines
 
 **Safety first**
 - Low-risk commands run immediately
@@ -34,11 +36,33 @@ Octopus lets you monitor and control your server through natural language — fr
 
 ---
 
-## Two ways to use Octopus
+## Get started
 
-### 1. Telegram
+### 1. Install the CLI on your machine
 
-Send a message to your Octopus bot:
+```bash
+curl -fsSL https://raw.githubusercontent.com/CodinginID/ai-agent/main/octopus-cli/install.sh | bash
+```
+
+### 2. Open Octopus
+
+```bash
+octopus
+```
+
+### 3. Log in
+
+Type `/login` inside the TUI. You'll get a link to connect your Telegram account.
+
+That's it. Your machine is now registered as a worker. Octopus starts detecting which AI CLIs you have installed and reports their status to the backend.
+
+---
+
+## Two ways to interact
+
+### Telegram
+
+Send a message directly to the Octopus bot:
 
 ```
 cek status server
@@ -48,8 +72,6 @@ git status
 cek memory
 ```
 
-Octopus interprets the intent, builds an execution plan, and either runs it directly (low-risk) or asks for confirmation first.
-
 Slash commands:
 
 | Command | What it does |
@@ -57,89 +79,17 @@ Slash commands:
 | `/start`, `/help` | Show available commands |
 | `/approve <id>` | Approve a pending execution plan |
 | `/reject <id>` | Reject a pending plan |
-| `/agents` | Show AI agent status on your devices |
-| `/devices` | List registered worker devices |
+| `/agents` | Show AI agent status across your devices |
+| `/devices` | List your registered worker devices |
 
----
+### Terminal TUI
 
-### 2. Terminal TUI
-
-Install the `octopus` CLI on your machine and get a full terminal interface:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/CodinginID/ai-agent/main/octopus-cli/install.sh | bash
-```
-
-Then just type:
-
-```bash
-octopus
-```
-
-You get a chat-style TUI connected to your Octopus backend. Type commands the same way you would in Telegram.
+The same commands work inside the `octopus` terminal interface. Type naturally — the same way you would in Telegram.
 
 **Self-upgrade:**
 
 ```bash
 octopus upgrade
-```
-
----
-
-## Install the backend
-
-The backend runs on your own server. One-liner:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/CodinginID/ai-agent/main/install.sh | bash
-```
-
-The script will ask for your Telegram bot token, set up the config, and start all services.
-
-**Need a Telegram bot token?**
-1. Open Telegram → search for **@BotFather**
-2. Send `/newbot` and follow the prompts
-3. Paste the token when the installer asks
-
-**Manual setup** (if you prefer to control each step):
-
-```bash
-mkdir octopus && cd octopus
-curl -fsSL https://raw.githubusercontent.com/CodinginID/ai-agent/main/docker-compose.yml -o docker-compose.yml
-curl -fsSL https://raw.githubusercontent.com/CodinginID/ai-agent/main/.env.example -o .env
-# Edit .env: set TELEGRAM_BOT_TOKEN and ADMIN_USER_IDS
-docker compose up -d
-```
-
-**Verify it's running:**
-
-```bash
-docker compose ps
-```
-
-Send `/start` to your bot in Telegram.
-
----
-
-## Connect your device as a worker
-
-A *worker* is your local machine (laptop, desktop, VPS) registered with Octopus so it can run AI agent jobs on your behalf.
-
-```bash
-# Install the CLI
-curl -fsSL https://raw.githubusercontent.com/CodinginID/ai-agent/main/octopus-cli/install.sh | bash
-
-# Open the TUI and log in
-octopus
-```
-
-Inside the TUI, type `/login` to link your account. Once connected, Octopus automatically detects which AI CLIs (Codex, Claude, GLM) are installed on that machine and reports their status back to the backend.
-
-Check your devices and their agent status from Telegram:
-
-```
-/devices
-/agents
 ```
 
 ---
@@ -166,25 +116,21 @@ Low-risk reads (status, logs, git log) run immediately without confirmation.
 
 ---
 
-## Updates
+## Multiple devices
 
-**Backend:**
-
-```bash
-docker compose pull && docker compose up -d
-```
-
-**CLI:**
-
-```bash
-octopus upgrade
-```
+You can register as many machines as you want. Each one runs the `octopus` worker independently. From Telegram, `/devices` shows all your connected machines and `/agents` shows which AI CLIs are ready on each one.
 
 ---
 
 ## Contributing
 
 See [`CLAUDE.md`](CLAUDE.md) for architecture rules, naming conventions, and the Git workflow used in this project.
+
+---
+
+## Self-hosting
+
+If you want to run your own Octopus backend instead of using the hosted service, see the instructions in [`install.sh`](install.sh).
 
 ---
 
