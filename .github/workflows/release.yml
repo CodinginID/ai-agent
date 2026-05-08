@@ -4,7 +4,9 @@ on:
   push:
     tags: ['v*']
 
-# Flow: build image → deploy ke VPS → verifikasi container → baru buat release
+# Flow:
+#   test → build backend image  ─┐
+#   test → build CLI binaries   ─┤→ deploy VPS → verify → GitHub Release
 # GitHub Release hanya dibuat kalau semua container running di VPS.
 
 jobs:
@@ -77,11 +79,57 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # ── 1b. Build CLI binaries (cross-compile Go) ──────────────────────────────
+  build-cli:
+    name: Build CLI Binaries
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: octopus-cli/go.mod
+          cache-dependency-path: octopus-cli/go.sum
+
+      - name: Extract version from tag
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build all platforms
+        working-directory: octopus-cli
+        env:
+          APP_URL: ${{ vars.OCTOPUS_APP_URL }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          # Fallback jika OCTOPUS_APP_URL belum di-set di GitHub repo vars
+          APP_URL="${APP_URL:-http://localhost:8080}"
+          mkdir -p dist
+          LDFLAGS="-X main.defaultAppURL=${APP_URL} -X main.Version=${VERSION} -s -w"
+
+          GOOS=linux   GOARCH=amd64  go build -ldflags="$LDFLAGS" -o dist/octopus-linux-amd64   .
+          GOOS=linux   GOARCH=arm64  go build -ldflags="$LDFLAGS" -o dist/octopus-linux-arm64   .
+          GOOS=darwin  GOARCH=amd64  go build -ldflags="$LDFLAGS" -o dist/octopus-darwin-amd64  .
+          GOOS=darwin  GOARCH=arm64  go build -ldflags="$LDFLAGS" -o dist/octopus-darwin-arm64  .
+          GOOS=windows GOARCH=amd64  go build -ldflags="$LDFLAGS" -o dist/octopus-windows-amd64.exe .
+
+          cp install.sh dist/octopus-install.sh
+
+          echo "=== Built binaries ==="
+          ls -lh dist/
+
+      - name: Upload CLI artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: octopus-cli-binaries
+          path: octopus-cli/dist/
+          retention-days: 1
+
   # ── 2. Deploy ke VPS (self-hosted runner di dalam VPS) ─────────────────────
   deploy:
     name: Deploy to VPS
     runs-on: self-hosted
-    needs: build
+    needs: [build, build-cli]
     steps:
       - name: Pull kode & image terbaru, restart bot
         run: |
@@ -170,6 +218,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Download CLI binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: octopus-cli-binaries
+          path: dist/
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -178,8 +232,31 @@ jobs:
             docker-compose.yml
             .env.example
             install.sh
+            dist/octopus-linux-amd64
+            dist/octopus-linux-arm64
+            dist/octopus-darwin-amd64
+            dist/octopus-darwin-arm64
+            dist/octopus-windows-amd64.exe
+            dist/octopus-install.sh
           body_prefix: |
-            ## Instalasi
+            ## Install Octopus CLI
+
+            One-liner (Linux & macOS):
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/octopus-cli/install.sh | bash
+            ```
+
+            Windows (PowerShell):
+            ```powershell
+            irm https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/octopus-windows-amd64.exe -OutFile octopus.exe
+            Move-Item octopus.exe $env:LOCALAPPDATA\Programs\octopus\octopus.exe
+            ```
+
+            Lalu ketik `octopus` di terminal.
+
+            ---
+
+            ## Install Backend (VPS/Server)
 
             ```bash
             curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | bash
