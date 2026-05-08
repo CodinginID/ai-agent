@@ -15,6 +15,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from typing import Any
 
 from app.domain.messaging import ChatEvent, ChatEventType, MessageContext
 from app.executor.actions import ActionRegistry
@@ -90,7 +91,7 @@ def _is_complex_request(text: str, intent_name: str) -> bool:
     return any(p.search(text) for p in _COMPLEX_PATTERNS)
 
 
-def _loop_event_to_chat_event(loop_event_type: str, loop_data: dict) -> ChatEvent | None:
+def _loop_event_to_chat_event(loop_event_type: str, loop_data: dict[str, Any]) -> ChatEvent | None:
     """Bridge a LoopEvent into a ChatEvent for the SSE stream.
 
     Returns None for event types that have no ChatEvent equivalent.

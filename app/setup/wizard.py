@@ -16,9 +16,9 @@ from alembic import command as alembic_cmd
 from alembic.config import Config as AlembicConfig
 
 try:
-    import qrcode  # type: ignore[import-untyped]
+    import qrcode
 except ImportError:
-    qrcode = None  # type: ignore[assignment]
+    qrcode = None
 
 
 # Wizard berjalan di mesin lokal — jangan pakai proxy dari env (HTTPS_PROXY di .env

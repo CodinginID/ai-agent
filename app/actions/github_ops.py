@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Coroutine
 from dataclasses import dataclass
+from typing import Any, TypeVar, cast
 
 from app.adapters.github import GitHubAdapter, GitHubAPIError, GitHubUnavailableError
-from app.executor.actions import ActionMeta, ActionRegistry
+from app.executor.actions import ActionMeta, ActionProtocol, ActionRegistry
+
+_T = TypeVar("_T")
 
 
-def _run_async(coro: object) -> object:
+def _run_async(coro: Coroutine[Any, Any, _T]) -> _T:
     """Execute an async coroutine from a synchronous context.
 
     Falls back to creating a new event loop if no running loop exists (the
@@ -27,10 +31,10 @@ def _run_async(coro: object) -> object:
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                 future = pool.submit(asyncio.run, coro)
-                return future.result()
-        return loop.run_until_complete(coro)
+                return cast(_T, future.result())
+        return cast(_T, loop.run_until_complete(coro))
     except RuntimeError:
-        return asyncio.run(coro)  # type: ignore[arg-type]
+        return cast(_T, asyncio.run(coro))
 
 
 @dataclass
@@ -47,7 +51,7 @@ class GitHubCreateIssueAction:
     def description(self) -> str:
         return "Create GitHub issue. Params: title (str), body (str), labels (list)"
 
-    def execute(self, params: dict | None = None) -> str:
+    def execute(self, params: dict[str, Any] | None = None) -> str:
         params = params or {}
         title = str(params.get("title", "")).strip()
         body = str(params.get("body", ""))
@@ -64,7 +68,7 @@ class GitHubCreateIssueAction:
         except Exception as exc:
             return f"Gagal membuat issue: {exc}"
 
-        return f"Issue #{issue.number} dibuat: {issue.title}\n{issue.url}"  # type: ignore[union-attr]
+        return f"Issue #{issue.number} dibuat: {issue.title}\n{issue.url}"
 
 
 @dataclass
@@ -81,7 +85,7 @@ class GitHubCommentAction:
     def description(self) -> str:
         return "Comment on GitHub issue. Params: number (int), body (str)"
 
-    def execute(self, params: dict | None = None) -> str:
+    def execute(self, params: dict[str, Any] | None = None) -> str:
         params = params or {}
         number_raw = params.get("number")
         body = str(params.get("body", "")).strip()
@@ -119,7 +123,7 @@ class GitHubListIssuesAction:
     def description(self) -> str:
         return "List open GitHub issues. Params: state (str, default 'open')"
 
-    def execute(self, params: dict | None = None) -> str:
+    def execute(self, params: dict[str, Any] | None = None) -> str:
         params = params or {}
         state = str(params.get("state", "open")).strip()
         if state not in {"open", "closed", "all"}:
@@ -136,7 +140,7 @@ class GitHubListIssuesAction:
             return f"Tidak ada issue dengan state='{state}'."
 
         lines = [f"GitHub Issues ({state}):"]
-        for issue in issues:  # type: ignore[union-attr]
+        for issue in issues:
             lines.append(f"  #{issue.number} [{issue.state}] {issue.title}")
         return "\n".join(lines)
 
@@ -155,7 +159,7 @@ class GitHubCloseIssueAction:
     def description(self) -> str:
         return "Close GitHub issue. Params: number (int), comment (str)"
 
-    def execute(self, params: dict | None = None) -> str:
+    def execute(self, params: dict[str, Any] | None = None) -> str:
         params = params or {}
         number_raw = params.get("number")
         comment = str(params.get("comment", ""))
@@ -179,7 +183,7 @@ class GitHubCloseIssueAction:
 
 def register_github_ops(registry: ActionRegistry, github: GitHubAdapter) -> None:
     """Register all GitHub issue actions into *registry*."""
-    actions = [
+    actions: list[ActionProtocol] = [
         GitHubCreateIssueAction(github=github),
         GitHubCommentAction(github=github),
         GitHubListIssuesAction(github=github),

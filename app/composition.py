@@ -8,7 +8,7 @@ tidak ikut import adapter.
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from sqlalchemy import Engine
@@ -36,7 +36,7 @@ def _engine() -> Engine:
 
 
 @lru_cache(maxsize=1)
-def _session_factory() -> sessionmaker:
+def _session_factory() -> sessionmaker[Any]:
     return create_session_factory(_engine())
 
 

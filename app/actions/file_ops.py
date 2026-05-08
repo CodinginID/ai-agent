@@ -13,8 +13,9 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
-from app.executor.actions import ActionMeta, ActionRegistry
+from app.executor.actions import ActionMeta, ActionProtocol, ActionRegistry
 
 MAX_READ_BYTES: int = 100 * 1024   # 100 KB
 MAX_READ_CHARS: int = 5_000
@@ -71,7 +72,7 @@ class ReadFileAction:
     def description(self) -> str:
         return "Read content of a file. Params: path (str)"
 
-    def execute(self, params: dict | None = None) -> str:
+    def execute(self, params: dict[str, Any] | None = None) -> str:
         params = params or {}
         raw_path = str(params.get("path", ""))
         if not raw_path:
@@ -122,7 +123,7 @@ class WriteFileAction:
     def description(self) -> str:
         return "Write content to a file. Params: path (str), content (str)"
 
-    def execute(self, params: dict | None = None) -> str:
+    def execute(self, params: dict[str, Any] | None = None) -> str:
         params = params or {}
         raw_path = str(params.get("path", ""))
         content = str(params.get("content", ""))
@@ -163,7 +164,7 @@ class ListDirAction:
     def description(self) -> str:
         return "List files in directory. Params: path (str, default '.')"
 
-    def execute(self, params: dict | None = None) -> str:
+    def execute(self, params: dict[str, Any] | None = None) -> str:
         params = params or {}
         raw_path = str(params.get("path", "."))
 
@@ -212,7 +213,7 @@ class EditFileAction:
     def description(self) -> str:
         return "Edit file: replace old_string with new_string. Params: path, old_string, new_string"
 
-    def execute(self, params: dict | None = None) -> str:
+    def execute(self, params: dict[str, Any] | None = None) -> str:
         params = params or {}
         raw_path = str(params.get("path", ""))
         old_string = str(params.get("old_string", ""))
@@ -256,7 +257,7 @@ class EditFileAction:
 
 def register_file_ops(registry: ActionRegistry, allowed_roots: tuple[Path, ...]) -> None:
     """Register all file operation actions into *registry*."""
-    actions = [
+    actions: list[ActionProtocol] = [
         ReadFileAction(allowed_roots=allowed_roots),
         WriteFileAction(allowed_roots=allowed_roots),
         ListDirAction(allowed_roots=allowed_roots),

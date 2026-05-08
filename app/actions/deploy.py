@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import requests  # type: ignore[import-untyped]
 
-from app.executor.actions import ActionMeta, ActionRegistry
+from app.executor.actions import ActionMeta, ActionProtocol, ActionRegistry
 from app.executor.runner import run_safe
 
 
@@ -23,7 +24,7 @@ class ServiceHealthCheckAction:
     def description(self) -> str:
         return "Check if a service URL is responding. Params: url (str)"
 
-    def execute(self, params: dict | None = None) -> str:
+    def execute(self, params: dict[str, Any] | None = None) -> str:
         params = params or {}
         url = str(params.get("url", "")).strip()
         if not url:
@@ -65,7 +66,7 @@ class DeployAction:
     def description(self) -> str:
         return "Full deploy: git pull + docker compose build + up + health check. Params: no_cache (bool)"
 
-    def execute(self, params: dict | None = None) -> str:
+    def execute(self, params: dict[str, Any] | None = None) -> str:
         params = params or {}
         lines: list[str] = []
 
@@ -123,7 +124,7 @@ def register_deploy_actions(
     health_url: str = "",
 ) -> None:
     """Register deploy and health check actions into *registry*."""
-    actions: list[object] = [
+    actions: list[ActionProtocol] = [
         ServiceHealthCheckAction(),
         DeployAction(project_dir=project_dir, health_url=health_url),
     ]
@@ -134,11 +135,11 @@ def register_deploy_actions(
     }
 
     for action in actions:
-        risk = risk_map.get(action.name, "high")  # type: ignore[attr-defined]
+        risk = risk_map.get(action.name, "high")
         registry.register(ActionMeta(
-            name=action.name,  # type: ignore[attr-defined]
-            description=action.description,  # type: ignore[attr-defined]
+            name=action.name,
+            description=action.description,
             risk_level=risk,
             requires_approval=(risk == "high"),
-            handler=action.execute,  # type: ignore[attr-defined]
+            handler=action.execute,
         ))

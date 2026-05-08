@@ -95,6 +95,7 @@ class Settings:
     redis_url: str
     worker_concurrency: int
     instance_id: str
+    telegram_bot_username: str
 
 
 _DEFAULT_MANUAL_COMMANDS: frozenset[str] = frozenset({
@@ -188,6 +189,7 @@ def load_settings() -> Settings:
             or os.uname().nodename
             or "backend-default"
         ),
+        telegram_bot_username=os.getenv("TELEGRAM_BOT_USERNAME", "").strip(),
     )
 
 

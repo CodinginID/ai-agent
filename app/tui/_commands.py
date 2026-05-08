@@ -535,7 +535,7 @@ async def _agents_list(token: str) -> None:
     println("class:dim", "  Model:   /agents codex model gpt-4o-mini")
 
 
-async def _agents_update(token: str, agent_id: str, payload: dict) -> None:
+async def _agents_update(token: str, agent_id: str, payload: dict[str, Any]) -> None:
     try:
         async with httpx.AsyncClient(timeout=10.0, trust_env=False) as c:
             r = await c.put(

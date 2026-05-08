@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import redis.asyncio as aioredis
+import redis.asyncio as aioredis  # type: ignore[import-not-found]
 
 from app.config import settings
 

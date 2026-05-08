@@ -90,7 +90,7 @@ class UserSessionRepository:
                 delete(UserSessionModel).where(UserSessionModel.token == token)
             )
             session.commit()
-            return result.rowcount > 0
+            return bool(result.rowcount > 0)
 
     def revoke_all_for_user(self, user_id: str) -> int:
         with self._factory() as session:

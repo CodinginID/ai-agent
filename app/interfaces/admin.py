@@ -8,7 +8,7 @@ sengaja di production.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy import func, select
@@ -57,7 +57,8 @@ def _open_session() -> Session:
 
     Engine di-cache module-level supaya tidak SSL-handshake ke Neon tiap request.
     """
-    return _factory()()
+    from sqlalchemy.orm import Session as _Session
+    return cast(_Session, _factory()())
 
 
 _cached_factory: Any = None

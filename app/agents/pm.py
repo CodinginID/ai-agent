@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from app.ports.ai_provider import AIProvider
@@ -48,7 +48,7 @@ class TaskStep:
     order: int
     description: str
     action: str
-    params: dict
+    params: dict[str, Any]
 
 
 @dataclass(frozen=True)

@@ -44,7 +44,7 @@ show_error_codes = true
 
 # Abaikan library yang tidak punya stub
 [[tool.mypy.overrides]]
-module = ["telegram.*", "psutil.*"]
+module = ["telegram.*", "psutil.*", "qrcode.*"]
 ignore_missing_imports = true
 
 # bot.py dan gateway.py adalah monolith legacy — akan di-type-check setelah direfactor di issue #4

@@ -129,9 +129,9 @@ class GitHubAdapter:
         limit: int = 20,
     ) -> list[GitHubIssue]:
         """List issues filtered by state and optional labels."""
-        params: dict[str, object] = {
+        params: dict[str, str] = {
             "state": state,
-            "per_page": min(limit, 100),
+            "per_page": str(min(limit, 100)),
         }
         if labels:
             params["labels"] = ",".join(labels)

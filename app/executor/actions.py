@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
+
+
+class ActionProtocol(Protocol):
+    @property
+    def name(self) -> str: ...
+    @property
+    def description(self) -> str: ...
+    def execute(self, params: dict[str, Any] | None = None) -> str: ...
 
 
 @dataclass(frozen=True)

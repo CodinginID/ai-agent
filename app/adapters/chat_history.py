@@ -67,7 +67,7 @@ class SqlAlchemyChatHistory(ChatHistoryStore):
             ))
         # Reverse supaya ascending (terlama → terbaru)
         return [
-            ChatMessage(role=r.role, content=r.content, created_at=r.created_at)  # type: ignore[arg-type]
+            ChatMessage(role=r.role, content=r.content, created_at=r.created_at)
             for r in reversed(rows)
         ]
 

@@ -148,7 +148,9 @@
       "Bash(echo \"exit code: $?\")",
       "Bash(git tag *)",
       "Bash(git remote *)",
-      "Bash(bash -n /Users/anonymous/Documents/office/codinginid/ai-agent/octopus-cli/install.sh)"
+      "Bash(bash -n /Users/anonymous/Documents/office/codinginid/ai-agent/octopus-cli/install.sh)",
+      "Bash(.venv/bin/mypy app/)",
+      "Bash(.venv/bin/mypy *)"
     ]
   }
 }

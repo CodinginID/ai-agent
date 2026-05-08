@@ -5,8 +5,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
-from app.executor.actions import ActionMeta, ActionRegistry
+from app.executor.actions import ActionMeta, ActionProtocol, ActionRegistry
 from app.executor.runner import run_safe
 
 
@@ -28,7 +29,7 @@ class GitStatusAction:
     def description(self) -> str:
         return "Show current git repository status"
 
-    def execute(self, params: dict | None = None) -> str:
+    def execute(self, params: dict[str, Any] | None = None) -> str:
         output, _ = run_safe(
             ["git", "status", "--short", "--branch"],
             cwd=self.project_dir,
@@ -50,7 +51,7 @@ class GitDiffAction:
     def description(self) -> str:
         return "Show git diff. Params: staged (bool, default False)"
 
-    def execute(self, params: dict | None = None) -> str:
+    def execute(self, params: dict[str, Any] | None = None) -> str:
         params = params or {}
         staged = bool(params.get("staged", False))
         args = ["git", "diff"]
@@ -74,7 +75,7 @@ class GitLogAction:
     def description(self) -> str:
         return "Show git log. Params: n (int, default 10)"
 
-    def execute(self, params: dict | None = None) -> str:
+    def execute(self, params: dict[str, Any] | None = None) -> str:
         params = params or {}
         try:
             n = int(params.get("n", 10))
@@ -102,7 +103,7 @@ class GitAddAction:
     def description(self) -> str:
         return "Stage files. Params: files (list[str]) or '.' for all"
 
-    def execute(self, params: dict | None = None) -> str:
+    def execute(self, params: dict[str, Any] | None = None) -> str:
         params = params or {}
         files = params.get("files", [])
 
@@ -137,7 +138,7 @@ class GitCommitAction:
     def description(self) -> str:
         return "Commit with message. Params: message (str)"
 
-    def execute(self, params: dict | None = None) -> str:
+    def execute(self, params: dict[str, Any] | None = None) -> str:
         params = params or {}
         message = str(params.get("message", "")).strip()
         if not message:
@@ -166,7 +167,7 @@ class GitPushAction:
     def description(self) -> str:
         return "Push current branch. Params: remote (str, default 'origin')"
 
-    def execute(self, params: dict | None = None) -> str:
+    def execute(self, params: dict[str, Any] | None = None) -> str:
         params = params or {}
         remote = str(params.get("remote", "origin")).strip() or "origin"
 
@@ -198,7 +199,7 @@ class GitBranchAction:
     def description(self) -> str:
         return "List or create branch. Params: name (str, optional for create)"
 
-    def execute(self, params: dict | None = None) -> str:
+    def execute(self, params: dict[str, Any] | None = None) -> str:
         params = params or {}
         name = str(params.get("name", "")).strip()
 
@@ -236,7 +237,7 @@ class GitPullAction:
     def description(self) -> str:
         return "Pull latest changes from remote. Params: remote (str, default 'origin'), branch (str, optional)"
 
-    def execute(self, params: dict | None = None) -> str:
+    def execute(self, params: dict[str, Any] | None = None) -> str:
         params = params or {}
         remote = str(params.get("remote", "origin")).strip() or "origin"
         branch = str(params.get("branch", "")).strip()
@@ -258,7 +259,7 @@ class GitPullAction:
 
 def register_git_ops(registry: ActionRegistry, project_dir: Path) -> None:
     """Register all git operation actions into *registry*."""
-    actions = [
+    actions: list[ActionProtocol] = [
         GitStatusAction(project_dir=project_dir),
         GitDiffAction(project_dir=project_dir),
         GitLogAction(project_dir=project_dir),

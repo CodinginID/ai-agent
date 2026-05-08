@@ -249,7 +249,7 @@ def run() -> None:
         if _state.app is not None:
             _state.app.create_background_task(_dispatch(parsed, text, completer))
 
-    input_buffer.accept_handler = _accept_input
+    input_buffer.accept_handler = _accept_input  # type: ignore[assignment]
 
     _state.app = Application(
         layout=_build_layout(input_buffer),

@@ -5,8 +5,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
-from app.executor.actions import ActionMeta, ActionRegistry
+from app.executor.actions import ActionMeta, ActionProtocol, ActionRegistry
 from app.executor.runner import run_safe
 
 # Container / image names must not contain shell-unsafe characters.
@@ -38,7 +39,7 @@ class DockerLogsAction:
     def description(self) -> str:
         return "Get container logs. Params: container (str), tail (int, default 50)"
 
-    def execute(self, params: dict | None = None) -> str:
+    def execute(self, params: dict[str, Any] | None = None) -> str:
         params = params or {}
         container = str(params.get("container", "")).strip()
         err = _validate_container_name(container)
@@ -69,7 +70,7 @@ class DockerRestartAction:
     def description(self) -> str:
         return "Restart container. Params: container (str)"
 
-    def execute(self, params: dict | None = None) -> str:
+    def execute(self, params: dict[str, Any] | None = None) -> str:
         params = params or {}
         container = str(params.get("container", "")).strip()
         err = _validate_container_name(container)
@@ -94,7 +95,7 @@ class DockerStatsAction:
     def description(self) -> str:
         return "Get container stats (CPU/RAM). No additional params."
 
-    def execute(self, params: dict | None = None) -> str:
+    def execute(self, params: dict[str, Any] | None = None) -> str:
         output, _ = run_safe(["docker", "stats", "--no-stream"])
         return output
 
@@ -113,7 +114,7 @@ class DockerBuildAction:
     def description(self) -> str:
         return "Build Docker image. Params: tag (str), context (str, default '.')"
 
-    def execute(self, params: dict | None = None) -> str:
+    def execute(self, params: dict[str, Any] | None = None) -> str:
         params = params or {}
         tag = str(params.get("tag", "")).strip()
         context_path = str(params.get("context", ".")).strip() or "."
@@ -148,7 +149,7 @@ class DockerExecAction:
     def description(self) -> str:
         return "Execute command in container. Params: container (str), command (str)"
 
-    def execute(self, params: dict | None = None) -> str:
+    def execute(self, params: dict[str, Any] | None = None) -> str:
         params = params or {}
         container = str(params.get("container", "")).strip()
         command = str(params.get("command", "")).strip()
@@ -188,7 +189,7 @@ class DockerComposePsAction:
     def description(self) -> str:
         return "List docker compose services status. No params."
 
-    def execute(self, params: dict | None = None) -> str:
+    def execute(self, params: dict[str, Any] | None = None) -> str:
         output, _ = run_safe(["docker", "compose", "ps"], cwd=self.project_dir)
         return output or "Tidak ada service yang berjalan."
 
@@ -207,7 +208,7 @@ class DockerComposePullAction:
     def description(self) -> str:
         return "Pull latest images for docker compose services. No params."
 
-    def execute(self, params: dict | None = None) -> str:
+    def execute(self, params: dict[str, Any] | None = None) -> str:
         output, returncode = run_safe(
             ["docker", "compose", "pull"],
             cwd=self.project_dir,
@@ -232,7 +233,7 @@ class DockerComposeBuildAction:
     def description(self) -> str:
         return "Build docker compose services. Params: no_cache (bool, default false)"
 
-    def execute(self, params: dict | None = None) -> str:
+    def execute(self, params: dict[str, Any] | None = None) -> str:
         params = params or {}
         cmd = ["docker", "compose", "build"]
         if params.get("no_cache"):
@@ -257,7 +258,7 @@ class DockerComposeUpAction:
     def description(self) -> str:
         return "Start docker compose services (detached). No params."
 
-    def execute(self, params: dict | None = None) -> str:
+    def execute(self, params: dict[str, Any] | None = None) -> str:
         output, returncode = run_safe(
             ["docker", "compose", "up", "-d", "--remove-orphans"],
             cwd=self.project_dir,
@@ -282,7 +283,7 @@ class DockerComposeRestartAction:
     def description(self) -> str:
         return "Restart docker compose services. Params: service (str, optional — all if empty)"
 
-    def execute(self, params: dict | None = None) -> str:
+    def execute(self, params: dict[str, Any] | None = None) -> str:
         params = params or {}
         cmd = ["docker", "compose", "restart"]
         service = str(params.get("service", "")).strip()
@@ -299,7 +300,7 @@ class DockerComposeRestartAction:
 
 def register_docker_ops(registry: ActionRegistry, project_dir: Path) -> None:
     """Register all extended Docker actions into *registry*."""
-    actions: list[object] = [
+    actions: list[ActionProtocol] = [
         DockerLogsAction(),
         DockerRestartAction(),
         DockerStatsAction(),
@@ -326,12 +327,11 @@ def register_docker_ops(registry: ActionRegistry, project_dir: Path) -> None:
     }
 
     for action in actions:
-        # Each action object follows the informal Action protocol (name, description, execute)
-        risk = risk_map.get(action.name, "medium")  # type: ignore[attr-defined]
+        risk = risk_map.get(action.name, "medium")
         registry.register(ActionMeta(
-            name=action.name,  # type: ignore[attr-defined]
-            description=action.description,  # type: ignore[attr-defined]
+            name=action.name,
+            description=action.description,
             risk_level=risk,
             requires_approval=(risk == "high"),
-            handler=action.execute,  # type: ignore[attr-defined]
+            handler=action.execute,
         ))
