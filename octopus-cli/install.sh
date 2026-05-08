@@ -5,7 +5,7 @@ GITHUB_REPO="codinginid/ai-agent"
 INSTALL_DIR="${OCTOPUS_INSTALL_DIR:-/usr/local/bin}"
 BIN_NAME="octopus"
 
-# ── Colors ────────────────────────────────────────────────────────────────────
+# ── Colors (hanya kalau terminal support) ─────────────────────────────────────
 if [[ -t 1 ]]; then
   BOLD='\033[1m'; DIM='\033[2m'; RESET='\033[0m'
   GREEN='\033[0;32m'; CYAN='\033[0;36m'; RED='\033[0;31m'; YELLOW='\033[1;33m'
@@ -13,73 +13,57 @@ else
   BOLD=''; DIM=''; RESET=''; GREEN=''; CYAN=''; RED=''; YELLOW=''
 fi
 
-step()    { echo -e "${CYAN}${BOLD}  →${RESET} $1"; }
-ok()      { echo -e "${GREEN}${BOLD}  ✓${RESET} $1"; }
-warn()    { echo -e "${YELLOW}${BOLD}  !${RESET} $1"; }
-die()     { echo -e "${RED}${BOLD}  ✗${RESET} $1"; echo; exit 1; }
-
-# ── Spinner ───────────────────────────────────────────────────────────────────
-_spin_pid=""
-
-spinner_start() {
-  local msg="$1"
-  if [[ ! -t 1 ]]; then
-    echo "  $msg"
-    return
-  fi
-  (
-    local frames=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
-    local i=0
-    while true; do
-      printf "\r${CYAN}  %s${RESET} ${DIM}%s${RESET}" "${frames[$((i % 10))]}" "$msg"
-      sleep 0.08
-      (( i++ )) || true
-    done
-  ) &
-  _spin_pid=$!
+# Helpers — semua output ke stderr supaya tidak terpotong pipe
+info()  { printf "${CYAN}${BOLD}  →${RESET} %s\n" "$1" >&2; }
+ok()    { printf "${GREEN}${BOLD}  ✓${RESET} %s\n" "$1" >&2; }
+warn()  { printf "${YELLOW}${BOLD}  !${RESET} %s\n" "$1" >&2; }
+fail()  {
+  printf "\n${RED}${BOLD}  ╭─────────────────────────────────────────╮${RESET}\n" >&2
+  printf "${RED}${BOLD}  │  ✗  INSTALASI GAGAL                     │${RESET}\n" >&2
+  printf "${RED}${BOLD}  ╰─────────────────────────────────────────╯${RESET}\n\n" >&2
+  echo -e "${RED}  $1${RESET}\n" >&2
+  exit 1
 }
-
-spinner_stop() {
-  if [[ -n "$_spin_pid" ]]; then
-    kill "$_spin_pid" 2>/dev/null || true
-    wait "$_spin_pid" 2>/dev/null || true
-    _spin_pid=""
-    printf "\r\033[2K"
-  fi
-}
-
-trap 'spinner_stop' EXIT
 
 # ── Banner ────────────────────────────────────────────────────────────────────
-echo
-echo -e "${CYAN}${BOLD}  ╭─────────────────────────────────╮${RESET}"
-echo -e "${CYAN}${BOLD}  │   🐙  Octopus CLI Installer     │${RESET}"
-echo -e "${CYAN}${BOLD}  ╰─────────────────────────────────╯${RESET}"
-echo
+printf "\n" >&2
+printf "${CYAN}${BOLD}  ╭─────────────────────────────────╮${RESET}\n" >&2
+printf "${CYAN}${BOLD}  │   🐙  Octopus CLI Installer     │${RESET}\n" >&2
+printf "${CYAN}${BOLD}  ╰─────────────────────────────────╯${RESET}\n" >&2
+printf "\n" >&2
 
-# ── Resolve version ───────────────────────────────────────────────────────────
+# ── Step 1: Resolve version ───────────────────────────────────────────────────
 if [[ -n "${OCTOPUS_VERSION:-}" ]]; then
   VERSION="$OCTOPUS_VERSION"
+  ok "Version: v${VERSION} (dari OCTOPUS_VERSION)"
 else
-  spinner_start "Fetching latest version..."
-  API_RESPONSE=$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>&1 || true)
-  spinner_stop
-  VERSION=$(echo "$API_RESPONSE" | grep '"tag_name"' | head -1 \
-    | sed 's/.*"tag_name": *"\(.*\)".*/\1/' | sed 's/^v//')
-  if [[ -z "$VERSION" ]]; then
-    echo
-    die "No release found at https://github.com/${GITHUB_REPO}/releases\n\n  Possible causes:\n    - No release has been published yet\n    - GitHub rate limit (retry: OCTOPUS_VERSION=x.y.z bash install.sh)"
+  info "Mengecek versi terbaru dari GitHub..."
+  HTTP_CODE=$(curl -o /tmp/_octopus_api.json -w "%{http_code}" -fsSL \
+    "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>/dev/null || echo "000")
+
+  if [[ "$HTTP_CODE" == "200" ]]; then
+    VERSION=$(grep '"tag_name"' /tmp/_octopus_api.json | head -1 \
+      | sed 's/.*"tag_name": *"\(.*\)".*/\1/' | sed 's/^v//')
+    rm -f /tmp/_octopus_api.json
+  else
+    rm -f /tmp/_octopus_api.json
+    fail "Belum ada release yang tersedia (HTTP ${HTTP_CODE}).\n\n  Coba set versi manual:\n  OCTOPUS_VERSION=0.2.0 curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/main/octopus-cli/install.sh | bash"
   fi
-  ok "Latest version: ${BOLD}v${VERSION}${RESET}"
+
+  if [[ -z "$VERSION" ]]; then
+    fail "Gagal membaca versi dari GitHub.\n\n  Coba: OCTOPUS_VERSION=0.2.0 curl -fsSL ... | bash"
+  fi
+
+  ok "Versi terbaru: ${BOLD}v${VERSION}${RESET}"
 fi
 
-# ── Detect platform ───────────────────────────────────────────────────────────
+# ── Step 2: Detect platform ───────────────────────────────────────────────────
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m)
 case "$ARCH" in
   x86_64)         ARCH="amd64" ;;
   aarch64|arm64)  ARCH="arm64" ;;
-  *) die "Unsupported architecture: $ARCH" ;;
+  *) fail "Arsitektur tidak didukung: $ARCH" ;;
 esac
 
 if [[ "$OS" == "windows"* ]]; then
@@ -88,48 +72,58 @@ else
   BINARY_NAME="octopus-${OS}-${ARCH}"
 fi
 
-step "Platform: ${OS}/${ARCH}"
+ok "Platform: ${OS}/${ARCH}"
 
+# ── Step 3: Download ──────────────────────────────────────────────────────────
 DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/v${VERSION}/${BINARY_NAME}"
+info "Mengunduh dari GitHub Releases..."
+printf "  ${DIM}%s${RESET}\n" "$DOWNLOAD_URL" >&2
 
-# ── Download ──────────────────────────────────────────────────────────────────
 TMP=$(mktemp)
-spinner_start "Downloading v${VERSION}..."
-if ! curl -fsSL "$DOWNLOAD_URL" -o "$TMP" 2>/dev/null; then
-  spinner_stop
+HTTP_CODE=$(curl -w "%{http_code}" -fsSL "$DOWNLOAD_URL" -o "$TMP" 2>/dev/null || echo "000")
+if [[ "$HTTP_CODE" != "200" ]]; then
   rm -f "$TMP"
-  die "Download failed.\n  URL: $DOWNLOAD_URL\n  Check: https://github.com/${GITHUB_REPO}/releases"
+  fail "Download gagal (HTTP ${HTTP_CODE}).\n  URL: $DOWNLOAD_URL\n\n  Cek: https://github.com/${GITHUB_REPO}/releases"
 fi
-spinner_stop
 chmod +x "$TMP"
-ok "Downloaded"
+ok "Download selesai"
 
-# ── Install ───────────────────────────────────────────────────────────────────
-spinner_start "Installing to ${INSTALL_DIR}..."
+# ── Step 4: Install ───────────────────────────────────────────────────────────
+info "Menginstall ke ${INSTALL_DIR}..."
 if [ -w "$INSTALL_DIR" ]; then
   mv "$TMP" "${INSTALL_DIR}/${BIN_NAME}"
 else
+  warn "Butuh sudo untuk install ke ${INSTALL_DIR}"
   sudo mv "$TMP" "${INSTALL_DIR}/${BIN_NAME}"
 fi
-spinner_stop
-ok "Installed → ${BOLD}${INSTALL_DIR}/${BIN_NAME}${RESET}"
+ok "Binary tersimpan di: ${BOLD}${INSTALL_DIR}/${BIN_NAME}${RESET}"
 
-# ── Verify ────────────────────────────────────────────────────────────────────
-if command -v "$BIN_NAME" &>/dev/null || [[ -x "${INSTALL_DIR}/${BIN_NAME}" ]]; then
-  INSTALLED_VER=$("${INSTALL_DIR}/${BIN_NAME}" --version 2>/dev/null | awk '{print $NF}' || echo "?")
-  ok "Verified: octopus ${INSTALLED_VER}"
+# ── Step 5: Verify ────────────────────────────────────────────────────────────
+info "Memverifikasi instalasi..."
+if INSTALLED_VER=$("${INSTALL_DIR}/${BIN_NAME}" --version 2>/dev/null | awk '{print $NF}'); then
+  ok "Verifikasi OK — octopus ${BOLD}${INSTALLED_VER}${RESET}"
+else
+  warn "Binary terinstall tapi gagal dijalankan (mungkin masalah arch/permission)"
+fi
+
+# ── Cek apakah langsung bisa dipanggil ────────────────────────────────────────
+NEEDS_HASH=false
+if ! command -v "$BIN_NAME" &>/dev/null; then
+  NEEDS_HASH=true
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
-echo
-echo -e "${GREEN}${BOLD}  ╭─────────────────────────────────╮${RESET}"
-echo -e "${GREEN}${BOLD}  │   ✓  Instalasi selesai!         │${RESET}"
-echo -e "${GREEN}${BOLD}  ╰─────────────────────────────────╯${RESET}"
-echo
-echo -e "  Jalankan perintah berikut di terminal:"
-echo
-echo -e "  ${BOLD}  hash -r && octopus${RESET}"
-echo
-echo -e "  ${DIM}Atau buka terminal baru, lalu ketik: octopus${RESET}"
-echo -e "  ${DIM}Ketik /login untuk mulai.${RESET}"
-echo
+printf "\n" >&2
+printf "${GREEN}${BOLD}  ╭─────────────────────────────────────────╮${RESET}\n" >&2
+printf "${GREEN}${BOLD}  │   ✓  Instalasi selesai!                 │${RESET}\n" >&2
+printf "${GREEN}${BOLD}  ╰─────────────────────────────────────────╯${RESET}\n" >&2
+printf "\n" >&2
+
+if [[ "$NEEDS_HASH" == "true" ]]; then
+  printf "${YELLOW}${BOLD}  Jalankan perintah ini supaya shell mengenali 'octopus':${RESET}\n\n" >&2
+  printf "${BOLD}      hash -r && octopus${RESET}\n\n" >&2
+  printf "${DIM}  Atau tutup terminal ini lalu buka yang baru, ketik: octopus${RESET}\n" >&2
+else
+  printf "  Ketik ${BOLD}octopus${RESET} untuk mulai.\n" >&2
+fi
+printf "\n" >&2
