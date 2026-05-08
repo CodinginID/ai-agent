@@ -141,7 +141,13 @@
       "Bash(go vet *)",
       "Bash(.venv/bin/pytest tests/ -q --tb=no)",
       "Bash(.venv/bin/pytest *)",
-      "Bash(/tmp/octopus-test --version)"
+      "Bash(/tmp/octopus-test --version)",
+      "Bash(gh release *)",
+      "Bash(gh api *)",
+      "Bash(gh variable *)",
+      "Bash(echo \"exit code: $?\")",
+      "Bash(git tag *)",
+      "Bash(git remote *)"
     ]
   }
 }

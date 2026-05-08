@@ -11,10 +11,16 @@ if [[ -n "${OCTOPUS_VERSION:-}" ]]; then
   VERSION="$OCTOPUS_VERSION"
 else
   echo "Fetching latest version..."
-  VERSION=$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" \
-    | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"\(.*\)".*/\1/' | sed 's/^v//')
+  API_RESPONSE=$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>&1)
+  VERSION=$(echo "$API_RESPONSE" | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"\(.*\)".*/\1/' | sed 's/^v//')
   if [[ -z "$VERSION" ]]; then
-    echo "ERROR: could not detect latest version. Set OCTOPUS_VERSION and retry."
+    echo ""
+    echo "ERROR: no release found at https://github.com/${GITHUB_REPO}/releases"
+    echo ""
+    echo "Possible causes:"
+    echo "  - No release has been published yet"
+    echo "  - GitHub rate limit hit (try: OCTOPUS_VERSION=x.y.z bash install.sh)"
+    echo ""
     exit 1
   fi
 fi
