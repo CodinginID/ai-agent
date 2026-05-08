@@ -140,7 +140,8 @@
       "Bash(go work *)",
       "Bash(go vet *)",
       "Bash(.venv/bin/pytest tests/ -q --tb=no)",
-      "Bash(.venv/bin/pytest *)"
+      "Bash(.venv/bin/pytest *)",
+      "Bash(/tmp/octopus-test --version)"
     ]
   }
 }
