@@ -150,7 +150,11 @@
       "Bash(git remote *)",
       "Bash(bash -n /Users/anonymous/Documents/office/codinginid/ai-agent/octopus-cli/install.sh)",
       "Bash(.venv/bin/mypy app/)",
-      "Bash(.venv/bin/mypy *)"
+      "Bash(.venv/bin/mypy *)",
+      "Bash(OCTOPUS_VERSION=99.99.99 bash /Users/anonymous/Documents/office/codinginid/ai-agent/octopus-cli/install.sh)",
+      "Bash(bash /Users/anonymous/Documents/office/codinginid/ai-agent/octopus-cli/install.sh)",
+      "Bash(ssh-add *)",
+      "Bash(git ls-remote *)"
     ]
   }
 }
