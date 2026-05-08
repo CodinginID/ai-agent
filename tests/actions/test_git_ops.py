@@ -11,6 +11,7 @@ from app.actions.git_ops import (
     GitCommitAction,
     GitDiffAction,
     GitLogAction,
+    GitPullAction,
     GitPushAction,
     GitStatusAction,
 )
@@ -194,4 +195,44 @@ def test_git_branch_create_when_name_given() -> None:
 def test_git_branch_rejects_invalid_name() -> None:
     action = GitBranchAction(project_dir=_PROJECT)
     result = action.execute({"name": "branch;rm -rf"})
+    assert "tidak valid" in result.lower()
+
+
+# ── GitPullAction ──────────────────────────────────────────────────────────────
+
+def test_git_pull_default_remote_is_origin() -> None:
+    with _mock_run_safe("Already up to date.") as mock:
+        action = GitPullAction(project_dir=_PROJECT)
+        action.execute({})
+    args = mock.call_args[0][0]
+    assert "origin" in args
+
+
+def test_git_pull_with_branch_appends_branch() -> None:
+    with _mock_run_safe("") as mock:
+        action = GitPullAction(project_dir=_PROJECT)
+        action.execute({"remote": "origin", "branch": "main"})
+    args = mock.call_args[0][0]
+    assert "main" in args
+
+
+def test_git_pull_returns_output_on_success() -> None:
+    with _mock_run_safe("Already up to date."):
+        result = GitPullAction(project_dir=_PROJECT).execute()
+    assert "up to date" in result.lower() or len(result) > 0
+
+
+def test_git_pull_returns_error_on_failure() -> None:
+    with _mock_run_safe("merge conflict", returncode=1):
+        result = GitPullAction(project_dir=_PROJECT).execute()
+    assert "gagal" in result
+
+
+def test_git_pull_rejects_invalid_remote() -> None:
+    result = GitPullAction(project_dir=_PROJECT).execute({"remote": "bad;remote&&evil"})
+    assert "tidak valid" in result.lower()
+
+
+def test_git_pull_rejects_invalid_branch() -> None:
+    result = GitPullAction(project_dir=_PROJECT).execute({"branch": "branch;rm -rf /"})
     assert "tidak valid" in result.lower()

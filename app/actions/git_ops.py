@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -218,6 +219,43 @@ class GitBranchAction:
         return output or "(tidak ada branch)"
 
 
+_SAFE_REF_RE: re.Pattern[str] = re.compile(r"^[a-zA-Z0-9_.\-/]+$")
+
+
+@dataclass
+class GitPullAction:
+    """Pull latest changes from remote."""
+
+    project_dir: Path = field(default_factory=Path)
+
+    @property
+    def name(self) -> str:
+        return "git_pull"
+
+    @property
+    def description(self) -> str:
+        return "Pull latest changes from remote. Params: remote (str, default 'origin'), branch (str, optional)"
+
+    def execute(self, params: dict | None = None) -> str:
+        params = params or {}
+        remote = str(params.get("remote", "origin")).strip() or "origin"
+        branch = str(params.get("branch", "")).strip()
+
+        if not _SAFE_REF_RE.match(remote):
+            return f"Remote name tidak valid: {remote!r}"
+
+        cmd = ["git", "pull", remote]
+        if branch:
+            if not _SAFE_REF_RE.match(branch):
+                return f"Branch name tidak valid: {branch!r}"
+            cmd.append(branch)
+
+        output, returncode = run_safe(cmd, cwd=self.project_dir, timeout=60)
+        if returncode != 0:
+            return f"git pull gagal:\n{output}"
+        return output or "Already up to date."
+
+
 def register_git_ops(registry: ActionRegistry, project_dir: Path) -> None:
     """Register all git operation actions into *registry*."""
     actions = [
@@ -228,6 +266,7 @@ def register_git_ops(registry: ActionRegistry, project_dir: Path) -> None:
         GitCommitAction(project_dir=project_dir),
         GitPushAction(project_dir=project_dir),
         GitBranchAction(project_dir=project_dir),
+        GitPullAction(project_dir=project_dir),
     ]
 
     risk_map: dict[str, str] = {
@@ -238,6 +277,7 @@ def register_git_ops(registry: ActionRegistry, project_dir: Path) -> None:
         "git_commit": "medium",
         "git_push":   "high",
         "git_branch": "medium",
+        "git_pull":   "medium",
     }
 
     for action in actions:

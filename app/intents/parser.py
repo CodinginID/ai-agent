@@ -146,6 +146,27 @@ def _parse_local(text: str, project_id: str) -> Intent | None:
             return _make("docker_logs", project_id, 0.9, False, "Docker logs query")
         return _make("docker_ps", project_id, 0.95, False, "Docker container list")
 
+    if _has_word(t, "deploy"):
+        if _has_word(t, "rollback", "balik", "revert", "undo"):
+            return _make("rollback", project_id, 0.9, True, "Rollback deploy — needs approval")
+        return _make("deploy", project_id, 0.9, True, "Full deploy sequence — needs approval")
+
+    if _has_phrase(t, "health check", "cek health", "cek service") or (
+        _has_word(t, "health") and _has_word(t, "url", "http", "https", "endpoint")
+    ):
+        return _make("service_health_check", project_id, 0.9, False, "Service health check")
+
+    if _has_phrase(t, "compose ps", "compose status", "docker compose ps"):
+        return _make("docker_compose_ps", project_id, 0.95, False, "Docker compose status")
+    if _has_phrase(t, "compose pull", "docker compose pull"):
+        return _make("docker_compose_pull", project_id, 0.9, True, "Docker compose pull — needs approval")
+    if _has_phrase(t, "compose build", "docker compose build"):
+        return _make("docker_compose_build", project_id, 0.9, True, "Docker compose build — needs approval")
+    if _has_phrase(t, "compose up", "docker compose up"):
+        return _make("docker_compose_up", project_id, 0.9, True, "Docker compose up — needs approval")
+    if _has_phrase(t, "compose restart", "docker compose restart"):
+        return _make("docker_compose_restart", project_id, 0.9, True, "Docker compose restart — needs approval")
+
     if _has_word(t, "git"):
         if _has_word(t, "pull"):
             return _make("git_pull", project_id, 0.9, True, "Git pull — needs approval")

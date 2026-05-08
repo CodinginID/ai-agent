@@ -46,5 +46,28 @@ app.include_router(worker_ws_router)
 
 
 @app.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok"}
+async def health() -> dict[str, object]:
+    """Public health endpoint — git HEAD, compose services, app status."""
+    import asyncio
+
+    from app.config import settings
+    from app.executor.runner import run_safe
+
+    def _check() -> dict[str, object]:
+        git_head, _ = run_safe(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=settings.project_dir,
+            timeout=5,
+        )
+        _, compose_rc = run_safe(
+            ["docker", "compose", "ps"],
+            cwd=settings.project_dir,
+            timeout=5,
+        )
+        return {
+            "status": "ok",
+            "git_head": git_head.strip(),
+            "compose": "ok" if compose_rc == 0 else "unavailable",
+        }
+
+    return await asyncio.to_thread(_check)

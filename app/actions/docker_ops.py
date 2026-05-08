@@ -174,6 +174,129 @@ class DockerExecAction:
         return output
 
 
+@dataclass
+class DockerComposePsAction:
+    """List docker compose services and their current status."""
+
+    project_dir: Path = field(default_factory=Path)
+
+    @property
+    def name(self) -> str:
+        return "docker_compose_ps"
+
+    @property
+    def description(self) -> str:
+        return "List docker compose services status. No params."
+
+    def execute(self, params: dict | None = None) -> str:
+        output, _ = run_safe(["docker", "compose", "ps"], cwd=self.project_dir)
+        return output or "Tidak ada service yang berjalan."
+
+
+@dataclass
+class DockerComposePullAction:
+    """Pull latest images for docker compose services."""
+
+    project_dir: Path = field(default_factory=Path)
+
+    @property
+    def name(self) -> str:
+        return "docker_compose_pull"
+
+    @property
+    def description(self) -> str:
+        return "Pull latest images for docker compose services. No params."
+
+    def execute(self, params: dict | None = None) -> str:
+        output, returncode = run_safe(
+            ["docker", "compose", "pull"],
+            cwd=self.project_dir,
+            timeout=300,
+        )
+        if returncode != 0:
+            return f"docker compose pull gagal:\n{output}"
+        return output or "Images berhasil di-pull."
+
+
+@dataclass
+class DockerComposeBuildAction:
+    """Build docker compose services."""
+
+    project_dir: Path = field(default_factory=Path)
+
+    @property
+    def name(self) -> str:
+        return "docker_compose_build"
+
+    @property
+    def description(self) -> str:
+        return "Build docker compose services. Params: no_cache (bool, default false)"
+
+    def execute(self, params: dict | None = None) -> str:
+        params = params or {}
+        cmd = ["docker", "compose", "build"]
+        if params.get("no_cache"):
+            cmd.append("--no-cache")
+        output, returncode = run_safe(cmd, cwd=self.project_dir, timeout=300)
+        if returncode != 0:
+            return f"docker compose build gagal:\n{output}"
+        return output or "Build berhasil."
+
+
+@dataclass
+class DockerComposeUpAction:
+    """Start docker compose services in detached mode."""
+
+    project_dir: Path = field(default_factory=Path)
+
+    @property
+    def name(self) -> str:
+        return "docker_compose_up"
+
+    @property
+    def description(self) -> str:
+        return "Start docker compose services (detached). No params."
+
+    def execute(self, params: dict | None = None) -> str:
+        output, returncode = run_safe(
+            ["docker", "compose", "up", "-d", "--remove-orphans"],
+            cwd=self.project_dir,
+            timeout=120,
+        )
+        if returncode != 0:
+            return f"docker compose up gagal:\n{output}"
+        return output or "Services berhasil dijalankan."
+
+
+@dataclass
+class DockerComposeRestartAction:
+    """Restart docker compose services."""
+
+    project_dir: Path = field(default_factory=Path)
+
+    @property
+    def name(self) -> str:
+        return "docker_compose_restart"
+
+    @property
+    def description(self) -> str:
+        return "Restart docker compose services. Params: service (str, optional — all if empty)"
+
+    def execute(self, params: dict | None = None) -> str:
+        params = params or {}
+        cmd = ["docker", "compose", "restart"]
+        service = str(params.get("service", "")).strip()
+        if service:
+            err = _validate_container_name(service)
+            if err:
+                return f"Error: {err}"
+            cmd.append(service)
+        output, returncode = run_safe(cmd, cwd=self.project_dir, timeout=120)
+        if returncode != 0:
+            return f"docker compose restart gagal:\n{output}"
+        return output or "Services berhasil di-restart."
+
+
 def register_docker_ops(registry: ActionRegistry, project_dir: Path) -> None:
     """Register all extended Docker actions into *registry*."""
     actions: list[object] = [
@@ -182,14 +305,24 @@ def register_docker_ops(registry: ActionRegistry, project_dir: Path) -> None:
         DockerStatsAction(),
         DockerBuildAction(project_dir=project_dir),
         DockerExecAction(),
+        DockerComposePsAction(project_dir=project_dir),
+        DockerComposePullAction(project_dir=project_dir),
+        DockerComposeBuildAction(project_dir=project_dir),
+        DockerComposeUpAction(project_dir=project_dir),
+        DockerComposeRestartAction(project_dir=project_dir),
     ]
 
     risk_map: dict[str, str] = {
-        "docker_logs":    "low",
-        "docker_restart": "medium",
-        "docker_stats":   "low",
-        "docker_build":   "medium",
-        "docker_exec":    "high",
+        "docker_logs":             "low",
+        "docker_restart":          "medium",
+        "docker_stats":            "low",
+        "docker_build":            "medium",
+        "docker_exec":             "high",
+        "docker_compose_ps":       "low",
+        "docker_compose_pull":     "medium",
+        "docker_compose_build":    "medium",
+        "docker_compose_up":       "high",
+        "docker_compose_restart":  "medium",
     }
 
     for action in actions:

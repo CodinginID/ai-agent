@@ -9,8 +9,11 @@ KNOWN_INTENTS: frozenset[str] = frozenset({
     "server_status", "memory", "disk", "processes",
     "docker_ps", "docker_images", "docker_stats",
     "docker_restart", "docker_logs",
+    "docker_compose_ps", "docker_compose_pull", "docker_compose_build",
+    "docker_compose_up", "docker_compose_restart",
     "git_status", "git_pull",
-    "deploy_restart", "run_command",
+    "deploy", "deploy_restart", "rollback", "service_health_check",
+    "run_command",
     "list_files", "whoami",
     # Agent role: didelegasi ke worker user (Codex/Claude/GLM via WS).
     "agent_code", "agent_review", "agent_architect",
@@ -26,21 +29,24 @@ AGENT_INTENTS: frozenset[str] = frozenset({
 EXECUTABLE_ACTIONS: frozenset[str] = frozenset({
     "server_status", "memory", "disk", "processes",
     "docker_ps", "docker_images", "docker_stats",
+    "docker_compose_ps", "service_health_check",
     "git_status", "list_files", "whoami",
 })
 
 LOW_RISK: frozenset[str] = frozenset({
     "server_status", "memory", "disk", "processes",
     "docker_ps", "docker_images", "docker_stats",
-    "docker_logs", "git_status", "list_files", "whoami",
+    "docker_logs", "docker_compose_ps", "service_health_check",
+    "git_status", "list_files", "whoami",
 })
 
 MEDIUM_RISK: frozenset[str] = frozenset({
     "docker_restart", "git_pull", "deploy_restart",
+    "docker_compose_pull", "docker_compose_build", "docker_compose_restart",
 })
 
 HIGH_RISK: frozenset[str] = frozenset({
-    "run_command",
+    "run_command", "docker_compose_up", "deploy", "rollback",
 })
 
 

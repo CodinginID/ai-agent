@@ -759,6 +759,11 @@ def _build_registry() -> ActionRegistry:
     # Extended docker operations
     register_docker_ops(registry, project_dir=PROJECT_DIR)
 
+    # Deploy workflow (git pull, deploy, health check)
+    from app.actions.deploy import register_deploy_actions
+    health_url = str(settings.app_url).rstrip("/") + "/health" if settings.app_url else ""
+    register_deploy_actions(registry, project_dir=PROJECT_DIR, health_url=health_url)
+
     # GitHub issues (only when explicitly enabled and configured)
     if settings.enable_github and settings.github_token and settings.github_repo:
         from app.actions.github_ops import register_github_ops
