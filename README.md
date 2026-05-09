@@ -52,7 +52,11 @@ octopus
 
 ### 3. Log in
 
-Type `/login` inside the TUI. You'll get a link to connect your Telegram account.
+Inside the TUI, type `/login`. A QR code and link will appear — scan or open it to sign in with your Google account.
+
+### 4. (Optional) Pair Telegram
+
+Once logged in, type `/pair-telegram` to link your Telegram account so you can drive Octopus from chat too.
 
 That's it. Your machine is now registered as a worker. Octopus starts detecting which AI CLIs you have installed and reports their status to the backend.
 

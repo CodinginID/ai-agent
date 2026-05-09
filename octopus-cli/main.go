@@ -92,7 +92,7 @@ func upgradeCmd() *cobra.Command {
 	}
 }
 
-const githubAPI = "https://api.github.com/repos/codinginid/octopus/releases/latest"
+const githubAPI = "https://api.github.com/repos/CodinginID/ai-agent/releases/latest"
 
 func runUpgrade() error {
 	fmt.Printf("Current version: v%s\n", Version)
@@ -112,7 +112,7 @@ func runUpgrade() error {
 	fmt.Println("Downloading…")
 
 	binaryName := buildBinaryName(latest)
-	downloadURL := fmt.Sprintf("https://github.com/codinginid/octopus/releases/download/%s/%s", latest, binaryName)
+	downloadURL := fmt.Sprintf("https://github.com/CodinginID/ai-agent/releases/download/%s/%s", latest, binaryName)
 
 	if err := downloadAndReplace(downloadURL); err != nil {
 		return fmt.Errorf("upgrade failed: %w", err)
