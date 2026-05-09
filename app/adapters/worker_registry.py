@@ -73,16 +73,16 @@ async def unregister(user_id: str, worker_id: str) -> None:
 async def list_workers(user_id: str) -> list[str]:
     """Daftar worker_id yang aktif untuk user_id."""
     client = get_client()
-    members = await client.smembers(k_workers(user_id))
+    members = await client.smembers(k_workers(user_id))  # type: ignore[misc]
     return list(members)
 
 
 async def worker_count(user_id: str) -> int:
     client = get_client()
-    return int(await client.scard(k_workers(user_id)))
+    return int(await client.scard(k_workers(user_id)))  # type: ignore[misc]
 
 
 async def get_meta(worker_id: str) -> dict[str, str]:
     client = get_client()
-    data = await client.hgetall(k_worker_meta(worker_id))
+    data = await client.hgetall(k_worker_meta(worker_id))  # type: ignore[misc]
     return dict(data)

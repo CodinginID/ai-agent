@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import redis.asyncio as aioredis  # type: ignore[import-not-found]
+import redis.asyncio as aioredis
 
 from app.config import settings
 
@@ -28,7 +28,7 @@ def get_client() -> aioredis.Redis:
     """Return singleton Redis async client. Lazy-init satu kali per proses."""
     global _client
     if _client is None:
-        _client = aioredis.from_url(
+        _client = aioredis.from_url(  # type: ignore[no-untyped-call]
             settings.redis_url,
             decode_responses=True,
             encoding="utf-8",

@@ -75,13 +75,13 @@ async def update_status(
         fields["started_at"] = now
     if status in ("done", "error", "abandoned"):
         fields["finished_at"] = now
-    await client.hset(k_job(job_id), mapping=fields)
+    await client.hset(k_job(job_id), mapping=fields)  # type: ignore[misc]
     await client.expire(k_job(job_id), JOB_TTL_SEC)
 
 
 async def get(job_id: str) -> dict[str, Any] | None:
     client = get_client()
-    data = await client.hgetall(k_job(job_id))
+    data = await client.hgetall(k_job(job_id))  # type: ignore[misc]
     return dict(data) if data else None
 
 
@@ -98,14 +98,14 @@ async def mark_abandoned_for_instance(instance_id: str) -> int:
     while True:
         cursor, keys = await client.scan(cursor=cursor, match="job:*", count=200)
         for key in keys:
-            data = await client.hgetall(key)
+            data = await client.hgetall(key)  # type: ignore[misc]
             if not data:
                 continue
             if data.get("originator_instance") != instance_id:
                 continue
             if data.get("status") not in ("dispatched", "running"):
                 continue
-            await client.hset(key, mapping={
+            await client.hset(key, mapping={  # type: ignore[misc]
                 "status": "abandoned",
                 "updated_at": datetime.now(UTC).isoformat(),
                 "error": "backend restart — job tidak complete",

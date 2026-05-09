@@ -143,7 +143,7 @@ async def _pubsub_listener_loop() -> None:
     finally:
         with contextlib.suppress(Exception):
             await pubsub.unsubscribe(channel)
-            await pubsub.aclose()
+            await pubsub.aclose()  # type: ignore[no-untyped-call]
 
 
 async def start_pubsub_listener() -> None:

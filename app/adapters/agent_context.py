@@ -41,7 +41,7 @@ async def store_result(
     try:
         client = get_client()
         truncated = output[:MAX_OUTPUT_BYTES]
-        await client.hset(k_agent_ctx_role(user_id, role), mapping={
+        await client.hset(k_agent_ctx_role(user_id, role), mapping={  # type: ignore[misc]
             "agent": agent,
             "prompt": prompt[:500],
             "summary": summary,
@@ -58,7 +58,7 @@ async def fetch_role(user_id: str, role: str) -> dict[str, Any] | None:
     """Ambil hasil terakhir role tertentu untuk user."""
     try:
         client = get_client()
-        data = await client.hgetall(k_agent_ctx_role(user_id, role))
+        data = await client.hgetall(k_agent_ctx_role(user_id, role))  # type: ignore[misc]
         return dict(data) if data else None
     except Exception as exc:
         logger.warning("agent_context fetch failed: %s", exc)

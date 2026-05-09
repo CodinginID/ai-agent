@@ -653,7 +653,7 @@ async def list_my_agents(
     agents = []
     for agent_id in KNOWN_AGENTS:
         cfg = existing.get(agent_id)
-        installed_workers = await redis.scard(k_caps(user_id, agent_id))
+        installed_workers = await redis.scard(k_caps(user_id, agent_id))  # type: ignore[misc]
         agents.append({
             "agent_id": agent_id,
             "enabled": bool(cfg and cfg.enabled),
