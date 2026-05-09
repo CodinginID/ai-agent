@@ -5,15 +5,13 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Coroutine
 from dataclasses import dataclass
-from typing import Any, TypeVar, cast
+from typing import Any, cast
 
 from app.adapters.github import GitHubAdapter, GitHubAPIError, GitHubUnavailableError
 from app.executor.actions import ActionMeta, ActionProtocol, ActionRegistry
 
-_T = TypeVar("_T")
 
-
-def _run_async(coro: Coroutine[Any, Any, _T]) -> _T:
+def _run_async[T](coro: Coroutine[Any, Any, T]) -> T:
     """Execute an async coroutine from a synchronous context.
 
     Falls back to creating a new event loop if no running loop exists (the
@@ -31,10 +29,10 @@ def _run_async(coro: Coroutine[Any, Any, _T]) -> _T:
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                 future = pool.submit(asyncio.run, coro)
-                return cast(_T, future.result())
-        return cast(_T, loop.run_until_complete(coro))
+                return cast("T", future.result())
+        return cast("T", loop.run_until_complete(coro))
     except RuntimeError:
-        return cast(_T, asyncio.run(coro))
+        return cast("T", asyncio.run(coro))
 
 
 @dataclass

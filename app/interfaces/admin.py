@@ -57,8 +57,7 @@ def _open_session() -> Session:
 
     Engine di-cache module-level supaya tidak SSL-handshake ke Neon tiap request.
     """
-    from sqlalchemy.orm import Session as _Session
-    return cast(_Session, _factory()())
+    return cast("Session", _factory()())
 
 
 _cached_factory: Any = None
