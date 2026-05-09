@@ -154,7 +154,14 @@
       "Bash(OCTOPUS_VERSION=99.99.99 bash /Users/anonymous/Documents/office/codinginid/ai-agent/octopus-cli/install.sh)",
       "Bash(bash /Users/anonymous/Documents/office/codinginid/ai-agent/octopus-cli/install.sh)",
       "Bash(ssh-add *)",
-      "Bash(git ls-remote *)"
+      "Bash(git ls-remote *)",
+      "Bash(curl -sI \"https://api.github.com/repos/codinginid/ai-agent/releases/latest\")",
+      "Bash(curl -sI \"https://api.github.com/repos/CodinginID/ai-agent/releases/latest\")",
+      "Bash(curl -s \"https://api.github.com/repos/CodinginID/ai-agent/releases/latest\")",
+      "Bash(curl -s \"https://api.github.com/repos/CodinginID/ai-agent/releases\")",
+      "Bash(curl -s \"https://api.github.com/repos/CodinginID/ai-agent/tags\")",
+      "Bash(gh run *)",
+      "Bash(gh auth *)"
     ]
   }
 }
