@@ -164,7 +164,17 @@
       "Bash(gh auth *)",
       "Bash(curl -sI -o /dev/null -w \"HTTP %{http_code}\\\\n\" \"https://raw.githubusercontent.com/CodinginID/ai-agent/main/octopus-cli/install.sh\")",
       "Bash(curl -sI -o /dev/null -w \"HTTP %{http_code}\\\\n\" \"https://raw.githubusercontent.com/CodinginID/ai-agent/main/install.sh\")",
-      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" \"https://api.github.com/repos/CodinginID/ai-agent/releases/latest\")"
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" \"https://api.github.com/repos/CodinginID/ai-agent/releases/latest\")",
+      "Bash(pytest tests/ -v --tb=short)",
+      "Bash(gh label *)",
+      "Bash(eza -la --tree --level=3 --git-ignore)",
+      "Bash(eza -la --tree --level=4 octopus-cli/internal)",
+      "Bash(pytest tests/ --collect-only -q)",
+      "Bash(mise list *)",
+      "Bash(.venv-test/bin/pip install *)",
+      "Bash(.venv-test/bin/pytest tests/intents/ -v)",
+      "Bash(PYTHONPATH=. .venv-test/bin/pytest tests/intents/ -v)",
+      "Bash(.venv-test/bin/ruff check *)"
     ]
   }
 }

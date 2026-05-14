@@ -1,5 +1,4 @@
 import asyncio
-import json
 import os
 import platform
 import shlex
@@ -25,7 +24,6 @@ from app.config import BASE_DIR, settings
 from app.domain.agents import AgentCapability, AgentRoleAssignment, resolve_agent_roles
 from app.executor.actions import ActionMeta, ActionRegistry
 from app.executor.runner import run_safe
-from app.intents.parser import IntentParser
 from app.intents.schemas import EXECUTABLE_ACTIONS
 from app.memory.store import ProjectAlreadyExistsError, ProjectStore
 from app.orchestrator.approval import PendingPlanStore
@@ -781,151 +779,6 @@ def _build_registry() -> ActionRegistry:
 
 
 action_registry = _build_registry()
-
-
-intent_parser = IntentParser(qwen_caller=call_qwen)
-
-
-def is_greeting(text: str) -> bool:
-    greetings = {
-        "hi", "hai", "halo", "hello", "hey",
-        "pagi", "siang", "sore", "malam",
-        "assalamualaikum", "assalamu'alaikum",
-    }
-    return text.lower().strip(" .,!?\n\t") in greetings
-
-
-def looks_like_general_chat(text: str) -> bool:
-    question_prefixes = (
-        "apa itu",
-        "apa maksud",
-        "jelaskan",
-        "explain",
-        "what is",
-        "what are",
-        "bagaimana cara",
-        "gimana cara",
-        "kenapa",
-        "mengapa",
-        "why",
-        "how to",
-        "bantu",
-        "bisa bantu",
-        "bisa jelaskan",
-        "tolong bantu",
-        "tolong jelaskan",
-    )
-    action_keywords = (
-        "cek",
-        "check",
-        "lihat",
-        "tampilkan",
-        "show",
-        "status",
-        "jalan",
-        "running",
-        "list",
-        "daftar",
-        "usage",
-        "penggunaan",
-        "stats",
-        "statistik",
-    )
-
-    normalized = text.lower().strip()
-    starts_as_question = normalized.endswith("?") or any(
-        normalized.startswith(prefix) for prefix in question_prefixes
-    )
-    has_action_keyword = any(keyword in normalized for keyword in action_keywords)
-
-    return starts_as_question and not has_action_keyword
-
-
-def parse_intent_locally(user_text: str) -> dict:
-    text = user_text.lower().strip()
-
-    if is_greeting(text) or looks_like_general_chat(text):
-        return {"action": "chat"}
-
-    if "docker" in text or "container" in text:
-        if "image" in text or "images" in text:
-            return {"action": "docker_images"}
-        if any(keyword in text for keyword in ["stats", "statistik", "resource", "cpu", "ram"]):
-            return {"action": "docker_stats"}
-        return {"action": "docker_ps"}
-
-    if "git" in text:
-        return {"action": "git_status"}
-
-    if any(keyword in text for keyword in ["ram", "memory", "memori", "swap"]):
-        return {"action": "memory"}
-
-    if any(keyword in text for keyword in ["disk", "storage", "penyimpanan", "df"]):
-        return {"action": "disk"}
-
-    if any(keyword in text for keyword in ["process", "proses", "ps", "top"]):
-        return {"action": "processes"}
-
-    if any(keyword in text for keyword in ["whoami", "user bot", "hostname", "working dir"]):
-        return {"action": "whoami"}
-
-    if any(keyword in text for keyword in ["list file", "lihat file", "folder", "ls"]):
-        return {"action": "list_files"}
-
-    if any(keyword in text for keyword in ["status", "uptime", "health", "sehat", "server", "load", "cpu"]):
-        return {"action": "server_status"}
-
-    return {"action": "unknown"}
-
-
-def parse_intent_with_ai(user_text: str) -> dict:
-    local_intent = parse_intent_locally(user_text)
-    if local_intent["action"] != "unknown":
-        return local_intent
-
-    prompt = f"""
-You are an intent parser for a private Telegram server admin bot.
-
-Choose exactly one action from this list:
-- server_status: check server health, uptime, CPU, RAM, load, disk summary
-- memory: check RAM or swap usage
-- disk: check disk usage or storage
-- processes: show active/top processes
-- docker_ps: show running Docker containers
-- docker_images: show Docker images
-- docker_stats: show Docker container stats
-- git_status: show git repository status
-- list_files: list files in the project directory
-- whoami: show bot user, working directory, and hostname
-- chat: greetings, general conversation, explanations, or questions that should not execute server actions
-- unknown: when the instruction does not match the available actions
-
-User instruction:
-{user_text}
-
-Return only valid minified JSON with this shape:
-{{"action":"server_status"}}
-"""
-
-    raw_response = call_qwen(prompt)
-    json_start = raw_response.find("{")
-    json_end = raw_response.rfind("}") + 1
-    if json_start < 0 or json_end <= json_start:
-        return {"action": "unknown"}
-
-    try:
-        data = json.loads(raw_response[json_start:json_end])
-    except json.JSONDecodeError:
-        return {"action": "unknown"}
-
-    action = data.get("action")
-    if action == "chat":
-        return {"action": "chat"}
-
-    if action not in ACTIONS:
-        return {"action": "unknown"}
-
-    return {"action": action}
 
 
 def get_chat_history(context: ContextTypes.DEFAULT_TYPE) -> list[dict]:
