@@ -174,7 +174,12 @@
       "Bash(.venv-test/bin/pip install *)",
       "Bash(.venv-test/bin/pytest tests/intents/ -v)",
       "Bash(PYTHONPATH=. .venv-test/bin/pytest tests/intents/ -v)",
-      "Bash(.venv-test/bin/ruff check *)"
+      "Bash(.venv-test/bin/ruff check *)",
+      "Skill(superpowers:brainstorming)",
+      "Bash(GH_HOST=github.com gh issue list --repo CodinginID/ai-agent --state open --json number,title,labels,body)",
+      "Bash(xargs cat)",
+      "Bash(GH_HOST=github.com gh issue *)",
+      "Bash(GH_HOST=github.com gh pr *)"
     ]
   }
 }
