@@ -50,18 +50,13 @@ def _ollama() -> OllamaAdapter:
 
 
 def _build_action_registry() -> ActionRegistry:
-    """Import bot.py module-level registry — Fase 6 akan ekstrak ke helper.
-
-    Untuk sekarang, kita reuse registry yang sudah dibangun di bot.py supaya
-    tidak duplikasi action definitions.
-    """
-    from app.bot import action_registry as _registry
-    return _registry
+    from app.handlers.registry import action_registry
+    return action_registry
 
 
 def _build_pending_plans() -> PendingPlanStore:
-    from app.bot import pending_plans as _store
-    return _store
+    from app.handlers.approval import pending_plans
+    return pending_plans
 
 
 @lru_cache(maxsize=1)
