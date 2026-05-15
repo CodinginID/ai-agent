@@ -17,6 +17,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.domain.exceptions import ActionExecutionError, AIProviderError, IntentParseError
 from app.domain.messaging import ChatEvent, ChatEventType, MessageContext
 from app.executor.actions import ActionRegistry
 from app.intents.parser import IntentParser
@@ -151,7 +152,7 @@ class HandleMessageUseCase:
         # ── 1. Classify intent ────────────────────────────────────────────────
         try:
             intent = self.intent_parser.parse(text, ctx.project_id)
-        except Exception as exc:
+        except IntentParseError as exc:
             yield ChatEvent.error(f"Gagal classify intent: {exc}")
             return
 
@@ -221,6 +222,9 @@ class HandleMessageUseCase:
                     if chat_ev.type == ChatEventType.FINAL:
                         final_text = str(chat_ev.payload.get("text", ""))
                     yield chat_ev
+        except (AIProviderError, ActionExecutionError) as exc:
+            yield ChatEvent.error(f"Execution loop failed: {exc}")
+            return
         except Exception as exc:
             yield ChatEvent.error(f"Execution loop failed: {exc}")
             return
@@ -246,7 +250,7 @@ class HandleMessageUseCase:
                     continue
                 collected.append(chunk)
                 yield ChatEvent.text_chunk(chunk)
-        except Exception as exc:
+        except AIProviderError as exc:
             yield ChatEvent.error(f"AI provider gagal: {exc}")
             return
 
@@ -281,7 +285,7 @@ class HandleMessageUseCase:
             result = self.action_registry.execute(
                 intent.intent, self._build_action_context(intent, ctx)
             )
-        except Exception as exc:
+        except ActionExecutionError as exc:
             yield ChatEvent.error(f"Action {intent.intent} gagal: {exc}")
             return
 
@@ -294,7 +298,7 @@ class HandleMessageUseCase:
 
         try:
             summary = self.ai.chat(_SUMMARIZE_PROMPT.format(output=result))
-        except Exception:
+        except AIProviderError:
             summary = result
 
         final_text = (
@@ -386,15 +390,26 @@ def _maybe_prepend_handoff(user_id: str, current_role: str, prompt: str) -> str:
     prev_role = _HANDOFF_FROM.get(current_role)
     if not prev_role:
         return prompt
-    # Sync wrapper supaya bisa di-call dari sync use case generator.
+
     import asyncio
+    import concurrent.futures
 
     from app.adapters.agent_context import build_handoff_prefix, fetch_role
+
+    def _run() -> dict | None:
+        # New event loop in dedicated thread — safe regardless of outer loop state.
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(fetch_role(user_id, prev_role))
+        finally:
+            loop.close()
+
     try:
-        prev = asyncio.run(fetch_role(user_id, prev_role))
-    except RuntimeError:
-        # Sudah ada event loop running — fallback no-handoff.
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            prev = pool.submit(_run).result(timeout=5)
+    except Exception:
         return prompt
+
     if not prev:
         return prompt
     return build_handoff_prefix(prev, current_role) + prompt

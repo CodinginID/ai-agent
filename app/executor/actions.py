@@ -4,6 +4,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from app.domain.exceptions import ActionExecutionError
+
 
 class ActionProtocol(Protocol):
     @property
@@ -35,8 +37,13 @@ class ActionRegistry:
     def execute(self, name: str, context: dict[str, Any] | None = None) -> str:
         meta = self.get(name)
         if meta is None:
-            raise KeyError(f"Action '{name}' tidak terdaftar di registry")
-        return meta.handler(context)
+            raise ActionExecutionError(f"Action '{name}' tidak terdaftar di registry")
+        try:
+            return meta.handler(context)
+        except ActionExecutionError:
+            raise
+        except Exception as exc:
+            raise ActionExecutionError(f"Action '{name}' gagal: {exc}") from exc
 
     def names(self) -> frozenset[str]:
         return frozenset(self._actions)
