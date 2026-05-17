@@ -9,6 +9,7 @@ import pytest
 import requests
 
 from app.adapters.ollama import OllamaAdapter
+from app.domain.exceptions import AIProviderError
 
 _URL = "http://localhost:11434/api/generate"
 _MODEL = "qwen2.5:14b"
@@ -65,7 +66,7 @@ def test_chat_passes_timeout() -> None:
 
 
 def test_chat_raises_on_http_error() -> None:
-    with patch("requests.post", return_value=_resp({}, status_code=500)), pytest.raises(requests.HTTPError):
+    with patch("requests.post", return_value=_resp({}, status_code=500)), pytest.raises(AIProviderError):
         _adapter().chat("oops")
 
 
@@ -75,7 +76,7 @@ def test_chat_returns_empty_string_when_response_key_missing() -> None:
 
 
 def test_chat_raises_on_connection_error() -> None:
-    with patch("requests.post", side_effect=requests.ConnectionError("offline")), pytest.raises(requests.ConnectionError):
+    with patch("requests.post", side_effect=requests.ConnectionError("offline")), pytest.raises(AIProviderError):
         _adapter().chat("offline")
 
 
@@ -146,5 +147,5 @@ def test_chat_stream_sends_correct_payload() -> None:
 def test_chat_stream_raises_on_http_error() -> None:
     r = _stream_resp([])
     r.raise_for_status.side_effect = requests.HTTPError()
-    with patch("requests.post", return_value=r), pytest.raises(requests.HTTPError):
+    with patch("requests.post", return_value=r), pytest.raises(AIProviderError):
         list(_adapter().chat_stream("error"))

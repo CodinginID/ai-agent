@@ -21,7 +21,7 @@ jobs:
           python-version: "3.13"
 
       - name: Cek syntax Python
-        run: python -m py_compile app/bot.py && echo "Syntax OK"
+        run: python -m py_compile $(find app/ -name "*.py" | head -50 | tr '\n' ' ') && echo "Syntax OK"
 
       - name: Validasi docker-compose
         run: |
