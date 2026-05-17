@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import sessionmaker
 
 from app.adapters.database.models import UserAgentConfigModel
+from app.domain.capabilities import validate_role_assignment
 
 # Agent yang dikenal dan default mapping role.
 KNOWN_AGENTS: tuple[str, ...] = ("codex", "claude", "glm")
@@ -85,7 +86,14 @@ class UserAgentConfigRepository:
         role: str | None = None,
         model: str | None = None,
     ) -> AgentConfig:
-        """Create-or-update — None param berarti pertahankan existing."""
+        """Create-or-update — None param berarti pertahankan existing.
+
+        Raise ``CapabilityMismatchError`` / ``UnknownRoleError`` (dari
+        ``app.domain.capabilities``) kalau ``role`` di-set ke role yang
+        tidak cocok kapabilitas ``agent_id``.
+        """
+        if role is not None:
+            validate_role_assignment(agent_id, role)
         with self._factory() as session:
             row = session.scalar(
                 select(UserAgentConfigModel).where(
