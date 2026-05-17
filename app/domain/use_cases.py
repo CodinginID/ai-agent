@@ -178,9 +178,7 @@ class HandleMessageUseCase:
             cleaned = _strip_command_prefix(text)
             # Hand-off antar role: kalau ini reviewer/architect, ambil output
             # role sebelumnya (engineer hasil terakhir) sebagai context tambahan.
-            # TODO(issue #26 task "active project tracking"): ganti ctx.user_id
-            # dengan ctx.active_project_id setelah field tersedia di ChatContext.
-            cleaned = _maybe_prepend_handoff(ctx.user_id, role, cleaned)
+            cleaned = _maybe_prepend_handoff(ctx.project_id, role, cleaned)
             yield ChatEvent.delegate_to_agent(
                 agent=agent_name,
                 prompt=cleaned,
