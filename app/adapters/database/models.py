@@ -79,6 +79,11 @@ class DeviceModel(Base):
     device_token_hash: Mapped[str] = mapped_column(String(128), unique=True)
     status: Mapped[str] = mapped_column(String(32), default="registered")
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    active_project_id: Mapped[str | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -87,6 +92,9 @@ class DeviceModel(Base):
     )
 
     user: Mapped["UserModel"] = relationship(back_populates="devices")
+    active_project: Mapped["ProjectModel | None"] = relationship(
+        foreign_keys=[active_project_id],
+    )
     sessions: Mapped[list["WorkerSessionModel"]] = relationship(
         back_populates="device",
         cascade="all, delete-orphan",

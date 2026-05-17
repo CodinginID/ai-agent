@@ -154,6 +154,69 @@ class ControlPlaneRepository:
             )
         )
 
+    # ── Project / active-project helpers ─────────────────────────────────────
+
+    def list_user_projects(self, user_id: str) -> list[ProjectModel]:
+        return list(self._session.scalars(
+            select(ProjectModel).where(ProjectModel.user_id == user_id)
+        ))
+
+    def get_project(self, project_id: str, user_id: str) -> ProjectModel | None:
+        return self._session.scalar(
+            select(ProjectModel).where(
+                ProjectModel.id == project_id,
+                ProjectModel.user_id == user_id,
+            )
+        )
+
+    def get_or_create_default_project(self, user_id: str) -> ProjectModel:
+        """Ensure user punya minimal satu project. Idempotent.
+
+        Default project bertindak sebagai fallback untuk user yang belum eksplisit
+        bikin project — jadi scratchpad/RAG punya scope yang valid sejak request
+        pertama.
+        """
+        existing = self._session.scalar(
+            select(ProjectModel)
+            .where(ProjectModel.user_id == user_id)
+            .order_by(ProjectModel.created_at)
+            .limit(1)
+        )
+        if existing is not None:
+            return existing
+        project = ProjectModel(
+            user_id=user_id,
+            name="default",
+            root_path=".",
+            description="Auto-created default project",
+        )
+        self._session.add(project)
+        self._session.flush()
+        return project
+
+    def set_device_active_project(
+        self, device_id: str, user_id: str, project_id: str
+    ) -> DeviceModel:
+        """Switch device's active project. Validate project ownership.
+
+        Raise ``DatabaseConflictError`` kalau device tidak ada atau project bukan
+        milik user yang sama.
+        """
+        device = self.get_device(device_id, user_id)
+        if device is None:
+            raise DatabaseConflictError(f"Device {device_id} tidak ditemukan untuk user")
+        project = self.get_project(project_id, user_id)
+        if project is None:
+            raise DatabaseConflictError(f"Project {project_id} tidak ditemukan untuk user")
+        device.active_project_id = project.id
+        self._session.flush()
+        return device
+
+    def resolve_device_project_id(self, device_id: str, user_id: str) -> str | None:
+        """Return active_project_id atau None kalau belum di-set / device tidak ada."""
+        device = self.get_device(device_id, user_id)
+        return device.active_project_id if device else None
+
     def list_agent_integrations(self, device_id: str) -> list[AgentIntegrationModel]:
         return list(self._session.scalars(
             select(AgentIntegrationModel).where(

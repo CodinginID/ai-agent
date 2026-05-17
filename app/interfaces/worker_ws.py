@@ -453,6 +453,8 @@ async def dispatch_agent_job(
                     summary = str(event.get("summary", ""))
                     await job_store.update_status(job_id, "done", summary=summary)
                     if role:
+                        # TODO(issue #26 task "active project tracking"): ganti
+                        # user_id dengan project_id resolved dari device.
                         await agent_context.store_result(
                             user_id, role,
                             agent=agent,
