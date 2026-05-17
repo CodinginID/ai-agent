@@ -100,9 +100,19 @@ def k_caps(user_id: str, agent_id: str) -> str:
     return f"caps:{user_id}:{agent_id}"
 
 
-def k_agent_ctx_role(user_id: str, role: str) -> str:
-    """Hash hasil terakhir per (user, role) — untuk hand-off antar role."""
-    return f"agent:ctx:{user_id}:{role}"
+def k_agent_ctx_role(project_id: str, role: str) -> str:
+    """Hash hasil terakhir per (project, role) — untuk hand-off antar role.
+
+    Prefix ``proj:`` membedakan key baru dari legacy ``agent:ctx:<user_id>:<role>``
+    sehingga aman di-purge tanpa salah hapus.
+    """
+    return f"agent:ctx:proj:{project_id}:{role}"
+
+
+# Pola legacy (sebelum project scoping) — di-purge sekali saat startup.
+LEGACY_AGENT_CTX_PATTERN = "agent:ctx:*"
+LEGACY_AGENT_CTX_PREFIX = "agent:ctx:"
+PROJECT_AGENT_CTX_PREFIX = "agent:ctx:proj:"
 
 
 def k_tg_pair(code: str) -> str:

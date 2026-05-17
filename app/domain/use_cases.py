@@ -178,6 +178,8 @@ class HandleMessageUseCase:
             cleaned = _strip_command_prefix(text)
             # Hand-off antar role: kalau ini reviewer/architect, ambil output
             # role sebelumnya (engineer hasil terakhir) sebagai context tambahan.
+            # TODO(issue #26 task "active project tracking"): ganti ctx.user_id
+            # dengan ctx.active_project_id setelah field tersedia di ChatContext.
             cleaned = _maybe_prepend_handoff(ctx.user_id, role, cleaned)
             yield ChatEvent.delegate_to_agent(
                 agent=agent_name,
@@ -385,7 +387,7 @@ _HANDOFF_FROM: dict[str, str] = {
 }
 
 
-def _maybe_prepend_handoff(user_id: str, current_role: str, prompt: str) -> str:
+def _maybe_prepend_handoff(project_id: str, current_role: str, prompt: str) -> str:
     """Kalau current_role punya hand-off mapping, prepend hasil role sebelumnya."""
     prev_role = _HANDOFF_FROM.get(current_role)
     if not prev_role:
@@ -400,7 +402,7 @@ def _maybe_prepend_handoff(user_id: str, current_role: str, prompt: str) -> str:
         # New event loop in dedicated thread — safe regardless of outer loop state.
         loop = asyncio.new_event_loop()
         try:
-            return loop.run_until_complete(fetch_role(user_id, prev_role))
+            return loop.run_until_complete(fetch_role(project_id, prev_role))
         finally:
             loop.close()
 
