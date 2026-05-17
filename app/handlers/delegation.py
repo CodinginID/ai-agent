@@ -8,17 +8,20 @@ from app.handlers.auth import get_db_session_factory
 from app.handlers.formatting import format_output
 
 if TYPE_CHECKING:
-    from telegram import Update
+    from telegram import Update, User
 
 
-async def handle_pair_code(update: Update, tg_user: object, code: str) -> None:
+async def handle_pair_code(update: Update, tg_user: User | None, code: str) -> None:
     """Klaim code TUI pairing → link telegram_user_id ke user_id yang sudah login."""
     from sqlalchemy import select
 
     from app.adapters.database.models import UserModel
-    from app.interfaces.auth import claim_telegram_pair_code
+    from app.interfaces.auth import claim_telegram_pair_code_async
 
-    user_id = claim_telegram_pair_code(code)
+    if tg_user is None:
+        return
+
+    user_id = await claim_telegram_pair_code_async(code)
     if user_id is None:
         await update.message.reply_text(  # type: ignore[union-attr]
             "Kode pair tidak valid atau sudah kedaluwarsa.\n"
@@ -27,9 +30,9 @@ async def handle_pair_code(update: Update, tg_user: object, code: str) -> None:
         return
 
     try:
-        with session_scope(get_db_session_factory()) as session:  # type: ignore[arg-type]
+        with session_scope(get_db_session_factory()) as session:
             repo = ControlPlaneRepository(session)
-            existing = repo.resolve_by_telegram_user_id(tg_user.id)  # type: ignore[union-attr]
+            existing = repo.resolve_by_telegram_user_id(tg_user.id)
             if existing is not None:
                 if existing.user_id == user_id:
                     await update.message.reply_text(  # type: ignore[union-attr]
@@ -50,9 +53,9 @@ async def handle_pair_code(update: Update, tg_user: object, code: str) -> None:
                     return
             repo.link_telegram_account(
                 user_id=user_id,
-                telegram_user_id=tg_user.id,  # type: ignore[union-attr]
-                username=tg_user.username,  # type: ignore[union-attr]
-                first_name=tg_user.first_name,  # type: ignore[union-attr]
+                telegram_user_id=tg_user.id,
+                username=tg_user.username,
+                first_name=tg_user.first_name,
             )
     except DatabaseConflictError:
         await update.message.reply_text(  # type: ignore[union-attr]

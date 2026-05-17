@@ -21,7 +21,7 @@ def safe_psutil(read_metric: Any, default: Any = None) -> Any:
         return default
 
 
-def action_server_status(_: dict | None = None) -> str:
+def action_server_status(_: dict[str, Any] | None = None) -> str:
     boot_time = safe_psutil(psutil.boot_time)
     memory = safe_psutil(psutil.virtual_memory)
     disk = safe_psutil(lambda: psutil.disk_usage("/"))
@@ -70,7 +70,7 @@ def action_server_status(_: dict | None = None) -> str:
     return "\n".join(lines)
 
 
-def action_memory(_: dict | None = None) -> str:
+def action_memory(_: dict[str, Any] | None = None) -> str:
     memory = safe_psutil(psutil.virtual_memory)
     swap = safe_psutil(psutil.swap_memory)
     if not memory:
@@ -91,7 +91,7 @@ def action_memory(_: dict | None = None) -> str:
     )
 
 
-def action_disk(_: dict | None = None) -> str:
+def action_disk(_: dict[str, Any] | None = None) -> str:
     lines = ["Disk usage"]
     partitions = safe_psutil(lambda: psutil.disk_partitions(all=False), [])
     seen_mountpoints: set[str] = set()
@@ -121,7 +121,7 @@ def action_disk(_: dict | None = None) -> str:
     return "\n".join(lines)
 
 
-def action_processes(_: dict | None = None) -> str:
+def action_processes(_: dict[str, Any] | None = None) -> str:
     processes = []
     try:
         iterator = psutil.process_iter(["pid", "name", "username", "cpu_percent", "memory_percent"])
@@ -153,33 +153,33 @@ def action_processes(_: dict | None = None) -> str:
     return "\n".join(rows)
 
 
-def action_docker_ps(_: dict | None = None) -> str:
+def action_docker_ps(_: dict[str, Any] | None = None) -> str:
     return run_process(["docker", "ps", "--format", "table {{.Names}}\t{{.Status}}\t{{.Ports}}"])
 
 
-def action_docker_images(_: dict | None = None) -> str:
+def action_docker_images(_: dict[str, Any] | None = None) -> str:
     return run_process(["docker", "images"])
 
 
-def action_docker_stats(_: dict | None = None) -> str:
+def action_docker_stats(_: dict[str, Any] | None = None) -> str:
     return run_process(["docker", "stats", "--no-stream"])
 
 
-def _project_dir(context: dict | None) -> Path:
+def _project_dir(context: dict[str, Any] | None) -> Path:
     if context and "project_dir" in context:
         return Path(context["project_dir"]).expanduser().resolve()
     return settings.project_dir
 
 
-def action_git_status(context: dict | None = None) -> str:
+def action_git_status(context: dict[str, Any] | None = None) -> str:
     return run_process(["git", "status", "--short", "--branch"], cwd=_project_dir(context))
 
 
-def action_list_files(context: dict | None = None) -> str:
+def action_list_files(context: dict[str, Any] | None = None) -> str:
     return run_process(["ls", "-lah"], cwd=_project_dir(context))
 
 
-def action_whoami(context: dict | None = None) -> str:
+def action_whoami(context: dict[str, Any] | None = None) -> str:
     lines = []
     telegram_user = (context or {}).get("telegram_user")
     if telegram_user:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import shlex
 from typing import TYPE_CHECKING
 
-import requests
+import requests  # type: ignore[import-untyped]
 
 from app.config import settings
 from app.handlers.process_runners import run_process
@@ -23,11 +23,13 @@ def call_qwen(prompt: str) -> str:
         timeout=60,
     )
     response.raise_for_status()
-    return response.json()["response"].strip()
+    return str(response.json()["response"]).strip()
 
 
 def get_chat_history(context: ContextTypes.DEFAULT_TYPE) -> list[dict[str, str]]:
-    return context.user_data.setdefault("chat_history", [])  # type: ignore[no-any-return]
+    return context.user_data.setdefault(  # type: ignore[union-attr,no-any-return]
+        "chat_history", []
+    )
 
 
 def remember_chat(

@@ -11,12 +11,13 @@ from app.adapters.database.session import (
 from app.config import settings
 
 if TYPE_CHECKING:
+    from sqlalchemy.orm import Session, sessionmaker
     from telegram import Update
 
-_db_session_factory = None
+_db_session_factory: sessionmaker[Session] | None = None
 
 
-def get_db_session_factory() -> object:
+def get_db_session_factory() -> sessionmaker[Session]:
     global _db_session_factory
     if _db_session_factory is None:
         _db_session_factory = create_session_factory(
@@ -50,7 +51,7 @@ def resolve_user_id_from_telegram(telegram_user_id: int | None) -> str | None:
         return None
 
     try:
-        with session_scope(get_db_session_factory()) as session:  # type: ignore[arg-type]
+        with session_scope(get_db_session_factory()) as session:
             repo = ControlPlaneRepository(session)
             tenant = repo.resolve_by_telegram_user_id(telegram_user_id)
             return tenant.user_id if tenant else None

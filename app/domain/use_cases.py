@@ -396,7 +396,7 @@ def _maybe_prepend_handoff(user_id: str, current_role: str, prompt: str) -> str:
 
     from app.adapters.agent_context import build_handoff_prefix, fetch_role
 
-    def _run() -> dict | None:
+    def _run() -> dict[str, Any] | None:
         # New event loop in dedicated thread — safe regardless of outer loop state.
         loop = asyncio.new_event_loop()
         try:

@@ -47,7 +47,7 @@ async def agents_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         UserAgentConfigRepository,
     )
 
-    repo = UserAgentConfigRepository(get_db_session_factory())  # type: ignore[arg-type]
+    repo = UserAgentConfigRepository(get_db_session_factory())
     args = context.args or []
 
     if not args:
