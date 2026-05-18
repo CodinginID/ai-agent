@@ -7,11 +7,13 @@ from app.adapters.database.models import (
     AgentIntegrationModel,
     DeviceModel,
     ProjectModel,
+    SkillModel,
     TelegramAccountModel,
     UserModel,
     utc_now,
 )
 from app.domain.accounts import DeviceIdentity, TenantIdentity
+from app.domain.skills import Skill, parse_skill, skill_to_dict
 
 
 class DatabaseConflictError(Exception):
@@ -273,3 +275,106 @@ class ControlPlaneRepository:
         integration.capabilities = capabilities or {}
         self._session.flush()
         return integration
+
+    # ── Skills ────────────────────────────────────────────────────────────────
+
+    def create_skill(
+        self, project_id: str, user_id: str, definition: dict[str, Any]
+    ) -> SkillModel:
+        """Validate JSON definition + persist. Raise ``DatabaseConflictError``
+        kalau project bukan milik user atau skill name sudah ada.
+        Raise ``SkillValidationError`` kalau JSON tidak valid.
+        """
+        project = self.get_project(project_id, user_id)
+        if project is None:
+            raise DatabaseConflictError(
+                f"Project {project_id} tidak ditemukan untuk user"
+            )
+        skill = parse_skill(definition)
+        existing = self._session.scalar(
+            select(SkillModel).where(
+                SkillModel.project_id == project_id,
+                SkillModel.name == skill.name,
+            )
+        )
+        if existing is not None:
+            raise DatabaseConflictError(
+                f"Skill '{skill.name}' sudah ada di project ini"
+            )
+        row = SkillModel(
+            project_id=project_id,
+            name=skill.name,
+            description=skill.description,
+            definition=skill_to_dict(skill),
+        )
+        self._session.add(row)
+        self._session.flush()
+        return row
+
+    def list_project_skills(self, project_id: str, user_id: str) -> list[SkillModel]:
+        if self.get_project(project_id, user_id) is None:
+            return []
+        return list(self._session.scalars(
+            select(SkillModel).where(SkillModel.project_id == project_id)
+        ))
+
+    def get_skill(
+        self, skill_id: str, user_id: str
+    ) -> SkillModel | None:
+        """Fetch skill, scoped by user (via project ownership)."""
+        row = self._session.scalar(
+            select(SkillModel)
+            .join(ProjectModel, SkillModel.project_id == ProjectModel.id)
+            .where(SkillModel.id == skill_id, ProjectModel.user_id == user_id)
+        )
+        return row
+
+    def get_skill_by_name(
+        self, project_id: str, name: str, user_id: str
+    ) -> SkillModel | None:
+        if self.get_project(project_id, user_id) is None:
+            return None
+        return self._session.scalar(
+            select(SkillModel).where(
+                SkillModel.project_id == project_id,
+                SkillModel.name == name,
+            )
+        )
+
+    def update_skill(
+        self, skill_id: str, user_id: str, definition: dict[str, Any]
+    ) -> SkillModel:
+        row = self.get_skill(skill_id, user_id)
+        if row is None:
+            raise DatabaseConflictError(f"Skill {skill_id} tidak ditemukan")
+        skill = parse_skill(definition)
+        # Rename collision check kalau name berubah
+        if skill.name != row.name:
+            clash = self._session.scalar(
+                select(SkillModel).where(
+                    SkillModel.project_id == row.project_id,
+                    SkillModel.name == skill.name,
+                    SkillModel.id != row.id,
+                )
+            )
+            if clash is not None:
+                raise DatabaseConflictError(
+                    f"Skill '{skill.name}' sudah dipakai di project ini"
+                )
+        row.name = skill.name
+        row.description = skill.description
+        row.definition = skill_to_dict(skill)
+        self._session.flush()
+        return row
+
+    def delete_skill(self, skill_id: str, user_id: str) -> bool:
+        row = self.get_skill(skill_id, user_id)
+        if row is None:
+            return False
+        self._session.delete(row)
+        self._session.flush()
+        return True
+
+    def load_skill_domain(self, row: SkillModel) -> Skill:
+        """Helper untuk caller yang butuh ``Skill`` dataclass (mis. executor)."""
+        return parse_skill(row.definition)
