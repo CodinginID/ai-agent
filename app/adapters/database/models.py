@@ -328,6 +328,36 @@ class KnowledgeChunkModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
+class SkillModel(Base):
+    """User-defined workflow Skill (DSL deklaratif, lihat ``app.domain.skills``).
+
+    ``definition`` JSONB menyimpan parsed-validated dict yang round-trip dengan
+    ``app.domain.skills.skill_to_dict`` / ``parse_skill``. UNIQUE(project_id, name)
+    supaya satu project tidak punya dua skill bernama sama.
+    """
+
+    __tablename__ = "skills"
+    __table_args__ = (
+        UniqueConstraint("project_id", "name", name="uq_skills_project_name"),
+        Index("ix_skills_project", "project_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(120))
+    description: Mapped[str] = mapped_column(Text, default="")
+    definition: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+    )
+
+
 class AuditEventModel(Base):
     __tablename__ = "audit_events"
     __table_args__ = (
