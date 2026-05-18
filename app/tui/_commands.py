@@ -598,3 +598,203 @@ async def cmd_audit(args: list[str]) -> None:
             ("class:dim",         preview[:80]),
         ])
     println("", "")
+
+
+# ── /skill — workflow Skill DSL ──────────────────────────────────────────────
+
+
+async def cmd_skill(args: list[str]) -> None:
+    """List, show, delete, run, atau load skills.
+
+    Usage:
+      /skill                          — list semua skill di project active
+      /skill <project_id>             — list di project tertentu
+      /skill show <skill_id>          — tampilkan JSON definition
+      /skill rm <skill_id>            — hapus skill
+      /skill run <skill_id> <prompt>  — eksekusi (streaming events)
+      /skill load <project_id> <path> — load definition dari JSON file → create
+    """
+    session = _state.active_session
+    if session is None:
+        println("class:warn", "  login dulu via /login")
+        return
+
+    sub = args[0].lower() if args else "list"
+
+    if sub in ("list", "ls") or not args:
+        project_id = args[1] if len(args) > 1 and sub != "list" else (
+            args[0] if args and sub == "list" and len(args) > 1 else None
+        )
+        # Simplifikasi: kalau arg pertama bukan keyword, treat as project_id.
+        if args and args[0] not in {"list", "ls", "show", "rm", "run", "load"}:
+            project_id = args[0]
+        if project_id is None:
+            println("class:warn", "  butuh project_id. Usage: /skill <project_id>")
+            return
+        await _skill_list(session.token, project_id)
+        return
+
+    if sub == "show" and len(args) >= 2:
+        await _skill_show(session.token, args[1])
+        return
+    if sub == "rm" and len(args) >= 2:
+        await _skill_delete(session.token, args[1])
+        return
+    if sub == "run" and len(args) >= 3:
+        await _skill_run(session.token, args[1], " ".join(args[2:]))
+        return
+    if sub == "load" and len(args) >= 3:
+        await _skill_load(session.token, args[1], args[2])
+        return
+
+    println("class:warn", "  usage: /skill [list|show|rm|run|load] ...")
+
+
+async def _skill_list(token: str, project_id: str) -> None:
+    try:
+        async with httpx.AsyncClient(timeout=10.0, trust_env=False) as c:
+            r = await c.get(
+                f"{settings.app_url}/skills",
+                params={"project_id": project_id},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    except httpx.HTTPError as exc:
+        println("class:err", f"  request gagal: {fmt_http_error(exc)}")
+        return
+    if r.status_code != 200:
+        println("class:err", f"  HTTP {r.status_code}: {r.text[:200]}")
+        return
+    skills = r.json().get("skills", [])
+    if not skills:
+        println("class:dim", f"  (no skills di project {project_id})")
+        return
+    println("class:section", f"  Skills di project {project_id}")
+    println("class:rule", "  " + "─" * 60)
+    for s in skills:
+        print_parts([
+            ("class:cmd.name", f"  {s['name']:<24}"),
+            ("class:dim",      f"{s['id'][:8]}…  "),
+            ("",               s.get("description", "")[:50] or "—"),
+        ])
+    println("", "")
+
+
+async def _skill_show(token: str, skill_id: str) -> None:
+    import json as _json
+    try:
+        async with httpx.AsyncClient(timeout=10.0, trust_env=False) as c:
+            r = await c.get(
+                f"{settings.app_url}/skills/{skill_id}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    except httpx.HTTPError as exc:
+        println("class:err", f"  request gagal: {fmt_http_error(exc)}")
+        return
+    if r.status_code != 200:
+        println("class:err", f"  HTTP {r.status_code}: {r.text[:200]}")
+        return
+    data = r.json()
+    println("class:section", f"  Skill: {data['name']}")
+    println("class:rule", "  " + "─" * 60)
+    pretty = _json.dumps(data["definition"], indent=2, ensure_ascii=False)
+    for line in pretty.splitlines():
+        println("class:dim", "  " + line)
+    println("", "")
+
+
+async def _skill_delete(token: str, skill_id: str) -> None:
+    try:
+        async with httpx.AsyncClient(timeout=10.0, trust_env=False) as c:
+            r = await c.delete(
+                f"{settings.app_url}/skills/{skill_id}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    except httpx.HTTPError as exc:
+        println("class:err", f"  request gagal: {fmt_http_error(exc)}")
+        return
+    if r.status_code == 200:
+        println("class:ok", f"  ✓ skill {skill_id} dihapus")
+    else:
+        println("class:err", f"  HTTP {r.status_code}: {r.text[:200]}")
+
+
+async def _skill_load(token: str, project_id: str, path: str) -> None:
+    import json as _json
+    try:
+        with open(os.path.expanduser(path), encoding="utf-8") as f:
+            definition = _json.load(f)
+    except OSError as exc:
+        println("class:err", f"  baca file gagal: {exc}")
+        return
+    except _json.JSONDecodeError as exc:
+        println("class:err", f"  JSON invalid: {exc}")
+        return
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0, trust_env=False) as c:
+            r = await c.post(
+                f"{settings.app_url}/skills",
+                json={"project_id": project_id, "definition": definition},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    except httpx.HTTPError as exc:
+        println("class:err", f"  request gagal: {fmt_http_error(exc)}")
+        return
+    if r.status_code == 201:
+        data = r.json()
+        println("class:ok", f"  ✓ skill '{data['name']}' dibuat (id: {data['id'][:8]}…)")
+    else:
+        println("class:err", f"  HTTP {r.status_code}: {r.text[:200]}")
+
+
+async def _skill_run(token: str, skill_id: str, prompt: str) -> None:
+    import json as _json
+    println("class:section", f"  Running skill {skill_id}…")
+    try:
+        async with httpx.AsyncClient(timeout=None, trust_env=False) as c, c.stream(
+            "POST",
+            f"{settings.app_url}/skills/{skill_id}/run",
+            json={"prompt": prompt},
+            headers={"Authorization": f"Bearer {token}"},
+        ) as r:
+            if r.status_code != 200:
+                body = await r.aread()
+                println("class:err", f"  HTTP {r.status_code}: {body.decode()[:200]}")
+                return
+            event_name = ""
+            async for line in r.aiter_lines():
+                if line.startswith("event: "):
+                    event_name = line[len("event: "):]
+                elif line.startswith("data: "):
+                    payload = line[len("data: "):]
+                    _render_skill_event(event_name, payload, _json)
+    except httpx.HTTPError as exc:
+        println("class:err", f"  request gagal: {fmt_http_error(exc)}")
+
+
+def _render_skill_event(event_name: str, payload_str: str, json_mod: Any) -> None:
+    try:
+        payload = json_mod.loads(payload_str) if payload_str else {}
+    except Exception:
+        payload = {}
+    if event_name == "skill_started":
+        n = payload.get("step_count", "?")
+        println("class:section", f"  ▶ skill '{payload.get('skill_name')}' ({n} steps)")
+    elif event_name == "step_started":
+        println(
+            "class:cmd.name",
+            f"  → step '{payload.get('step_name')}' (role={payload.get('role')}, agent={payload.get('agent')})",
+        )
+    elif event_name == "step_chunk":
+        text = payload.get("text", "")
+        if text:
+            println("class:dim", "    " + text.rstrip())
+    elif event_name == "step_done":
+        summary = payload.get("summary", "")
+        println("class:ok", f"  ✓ step done{(' — ' + summary) if summary else ''}")
+    elif event_name == "step_failed":
+        println("class:err", f"  ✗ step failed: {payload.get('reason', '')}")
+    elif event_name == "skill_completed":
+        println("class:ok", "  ✓✓ skill completed")
+    elif event_name == "skill_failed":
+        println("class:err", f"  ✗✗ skill failed: {payload.get('reason', '')}")
