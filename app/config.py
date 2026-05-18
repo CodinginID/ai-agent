@@ -97,6 +97,12 @@ class Settings:
     instance_id: str
     telegram_bot_username: str
 
+    # ── RAG ───────────────────────────────────────────────────────────────────
+    rag_enabled: bool
+    embedder_backend: str       # "fastembed" | "ollama" | "none"
+    rag_recall_k: int
+    ollama_embed_model: str
+
 
 _DEFAULT_MANUAL_COMMANDS: frozenset[str] = frozenset({
     "docker", "git", "ls", "ps", "df", "du", "free",
@@ -190,6 +196,10 @@ def load_settings() -> Settings:
             or "backend-default"
         ),
         telegram_bot_username=os.getenv("TELEGRAM_BOT_USERNAME", "").strip(),
+        rag_enabled=_env_bool("RAG_ENABLED", default=True),
+        embedder_backend=os.getenv("EMBEDDER_BACKEND", "fastembed").strip().lower(),
+        rag_recall_k=max(1, int(os.getenv("RAG_RECALL_K", "5"))),
+        ollama_embed_model=os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text").strip(),
     )
 
 

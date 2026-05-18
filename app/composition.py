@@ -19,6 +19,7 @@ from app.adapters.database.session import (
     create_database_engine,
     create_session_factory,
 )
+from app.adapters.knowledge_store_memory import InMemoryKnowledgeStore
 from app.adapters.ollama import OllamaAdapter
 from app.config import settings
 from app.domain.use_cases import HandleMessageUseCase
@@ -28,6 +29,8 @@ from app.executor.loop import ExecutionLoop
 from app.intents.parser import IntentParser
 from app.orchestrator.approval import PendingPlanStore
 from app.orchestrator.plans import PlanGenerator
+from app.ports.embedder import Embedder
+from app.ports.knowledge_store import KnowledgeStore
 
 
 @lru_cache(maxsize=1)
@@ -71,6 +74,38 @@ def _execution_loop() -> ExecutionLoop:
         context_collector=_context_collector(),
         working_dir=settings.project_dir,
     )
+
+
+# ── RAG factories ────────────────────────────────────────────────────────────
+
+
+@lru_cache(maxsize=1)
+def _embedder() -> Embedder | None:
+    """Return embedder backend per ``EMBEDDER_BACKEND`` env. None = RAG disabled."""
+    if not settings.rag_enabled:
+        return None
+    backend = settings.embedder_backend
+    if backend == "none":
+        return None
+    if backend == "fastembed":
+        from app.adapters.embedder_fastembed import FastEmbedAdapter
+        return FastEmbedAdapter()
+    if backend == "ollama":
+        from app.adapters.embedder_ollama import OllamaEmbedder
+        return OllamaEmbedder(url=settings.ollama_host, model=settings.ollama_embed_model)
+    raise ValueError(f"Unknown EMBEDDER_BACKEND: {backend!r}")
+
+
+@lru_cache(maxsize=1)
+def _knowledge_store() -> KnowledgeStore:
+    """Production: PgVectorKnowledgeStore. Test/dev SQLite: InMemoryKnowledgeStore.
+
+    Dipilih berdasarkan DATABASE_URL — pgvector cuma jalan di Postgres.
+    """
+    if settings.database_url.startswith("postgresql"):
+        from app.adapters.knowledge_store_pgvector import PgVectorKnowledgeStore
+        return PgVectorKnowledgeStore(_session_factory())
+    return InMemoryKnowledgeStore()
 
 
 def build_use_case() -> HandleMessageUseCase:

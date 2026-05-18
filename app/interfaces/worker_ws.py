@@ -389,13 +389,23 @@ async def dispatch_agent_job(
 
     async with sem:
         from app.adapters import agent_context, job_store
+        from app.composition import _embedder, _knowledge_store
         from app.config import settings as _settings
+        from app.orchestrator.rag import (
+            enrich_prompt_with_recall,
+            index_task_result,
+        )
 
         job_id = secrets.token_urlsafe(12)
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
         async with _pending_jobs_lock:
             _pending_jobs[job_id] = queue
+
+        # Resolve project_id untuk scoping scratchpad + RAG. Active-project
+        # per-device belum di-track di WS state — pakai user's default project
+        # sampai task itu landed. Idempotent.
+        project_id = await asyncio.to_thread(_resolve_default_project_id, user_id)
 
         # Persist job state ke Redis — survive restart, observability, multi-instance
         await job_store.create(
@@ -408,11 +418,21 @@ async def dispatch_agent_job(
         )
 
         try:
+            # RAG enrichment — prepend top-K recall hits ke prompt. No-op kalau
+            # embedder None (RAG_ENABLED=false / EMBEDDER_BACKEND=none).
+            enriched_prompt = await enrich_prompt_with_recall(
+                project_id=project_id,
+                prompt=prompt,
+                embedder=_embedder(),
+                store=_knowledge_store(),
+                k=_settings.rag_recall_k,
+            )
+
             payload: dict[str, Any] = {
                 "type": "job",
                 "job_id": job_id,
                 "agent": agent,
-                "prompt": prompt,
+                "prompt": enriched_prompt,
             }
             if extra:
                 payload["extra"] = extra
@@ -452,16 +472,27 @@ async def dispatch_agent_job(
                 elif kind == "job_done":
                     summary = str(event.get("summary", ""))
                     await job_store.update_status(job_id, "done", summary=summary)
+                    full_output = "".join(output_buf).strip()
                     if role:
-                        # TODO(issue #26 task "active project tracking"): ganti
-                        # user_id dengan project_id resolved dari device.
                         await agent_context.store_result(
-                            user_id, role,
+                            project_id, role,
                             agent=agent,
                             prompt=prompt,
-                            output="".join(output_buf).strip(),
+                            output=full_output,
                             summary=summary,
                         )
+                    # Index hasil ke RAG untuk recall di task berikutnya.
+                    # Gagal-silently di dalam helper kalau RAG off / error.
+                    await index_task_result(
+                        project_id=project_id,
+                        prompt=prompt,
+                        output=full_output,
+                        role=role or "default",
+                        agent=agent,
+                        embedder=_embedder(),
+                        store=_knowledge_store(),
+                        extra_meta={"job_id": job_id, "summary": summary},
+                    )
                     return
                 elif kind == "job_error":
                     await job_store.update_status(
@@ -471,3 +502,19 @@ async def dispatch_agent_job(
         finally:
             async with _pending_jobs_lock:
                 _pending_jobs.pop(job_id, None)
+
+
+def _resolve_default_project_id(user_id: str) -> str:
+    """Resolve project_id via default project per user (idempotent).
+
+    Sementara sampai per-device active project tracking landed di WS state.
+    """
+    from app.adapters.database.repositories import ControlPlaneRepository
+    from app.composition import _session_factory
+
+    with _session_factory()() as session:
+        repo = ControlPlaneRepository(session)
+        project = repo.get_or_create_default_project(user_id)
+        project_id = project.id
+        session.commit()
+    return project_id
