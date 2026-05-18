@@ -22,14 +22,14 @@ def get_status_bar_text() -> FormattedText:
             _state.active_session.email
             or _state.active_session.user_id[:8]
         )
-        user_part = ("class:status.user", f"as: {user_label}")
+        user_part = ("class:status.user", f"login: {user_label}")
     else:
-        user_part = ("class:status.warn", "not logged in — /login")
+        user_part = ("class:status.warn", "belum login — /login")
 
     if online == "yes":
         indicator: list[tuple[str, str]] = [("class:status.ok", " ● online")]
     elif online == "?":
-        indicator = [("class:status.dim", " ◌ connecting…")]
+        indicator = [("class:status.dim", " ◌ menghubungkan…")]
     else:
         indicator = [("class:status.err", " ● offline")]
 
@@ -38,7 +38,7 @@ def get_status_bar_text() -> FormattedText:
         ("class:status.sep", "  │  "),
         ("class:status.dim", f"mode: {mode}"),
         ("class:status.sep", "  │  "),
-        ("class:status.dim", f"users: {users}"),
+        ("class:status.dim", f"pengguna: {users}"),
         ("class:status.sep", "  │  "),
         user_part,
         ("class:status.sep", "  │  "),
