@@ -210,7 +210,7 @@ async def _execute_agent(
         await ws.send(json.dumps({
             "type": "job_error",
             "job_id": job_id,
-            "message": f"agent '{agent}' belum didukung. Available: {', '.join(_AGENTS)}",
+            "message": f"agent '{agent}' belum didukung. Tersedia: {', '.join(_AGENTS)}",
         }))
         return
 
