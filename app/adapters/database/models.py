@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
+from pgvector.sqlalchemy import Vector  # type: ignore[import-untyped]
 from sqlalchemy import (
     JSON,
     BigInteger,
@@ -16,6 +17,8 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.adapters.database.base import Base
+
+KNOWLEDGE_EMBEDDING_DIM = 384  # all-MiniLM-L6-v2 default (FastEmbed)
 
 
 def uuid_str() -> str:
@@ -298,6 +301,30 @@ class ChatMessageModel(Base):
     conversation_id: Mapped[str] = mapped_column(String(80), index=True)
     role: Mapped[str] = mapped_column(String(20))
     content: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class KnowledgeChunkModel(Base):
+    """RAG chunk — fragment teks + embedding, per-project.
+
+    Embedding dim default 384 (``KNOWLEDGE_EMBEDDING_DIM``) — cocok dengan
+    FastEmbed/all-MiniLM-L6-v2 yang dipakai sebagai default Embedder.
+    Re-embed semua kalau ganti model dengan dim berbeda.
+    """
+
+    __tablename__ = "knowledge_chunks"
+    __table_args__ = (
+        Index("ix_knowledge_chunks_project_created", "project_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        index=True,
+    )
+    text: Mapped[str] = mapped_column(Text)
+    embedding: Mapped[list[float]] = mapped_column(Vector(KNOWLEDGE_EMBEDDING_DIM))
+    meta: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
