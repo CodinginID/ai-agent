@@ -33,6 +33,7 @@ from app.tui._commands import (
     cmd_me,
     cmd_pair_telegram,
     cmd_shell,
+    cmd_skill,
     cmd_status,
     cmd_users,
     parse_command,
@@ -332,6 +333,8 @@ async def _dispatch(
         "logs":           lambda: cmd_logs(args),
         "shell":          cmd_shell,
         "zsh":            cmd_shell,
+        "skill":          lambda: cmd_skill(args),
+        "skills":         lambda: cmd_skill(args),
     }
     handler = handlers.get(cmd)
     if handler is None:
