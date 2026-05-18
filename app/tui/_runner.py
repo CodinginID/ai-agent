@@ -68,13 +68,13 @@ _LOGO: list[tuple[str, str]] = [
     ("class:logo.sub",      "  OCTOPUS  ·  Server Monitoring  ·  Control  ·  AI Chat"),
     ("class:logo.ver",      "  ─────  v0.1.0\n"),
     ("class:logo.hint.key", "  Tab "),
-    ("class:logo.hint",     "complete   "),
+    ("class:logo.hint",     "lengkapi   "),
     ("class:logo.hint.key", "↑↓ "),
-    ("class:logo.hint",     "history   "),
+    ("class:logo.hint",     "riwayat   "),
     ("class:logo.hint.key", "/help "),
-    ("class:logo.hint",     "commands   "),
+    ("class:logo.hint",     "perintah   "),
     ("class:logo.hint.key", "Ctrl-C "),
-    ("class:logo.hint",     "quit"),
+    ("class:logo.hint",     "keluar"),
 ]
 
 
@@ -259,7 +259,7 @@ def run() -> None:
         mouse_support=False,
     )
 
-    println("class:dim", "  Ketik /help untuk daftar command, atau langsung kirim pesan ke bot.")
+    println("class:dim", "  Ketik /help untuk daftar perintah, atau langsung kirim pesan ke bot.")
     println("", "")
 
     async def _init() -> None:
@@ -300,7 +300,7 @@ def run() -> None:
     finally:
         _state.running[0] = False
 
-    print("  Bye.")
+    print("  Sampai jumpa.")
 
 
 async def _dispatch(
@@ -335,6 +335,6 @@ async def _dispatch(
     }
     handler = handlers.get(cmd)
     if handler is None:
-        println("class:dim", f"  command tidak dikenal: /{cmd}")
+        println("class:dim", f"  perintah tidak dikenal: /{cmd}")
     else:
         await handler()
