@@ -145,20 +145,20 @@ async def poll_pair_code(code: str) -> str | None:
     except httpx.HTTPError:
         return None
     if r.status_code == 410:
-        raise LoginAbortedError("kode pair expired atau tidak dikenal")
+        raise LoginAbortedError("pair code expired or unknown")
     if r.status_code == 200:
         try:
             data = r.json()
         except Exception as exc:
             raise LoginAbortedError(
-                f"backend balas 200 tapi body bukan JSON valid: {exc} "
+                f"backend returned 200 but body is not valid JSON: {exc} "
                 f"(body={r.text[:120]!r})"
             ) from exc
         token = data.get("session_token")
         if data.get("status") == "paired" and token:
             return str(token)
         # 200 tapi bukan paired/token kosong — bug yang tidak boleh terjadi.
-        raise LoginAbortedError(f"backend balas 200 tapi payload aneh: {data!r}")
+        raise LoginAbortedError(f"backend returned 200 but payload is malformed: {data!r}")
     # 202 pending atau status lain → terus loop polling.
     return None
 
