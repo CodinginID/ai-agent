@@ -54,14 +54,14 @@ async def cmd_help() -> None:
     println("class:section", "  Perintah")
     println("class:rule",    "  " + "─" * 52)
     rows = [
-        ("/help",                 "tampilkan daftar command ini"),
+        ("/help",                 "tampilkan daftar perintah ini"),
         ("/login",                "login Google via QR — wajib pertama kali"),
-        ("/logout",               "logout session TUI saat ini"),
-        ("/me",                   "info user yang sedang login"),
-        ("/pair-telegram",        "link bot Telegram ke akun ini via QR"),
-        ("/status",               "mode bot, jumlah user, versi backend"),
-        ("/users",                "daftar user terdaftar (admin)"),
-        ("/admin-logout <email>", "putus link Telegram user (admin)"),
+        ("/logout",               "logout sesi TUI saat ini"),
+        ("/me",                   "info pengguna yang sedang login"),
+        ("/pair-telegram",        "hubungkan bot Telegram ke akun ini via QR"),
+        ("/status",               "mode bot, jumlah pengguna, versi backend"),
+        ("/users",                "daftar pengguna terdaftar (admin)"),
+        ("/admin-logout <email>", "putus link Telegram pengguna (admin)"),
         ("/logs [n]",             "tail n baris log Docker (default 50)"),
         ("/logs -f",              "follow log live  (Ctrl+C untuk stop)"),
         ("/shell",                "drop ke shell  —  exit untuk kembali"),
@@ -96,8 +96,8 @@ async def cmd_status() -> None:
         if r.status_code == 200:
             data = r.json()
             println("", f"  ·  mode      {data.get('mode', '-')}")
-            println("", f"  ·  users     {data.get('user_count', 0)}")
-            println("", f"  ·  version   {data.get('version', '-')}")
+            println("", f"  ·  pengguna  {data.get('user_count', 0)}")
+            println("", f"  ·  versi     {data.get('version', '-')}")
         else:
             println("class:dim", f"  /admin/status: HTTP {r.status_code} {r.text[:100]}")
     except httpx.HTTPError as exc:
@@ -118,7 +118,7 @@ async def cmd_users(completer: TuiCompleter) -> None:
     payload: dict[str, Any] = r.json()
     users = payload.get("users", [])
     if not users:
-        println("class:dim", "  belum ada user terdaftar.")
+        println("class:dim", "  belum ada pengguna terdaftar.")
         return
     emails: list[str] = []
     println("class:section", "  Pengguna")
@@ -527,11 +527,11 @@ async def _agents_list(token: str) -> None:
         ])
     println("", "")
     if any(a["enabled"] and a.get("installed_on_workers", 0) == 0 for a in agents):
-        println("class:warn", "  ⚠️  Ada agent enabled tapi belum terinstall di mesin worker manapun.")
+        println("class:warn", "  ⚠️  Ada agent aktif tapi belum terinstall di mesin worker manapun.")
         println("class:dim", "    Install CLI di mesin TUI kamu, atau /agents <name> off.")
         println("", "")
     println("class:dim", "  Toggle:  /agents codex on    /agents codex off")
-    println("class:dim", "  Role:    /agents codex role engineer")
+    println("class:dim", "  Peran:   /agents codex role engineer")
     println("class:dim", "  Model:   /agents codex model gpt-4o-mini")
 
 
