@@ -37,7 +37,7 @@ async def render_sse(lines: AsyncIterator[str]) -> None:
             println("class:warn", f"  butuh approval — plan_id={payload.get('plan_id')}")
             println("", payload.get("summary", ""))
         elif event == "action_started":
-            println("class:dim", f"  > running {payload.get('action')}...")
+            println("class:dim", f"  > menjalankan {payload.get('action')}...")
         elif event == "action_result":
             println("", payload.get("output", ""))
         elif event == "text_chunk":
@@ -95,7 +95,7 @@ async def send_chat(text: str) -> None:
             trust_env=False,
         ) as c, c.stream("POST", "/chat/send", json={"text": text}) as resp:
             if resp.status_code == 401:
-                println("class:err", "  session expired. Ketik /login lagi.")
+                println("class:err", "  sesi habis. Ketik /login lagi.")
                 return
             if resp.status_code != 200:
                 body_bytes = await resp.aread()
