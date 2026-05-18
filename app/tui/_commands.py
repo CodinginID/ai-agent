@@ -51,7 +51,7 @@ def parse_command(line: str) -> tuple[str, list[str]] | None:
 
 
 async def cmd_help() -> None:
-    println("class:section", "  Commands")
+    println("class:section", "  Perintah")
     println("class:rule",    "  " + "─" * 52)
     rows = [
         ("/help",                 "tampilkan daftar command ini"),
@@ -82,7 +82,7 @@ async def cmd_help() -> None:
 
 
 async def cmd_status() -> None:
-    println("class:section", "  Backend Status")
+    println("class:section", "  Status Backend")
     println("class:rule",    "  " + "─" * 52)
     reachable, info = await probe_health()
     if reachable:
@@ -121,11 +121,11 @@ async def cmd_users(completer: TuiCompleter) -> None:
         println("class:dim", "  belum ada user terdaftar.")
         return
     emails: list[str] = []
-    println("class:section", "  Users")
+    println("class:section", "  Pengguna")
     println("class:rule",    "  " + "─" * 52)
     print_parts([
-        ("class:table.hdr", f"  {'email':<35}{'name':<25}{'telegram':<20}"),
-        ("class:table.hdr", "created"),
+        ("class:table.hdr", f"  {'email':<35}{'nama':<25}{'telegram':<20}"),
+        ("class:table.hdr", "dibuat"),
     ])
     println("class:rule", "  " + "─" * 52)
     for u in users:
@@ -314,7 +314,7 @@ async def cmd_pair_telegram() -> None:
     expires_in = data.get("expires_in_sec", 600)
 
     println("", "")
-    println("class:section", "  Pair Telegram")
+    println("class:section", "  Hubungkan Telegram")
     println("class:rule",    "  " + "─" * 52)
     print_parts([
         ("class:cmd.name", "  Pair code:  "),
@@ -497,10 +497,10 @@ async def _agents_list(token: str) -> None:
         println("class:err", f"  HTTP {r.status_code}: {r.text[:200]}")
         return
     agents = r.json().get("agents", [])
-    println("class:section", "  Agent Config")
+    println("class:section", "  Konfigurasi Agent")
     println("class:rule", "  " + "─" * 60)
     print_parts([
-        ("class:table.hdr", f"  {'agent':<10}{'enabled':<10}{'role':<14}{'workers':<10}"),
+        ("class:table.hdr", f"  {'agent':<10}{'aktif':<10}{'peran':<14}{'worker':<10}"),
         ("class:table.hdr", "model"),
     ])
     println("class:rule", "  " + "─" * 60)
@@ -581,7 +581,7 @@ async def cmd_audit(args: list[str]) -> None:
         println("class:dim", "  belum ada audit event.")
         return
 
-    println("class:section", f"  Audit Log ({len(events)} events)")
+    println("class:section", f"  Log Audit ({len(events)} event)")
     println("class:rule", "  " + "─" * 70)
     for ev in events:
         ts = ev.get("ts", "")[:19].replace("T", " ")
