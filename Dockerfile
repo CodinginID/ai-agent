@@ -8,8 +8,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     && rm -rf /var/lib/apt/lists/*
 
+ENV PYTHONDONTWRITEBYTECODE=1
+
 COPY requirements.txt .
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt \
+    && find /install -depth \
+        \( -type d -a \( -name tests -o -name test -o -name __pycache__ \) \
+        -o -type f -a -name '*.pyc' \) \
+        -exec rm -rf {} +
 
 # ── Stage 2: production ───────────────────────────────────────────────────────
 FROM python:3.13-slim AS production
