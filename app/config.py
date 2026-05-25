@@ -96,6 +96,7 @@ class Settings:
     worker_concurrency: int
     instance_id: str
     telegram_bot_username: str
+    rate_limit_seconds: int
 
     # ── RAG ───────────────────────────────────────────────────────────────────
     rag_enabled: bool
@@ -196,6 +197,7 @@ def load_settings() -> Settings:
             or "backend-default"
         ),
         telegram_bot_username=os.getenv("TELEGRAM_BOT_USERNAME", "").strip(),
+        rate_limit_seconds=max(0, int(os.getenv("RATE_LIMIT_SECONDS", "3"))),
         rag_enabled=_env_bool("RAG_ENABLED", default=True),
         embedder_backend=os.getenv("EMBEDDER_BACKEND", "fastembed").strip().lower(),
         rag_recall_k=max(1, int(os.getenv("RAG_RECALL_K", "5"))),

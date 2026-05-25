@@ -23,6 +23,8 @@ from app.adapters.database.session import (
 from app.adapters.handoff_context import RedisHandoffContextProvider
 from app.adapters.knowledge_store_memory import InMemoryKnowledgeStore
 from app.adapters.ollama import OllamaAdapter
+from app.adapters.rate_limit import RedisRateLimiter
+from app.adapters.redis_client import get_sync_client
 from app.config import settings
 from app.domain.use_cases import HandleMessageUseCase
 from app.executor.actions import ActionRegistry
@@ -78,6 +80,14 @@ def _execution_loop() -> ExecutionLoop:
     )
 
 
+@lru_cache(maxsize=1)
+def _rate_limiter() -> RedisRateLimiter:
+    return RedisRateLimiter(
+        redis_client=get_sync_client(),
+        cooldown_seconds=settings.rate_limit_seconds,
+    )
+
+
 # ── RAG factories ────────────────────────────────────────────────────────────
 
 
@@ -124,4 +134,5 @@ def build_use_case() -> HandleMessageUseCase:
         execution_loop=_execution_loop(),
         agent_resolver=SqlAgentRoleResolver(_session_factory()),
         handoff_provider=RedisHandoffContextProvider(),
+        rate_limiter=_rate_limiter(),
     )
