@@ -14,11 +14,13 @@ if TYPE_CHECKING:
     from sqlalchemy import Engine
     from sqlalchemy.orm import sessionmaker
 
+from app.adapters.agent_role_resolver import SqlAgentRoleResolver
 from app.adapters.chat_history import SqlAlchemyChatHistory
 from app.adapters.database.session import (
     create_database_engine,
     create_session_factory,
 )
+from app.adapters.handoff_context import RedisHandoffContextProvider
 from app.adapters.knowledge_store_memory import InMemoryKnowledgeStore
 from app.adapters.ollama import OllamaAdapter
 from app.config import settings
@@ -120,4 +122,6 @@ def build_use_case() -> HandleMessageUseCase:
         history=SqlAlchemyChatHistory(_session_factory()),
         history_limit=settings.chat_history_limit,
         execution_loop=_execution_loop(),
+        agent_resolver=SqlAgentRoleResolver(_session_factory()),
+        handoff_provider=RedisHandoffContextProvider(),
     )

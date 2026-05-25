@@ -24,6 +24,7 @@ from app.intents.parser import IntentParser
 from app.intents.schemas import EXECUTABLE_ACTIONS, Intent
 from app.orchestrator.approval import PendingPlanStore
 from app.orchestrator.plans import PlanGenerator
+from app.ports.agents import AgentRoleResolver, HandoffContextProvider
 from app.ports.ai_provider import AIProvider
 from app.ports.chat_history import ChatHistoryStore
 from app.ports.execution_loop import ExecutionLoopPort
@@ -142,6 +143,9 @@ class HandleMessageUseCase:
     history_limit: int = 6
     # Optional: when provided, complex requests are routed through the agentic loop.
     execution_loop: ExecutionLoopPort | None = field(default=None)
+    # Injected via composition.py — None disables agent delegation entirely.
+    agent_resolver: AgentRoleResolver | None = field(default=None)
+    handoff_provider: HandoffContextProvider | None = field(default=None)
 
     def handle(self, text: str, ctx: MessageContext) -> Iterator[ChatEvent]:
         """Pure synchronous generator — adapter layer adapts ke async kalau perlu."""
@@ -167,8 +171,13 @@ class HandleMessageUseCase:
         # yang ngerelay ke worker user via WS dispatcher. Use case cuma kasih
         # mapping intent → agent CLI + prompt yang udah dibersihin.
         if intent.is_agent():
-            agent_name = _agent_for_intent(intent.intent, ctx.user_id)
             role = _role_for_intent(intent.intent)
+            if self.agent_resolver is None:
+                yield ChatEvent.error(
+                    f"Agent resolver tidak tersedia untuk role '{role}'."
+                )
+                return
+            agent_name = self.agent_resolver.agent_for_role(ctx.user_id, role)
             if agent_name is None:
                 yield ChatEvent.error(
                     f"Belum ada agent yang assigned untuk role '{role}'. "
@@ -176,9 +185,10 @@ class HandleMessageUseCase:
                 )
                 return
             cleaned = _strip_command_prefix(text)
-            # Hand-off antar role: kalau ini reviewer/architect, ambil output
-            # role sebelumnya (engineer hasil terakhir) sebagai context tambahan.
-            cleaned = _maybe_prepend_handoff(ctx.project_id, role, cleaned)
+            if self.handoff_provider is not None:
+                cleaned = self.handoff_provider.prepend_context(
+                    ctx.project_id, role, cleaned
+                )
             yield ChatEvent.delegate_to_agent(
                 agent=agent_name,
                 prompt=cleaned,
@@ -346,25 +356,6 @@ def _role_for_intent(intent_name: str) -> str:
     return _INTENT_TO_ROLE.get(intent_name, "engineer")
 
 
-def _agent_for_intent(intent_name: str, user_id: str) -> str | None:
-    """Resolve intent → CLI agent name dari config DB per-user.
-
-    Cari agent yang ``enabled=True`` dan ``role`` cocok. Return None kalau user
-    belum config agent untuk role tersebut.
-    """
-    from app.adapters.agent_configs import UserAgentConfigRepository
-    from app.adapters.database.session import (
-        create_database_engine,
-        create_session_factory,
-    )
-    from app.config import settings as _settings
-
-    role = _role_for_intent(intent_name)
-    factory = create_session_factory(create_database_engine(_settings.database_url))
-    repo = UserAgentConfigRepository(factory)
-    return repo.agent_for_role(user_id, role)
-
-
 def _strip_command_prefix(text: str) -> str:
     """Buang prefix ``/code``, ``/review``, ``/architect``, ``/refactor`` kalau ada."""
     text = text.strip()
@@ -377,39 +368,3 @@ def _strip_command_prefix(text: str) -> str:
     return text
 
 
-# Mapping role yang inherit context dari role sebelumnya. Reviewer biasanya
-# review output engineer; architect bisa pakai output engineer juga.
-_HANDOFF_FROM: dict[str, str] = {
-    "reviewer":  "engineer",
-    "architect": "engineer",
-}
-
-
-def _maybe_prepend_handoff(project_id: str, current_role: str, prompt: str) -> str:
-    """Kalau current_role punya hand-off mapping, prepend hasil role sebelumnya."""
-    prev_role = _HANDOFF_FROM.get(current_role)
-    if not prev_role:
-        return prompt
-
-    import asyncio
-    import concurrent.futures
-
-    from app.adapters.agent_context import build_handoff_prefix, fetch_role
-
-    def _run() -> dict[str, Any] | None:
-        # New event loop in dedicated thread — safe regardless of outer loop state.
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(fetch_role(project_id, prev_role))
-        finally:
-            loop.close()
-
-    try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            prev = pool.submit(_run).result(timeout=5)
-    except Exception:
-        return prompt
-
-    if not prev:
-        return prompt
-    return build_handoff_prefix(prev, current_role) + prompt
