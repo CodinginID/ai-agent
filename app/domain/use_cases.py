@@ -28,6 +28,7 @@ from app.ports.agents import AgentRoleResolver, HandoffContextProvider
 from app.ports.ai_provider import AIProvider
 from app.ports.chat_history import ChatHistoryStore
 from app.ports.execution_loop import ExecutionLoopPort
+from app.ports.rate_limit import RateLimiterPort
 
 _CHAT_PROMPT_TEMPLATE = (
     "Kamu Octopus, AI orchestrator yang dipakai operator server lewat Telegram & TUI.\n"
@@ -146,11 +147,21 @@ class HandleMessageUseCase:
     # Injected via composition.py — None disables agent delegation entirely.
     agent_resolver: AgentRoleResolver | None = field(default=None)
     handoff_provider: HandoffContextProvider | None = field(default=None)
+    # Optional per-user cooldown gate. None disables rate limiting.
+    rate_limiter: RateLimiterPort | None = field(default=None)
 
     def handle(self, text: str, ctx: MessageContext) -> Iterator[ChatEvent]:
         """Pure synchronous generator — adapter layer adapts ke async kalau perlu."""
         text = text.strip()
         if not text:
+            return
+
+        # ── 0. Per-user rate limit ────────────────────────────────────────────
+        # Gate sebelum classify supaya request spam tidak menyentuh AI provider.
+        if self.rate_limiter is not None and not self.rate_limiter.is_allowed(ctx.user_id):
+            yield ChatEvent.error(
+                "Sedang memproses pesan kamu sebelumnya, tunggu sebentar..."
+            )
             return
 
         # ── 1. Classify intent ────────────────────────────────────────────────

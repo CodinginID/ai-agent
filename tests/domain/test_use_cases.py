@@ -83,6 +83,45 @@ def test_agent_delegation_yields_delegate_event() -> None:
     assert "delegate_to_agent" in types
 
 
+def test_rate_limited_user_gets_error_event() -> None:
+    intent_parser = MagicMock()
+    intent_parser.parse.return_value = _make_intent("agent_code")
+
+    limiter = MagicMock()
+    limiter.is_allowed.return_value = False
+
+    uc = _make_use_case(intent_parser=intent_parser, rate_limiter=limiter)
+    events = list(uc.handle("apapun", _make_ctx()))
+
+    types = [e.type for e in events]
+    assert types == ["error"]
+    assert "tunggu sebentar" in events[0].payload["message"].lower()
+    intent_parser.parse.assert_not_called()
+    assert "intent_classified" not in types
+
+
+def test_rate_limiter_allowed_lets_classification_proceed() -> None:
+    intent_parser = MagicMock()
+    intent_parser.parse.return_value = _make_intent("agent_code")
+
+    limiter = MagicMock()
+    limiter.is_allowed.return_value = True
+
+    resolver = MagicMock()
+    resolver.agent_for_role.return_value = "codex"
+
+    uc = _make_use_case(
+        intent_parser=intent_parser,
+        rate_limiter=limiter,
+        agent_resolver=resolver,
+    )
+    events = list(uc.handle("refactor kode X", _make_ctx()))
+
+    types = [e.type for e in events]
+    assert "intent_classified" in types
+    limiter.is_allowed.assert_called_once_with("u1")
+
+
 def test_agent_delegation_uses_handoff_provider_when_present() -> None:
     intent_parser = MagicMock()
     intent_parser.parse.return_value = _make_intent("agent_review")
