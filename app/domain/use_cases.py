@@ -26,6 +26,7 @@ from app.orchestrator.approval import PendingPlanStore
 from app.orchestrator.plans import PlanGenerator
 from app.ports.agents import AgentRoleResolver, HandoffContextProvider
 from app.ports.ai_provider import AIProvider
+from app.ports.audit import AuditLogger
 from app.ports.chat_history import ChatHistoryStore
 from app.ports.execution_loop import ExecutionLoopPort
 
@@ -146,19 +147,41 @@ class HandleMessageUseCase:
     # Injected via composition.py — None disables agent delegation entirely.
     agent_resolver: AgentRoleResolver | None = field(default=None)
     handoff_provider: HandoffContextProvider | None = field(default=None)
+    # Optional — when wired, every request emits structured audit events.
+    audit: AuditLogger | None = field(default=None)
 
     def handle(self, text: str, ctx: MessageContext) -> Iterator[ChatEvent]:
-        """Pure synchronous generator — adapter layer adapts ke async kalau perlu."""
+        """Public entry — wraps ``_handle_inner`` to emit request/response audit pairs."""
         text = text.strip()
         if not text:
             return
 
+        self._audit("request_received", ctx, text_preview=text[:200])
+
+        outcome = "ok"
+        try:
+            for event in self._handle_inner(text, ctx):
+                if event.type == ChatEventType.ERROR:
+                    outcome = "error"
+                yield event
+        finally:
+            self._audit("response_sent", ctx, outcome=outcome)
+
+    def _handle_inner(self, text: str, ctx: MessageContext) -> Iterator[ChatEvent]:
         # ── 1. Classify intent ────────────────────────────────────────────────
         try:
             intent = self.intent_parser.parse(text, ctx.project_id)
         except IntentParseError as exc:
+            self._audit("error", ctx, stage="intent_parse", detail=str(exc))
             yield ChatEvent.error(f"Gagal classify intent: {exc}")
             return
+
+        self._audit(
+            "intent_parsed",
+            ctx,
+            intent=intent.intent,
+            confidence=intent.confidence,
+        )
 
         yield ChatEvent.intent_classified(
             intent=intent.intent,
@@ -211,6 +234,19 @@ class HandleMessageUseCase:
         yield from self._handle_action(text, intent, ctx)
 
     # ── private ───────────────────────────────────────────────────────────────
+
+    def _audit(self, event: str, ctx: MessageContext, **fields: Any) -> None:
+        """Forward ke ``AuditLogger`` kalau ada. Best-effort — error di-swallow di adapter."""
+        if self.audit is None:
+            return
+        self.audit.log(
+            event,
+            ctx.trace_id,
+            user_id=ctx.user_id,
+            conversation_id=ctx.conversation_id,
+            project_id=ctx.project_id,
+            **fields,
+        )
 
     def _handle_loop(self, text: str, ctx: MessageContext) -> Iterator[ChatEvent]:
         """Route complex request through ExecutionLoop. Bridge LoopEvents → ChatEvents."""

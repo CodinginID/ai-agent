@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import sessionmaker
 
 from app.adapters.agent_role_resolver import SqlAgentRoleResolver
+from app.adapters.audit import JsonlAuditLogger
 from app.adapters.chat_history import SqlAlchemyChatHistory
 from app.adapters.database.session import (
     create_database_engine,
@@ -23,7 +24,7 @@ from app.adapters.database.session import (
 from app.adapters.handoff_context import RedisHandoffContextProvider
 from app.adapters.knowledge_store_memory import InMemoryKnowledgeStore
 from app.adapters.ollama import OllamaAdapter
-from app.config import settings
+from app.config import BASE_DIR, settings
 from app.domain.use_cases import HandleMessageUseCase
 from app.executor.actions import ActionRegistry
 from app.executor.context import ContextCollector
@@ -67,6 +68,11 @@ def _build_pending_plans() -> PendingPlanStore:
 @lru_cache(maxsize=1)
 def _context_collector() -> ContextCollector:
     return ContextCollector(working_dir=settings.project_dir)
+
+
+@lru_cache(maxsize=1)
+def _audit_logger() -> JsonlAuditLogger:
+    return JsonlAuditLogger(path=BASE_DIR / "logs" / "audit.jsonl")
 
 
 @lru_cache(maxsize=1)
@@ -124,4 +130,5 @@ def build_use_case() -> HandleMessageUseCase:
         execution_loop=_execution_loop(),
         agent_resolver=SqlAgentRoleResolver(_session_factory()),
         handoff_provider=RedisHandoffContextProvider(),
+        audit=_audit_logger(),
     )

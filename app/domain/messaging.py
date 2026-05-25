@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 
 class ChatEventType(StrEnum):
@@ -42,6 +43,9 @@ class MessageContext:
     project_name: str
     telegram_user_id: int | None = None  # untuk audit, optional
     extra: dict[str, Any] = field(default_factory=dict)
+    # UUID per request, dipropagasi ke setiap audit event supaya flow end-to-end
+    # bisa di-grep dari logs/audit.jsonl.
+    trace_id: str = field(default_factory=lambda: str(uuid4()))
 
 
 @dataclass(frozen=True)
