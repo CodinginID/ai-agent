@@ -32,6 +32,7 @@ from app.executor.actions import ActionRegistry
 from app.executor.context import ContextCollector
 from app.executor.loop import ExecutionLoop
 from app.intents.parser import IntentParser
+from app.memory.context_store import ProjectContextStore
 from app.orchestrator.approval import PendingPlanStore
 from app.orchestrator.plans import PlanGenerator
 from app.ports.embedder import Embedder
@@ -84,6 +85,11 @@ def _execution_loop() -> ExecutionLoop:
         context_collector=_context_collector(),
         working_dir=settings.project_dir,
     )
+
+
+@lru_cache(maxsize=1)
+def _context_store() -> ProjectContextStore:
+    return ProjectContextStore(BASE_DIR / "data")
 
 
 @lru_cache(maxsize=1)
@@ -142,4 +148,5 @@ def build_use_case() -> HandleMessageUseCase:
         handoff_provider=RedisHandoffContextProvider(),
         rate_limiter=_rate_limiter(),
         audit=_audit_logger(),
+        context_provider=_context_store(),
     )

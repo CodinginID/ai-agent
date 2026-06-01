@@ -602,6 +602,75 @@ def test_complex_request_loop_ai_error_yields_error_event() -> None:
     assert "LLM offline" in errors[0].payload["message"]
 
 
+def test_chat_injects_project_context_into_prompt() -> None:
+    intent_parser = MagicMock()
+    intent_parser.parse.return_value = _make_intent("chat", confidence=1.0)
+
+    ai = MagicMock()
+    ai.chat_stream.return_value = iter(["ok"])
+
+    history = MagicMock()
+    history.recent.return_value = []
+
+    context_provider = MagicMock()
+    context_provider.build_context.return_value = "## Konteks project\nTugas terbuka:\n- [1] deploy"
+
+    uc = _make_use_case(
+        intent_parser=intent_parser,
+        ai=ai,
+        history=history,
+        context_provider=context_provider,
+    )
+    list(uc.handle("apa tugas saya", _make_ctx(user_id="u1")))
+
+    context_provider.build_context.assert_called_once_with("u1")
+    prompt = ai.chat_stream.call_args.args[0]
+    assert "Tugas terbuka:" in prompt
+    assert "[1] deploy" in prompt
+
+
+def test_chat_without_context_provider_omits_context_section() -> None:
+    intent_parser = MagicMock()
+    intent_parser.parse.return_value = _make_intent("chat", confidence=1.0)
+
+    ai = MagicMock()
+    ai.chat_stream.return_value = iter(["ok"])
+
+    history = MagicMock()
+    history.recent.return_value = []
+
+    uc = _make_use_case(intent_parser=intent_parser, ai=ai, history=history)
+    list(uc.handle("halo", _make_ctx()))
+
+    prompt = ai.chat_stream.call_args.args[0]
+    assert "Konteks project" not in prompt
+
+
+def test_chat_empty_context_omits_context_section() -> None:
+    intent_parser = MagicMock()
+    intent_parser.parse.return_value = _make_intent("chat", confidence=1.0)
+
+    ai = MagicMock()
+    ai.chat_stream.return_value = iter(["ok"])
+
+    history = MagicMock()
+    history.recent.return_value = []
+
+    context_provider = MagicMock()
+    context_provider.build_context.return_value = ""
+
+    uc = _make_use_case(
+        intent_parser=intent_parser,
+        ai=ai,
+        history=history,
+        context_provider=context_provider,
+    )
+    list(uc.handle("halo", _make_ctx()))
+
+    prompt = ai.chat_stream.call_args.args[0]
+    assert "Konteks project" not in prompt
+
+
 def test_simple_intent_with_execution_loop_present_still_takes_action_path() -> None:
     """memory is in _EXPLICIT_SIMPLE_INTENTS — should never hit the loop."""
     intent = _make_intent("memory", confidence=0.95)

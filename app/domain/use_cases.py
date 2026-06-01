@@ -29,6 +29,7 @@ from app.ports.ai_provider import AIProvider
 from app.ports.audit import AuditLogger
 from app.ports.chat_history import ChatHistoryStore
 from app.ports.execution_loop import ExecutionLoopPort
+from app.ports.project_context import ProjectContextProvider
 from app.ports.rate_limit import RateLimiterPort
 
 _CHAT_PROMPT_TEMPLATE = (
@@ -45,6 +46,7 @@ _CHAT_PROMPT_TEMPLATE = (
     "   'git status', atau langsung '/cmd <command>'.\n"
     "5. Untuk pertanyaan kompleks (refactor kode, debug deep), suruh pakai Codex/Claude\n"
     "   via /codex atau /claude.\n\n"
+    "{project_context}"
     "Riwayat chat terakhir:\n{history}\n\n"
     "User: {user_text}\nOctopus:"
 )
@@ -152,6 +154,8 @@ class HandleMessageUseCase:
     rate_limiter: RateLimiterPort | None = field(default=None)
     # Optional — when wired, every request emits structured audit events.
     audit: AuditLogger | None = field(default=None)
+    # Optional — injects per-user project context (tasks/decisions/notes) into chat.
+    context_provider: ProjectContextProvider | None = field(default=None)
 
     def handle(self, text: str, ctx: MessageContext) -> Iterator[ChatEvent]:
         """Public entry — applies rate limit gate, wraps inner in audit envelope."""
@@ -295,7 +299,15 @@ class HandleMessageUseCase:
             history_lines.append(f"{role}: {msg.content}")
         history_text = "\n".join(history_lines) if history_lines else "(kosong)"
 
-        prompt = _CHAT_PROMPT_TEMPLATE.format(history=history_text, user_text=text)
+        project_context = ""
+        if self.context_provider is not None:
+            summary = self.context_provider.build_context(ctx.user_id)
+            if summary:
+                project_context = f"{summary}\n\n"
+
+        prompt = _CHAT_PROMPT_TEMPLATE.format(
+            history=history_text, user_text=text, project_context=project_context
+        )
 
         self.history.append(ctx.user_id, "user", text)
 
