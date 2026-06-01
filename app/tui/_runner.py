@@ -29,12 +29,15 @@ from app.tui._commands import (
     cmd_context,
     cmd_decision,
     cmd_help,
+    cmd_implement,
     cmd_login,
     cmd_logout_session,
     cmd_logs,
     cmd_me,
     cmd_pair_telegram,
+    cmd_plan,
     cmd_remember,
+    cmd_review_last,
     cmd_shell,
     cmd_skill,
     cmd_status,
@@ -347,6 +350,10 @@ async def _dispatch(
         "task_add":       lambda: cmd_task_add(args),
         "task_done":      lambda: cmd_task_done(args),
         "context":        cmd_context,
+        "plan":           lambda: cmd_plan(args),
+        "implement":      lambda: cmd_implement(args),
+        "review_last":    lambda: cmd_review_last(args),
+        "review-last":    lambda: cmd_review_last(args),
     }
     handler = handlers.get(cmd)
     if handler is None:

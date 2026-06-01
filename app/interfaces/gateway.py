@@ -11,6 +11,7 @@ from app.interfaces.chat import router as chat_router
 from app.interfaces.context import router as context_router
 from app.interfaces.skills import router as skills_router
 from app.interfaces.worker_ws import router as worker_ws_router
+from app.interfaces.workflow import router as workflow_router
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,7 @@ app.include_router(admin_router)
 app.include_router(chat_router)
 app.include_router(context_router)
 app.include_router(skills_router)
+app.include_router(workflow_router)
 app.include_router(worker_ws_router)
 
 

@@ -28,3 +28,6 @@ active_session: Session | None = None
 
 # Task /login yang masih jalan; saat /login dipicu lagi, task lama di-cancel.
 login_task: asyncio.Task[None] | None = None
+
+# plan_id terakhir dari /plan — dipakai /implement & /review_last tanpa arg.
+last_plan_id: str | None = None

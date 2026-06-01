@@ -35,6 +35,7 @@ from app.intents.parser import IntentParser
 from app.memory.context_store import ProjectContextStore
 from app.orchestrator.approval import PendingPlanStore
 from app.orchestrator.plans import PlanGenerator
+from app.orchestrator.workflow import WorkflowOrchestrator
 from app.ports.embedder import Embedder
 from app.ports.knowledge_store import KnowledgeStore
 
@@ -130,6 +131,31 @@ def _knowledge_store() -> KnowledgeStore:
         from app.adapters.knowledge_store_pgvector import PgVectorKnowledgeStore
         return PgVectorKnowledgeStore(_session_factory())
     return InMemoryKnowledgeStore()
+
+
+@lru_cache(maxsize=1)
+def _workflow_orchestrator() -> WorkflowOrchestrator:
+    from app.adapters.workflow_artifacts import FileArtifactStore, RepoFileChecker
+    from app.adapters.workflow_fallback import (
+        PromptArchitect,
+        PromptEngineer,
+        PromptReviewer,
+    )
+
+    ollama = _ollama()
+    return WorkflowOrchestrator(
+        architect=PromptArchitect(ai=ollama, model=settings.agent_role_architect),
+        engineer=PromptEngineer(ai=ollama, model=settings.agent_role_engineer),
+        reviewer=PromptReviewer(ai=ollama, model=settings.agent_role_reviewer),
+        artifacts=FileArtifactStore(BASE_DIR / "data"),
+        file_checker=RepoFileChecker(settings.project_dir),
+        audit=_audit_logger(),
+    )
+
+
+def build_workflow_orchestrator() -> WorkflowOrchestrator:
+    """Compose the architect→engineer→reviewer orchestrator (prompt fallback)."""
+    return _workflow_orchestrator()
 
 
 def build_use_case() -> HandleMessageUseCase:

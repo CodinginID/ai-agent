@@ -75,6 +75,10 @@ async def cmd_help() -> None:
         ("/task_done <id>",       "tandai task selesai"),
         ("/context",              "tampilkan konteks project yang diingat bot"),
         ("",                      ""),
+        ("/plan <goal>",          "architect bikin rencana implementasi"),
+        ("/implement [plan_id]",  "engineer→reviewer eksekusi plan (loop)"),
+        ("/review_last [plan_id]","review ulang patch terakhir"),
+        ("",                      ""),
         ("(teks bebas)",          "kirim chat ke bot  —  perlu /login dulu"),
     ]
     for cmd, desc in rows:
@@ -710,6 +714,71 @@ async def cmd_context() -> None:
     println("class:rule", "  " + "─" * 52)
     for line in summary.splitlines():
         println("class:dim", "  " + line)
+    println("", "")
+
+
+# ── architect→engineer→reviewer workflow (issue #6) ───────────────────────────
+
+
+def _resolve_plan_id(args: list[str], usage: str) -> str | None:
+    plan_id = args[0] if args else _state.last_plan_id
+    if not plan_id:
+        println("class:warn", f"  {usage} (atau jalankan /plan dulu)")
+        return None
+    return plan_id
+
+
+async def cmd_plan(args: list[str]) -> None:
+    goal = " ".join(args).strip()
+    if not goal:
+        println("class:warn", "  usage: /plan <goal>")
+        return
+    result = await _context_request("POST", "/workflow/plan", {"goal": goal})
+    if not isinstance(result, dict):
+        return
+    _state.last_plan_id = str(result.get("plan_id", "")) or None
+    println("class:section", f"  Plan {result.get('plan_id', '')[:8]}…")
+    println("class:rule", "  " + "─" * 52)
+    println("", f"  Goal: {result.get('goal', '')}")
+    for i, step in enumerate(result.get("steps", []), 1):
+        println("class:dim", f"  {i}. {step}")
+    files = result.get("target_files") or []
+    if files:
+        println("class:dim", f"  Files: {', '.join(files)}")
+    println("class:dim", "  → /implement untuk eksekusi engineer→reviewer")
+    println("", "")
+
+
+async def cmd_implement(args: list[str]) -> None:
+    plan_id = _resolve_plan_id(args, "usage: /implement <plan_id>")
+    if plan_id is None:
+        return
+    println("class:dim", "  engineer→reviewer berjalan (bisa beberapa iterasi)…")
+    result = await _context_request("POST", "/workflow/implement", {"plan_id": plan_id})
+    if not isinstance(result, dict):
+        return
+    approved = result.get("approved")
+    sty = "class:ok" if approved else "class:warn"
+    println(sty, f"  {'✓ approved' if approved else '✗ belum approved'} "
+                 f"(revisi: {result.get('revisions', 0)})")
+    verdict = result.get("verdict", {})
+    if isinstance(verdict, dict) and verdict.get("comments"):
+        println("class:dim", f"  reviewer: {verdict['comments']}")
+    println("", "")
+
+
+async def cmd_review_last(args: list[str]) -> None:
+    plan_id = _resolve_plan_id(args, "usage: /review_last <plan_id>")
+    if plan_id is None:
+        return
+    result = await _context_request("POST", "/workflow/review_last", {"plan_id": plan_id})
+    if not isinstance(result, dict):
+        return
+    approved = result.get("approved")
+    sty = "class:ok" if approved else "class:warn"
+    println(sty, f"  verdict: {'approved' if approved else 'rejected'}")
+    if result.get("comments"):
+        println("class:dim", f"  {result['comments']}")
     println("", "")
 
 

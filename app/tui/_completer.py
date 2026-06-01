@@ -15,6 +15,7 @@ ALL_COMMANDS = [
     "/status", "/users", "/admin-logout ",
     "/logs", "/logs -f", "/shell", "/clear", "/quit",
     "/remember ", "/decision ", "/tasks", "/task_add ", "/task_done ", "/context",
+    "/plan ", "/implement", "/review_last",
 ]
 
 
