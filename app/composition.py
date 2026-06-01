@@ -14,21 +14,28 @@ if TYPE_CHECKING:
     from sqlalchemy import Engine
     from sqlalchemy.orm import sessionmaker
 
+from app.adapters.agent_role_resolver import SqlAgentRoleResolver
+from app.adapters.audit import JsonlAuditLogger
 from app.adapters.chat_history import SqlAlchemyChatHistory
 from app.adapters.database.session import (
     create_database_engine,
     create_session_factory,
 )
+from app.adapters.handoff_context import RedisHandoffContextProvider
 from app.adapters.knowledge_store_memory import InMemoryKnowledgeStore
 from app.adapters.ollama import OllamaAdapter
-from app.config import settings
+from app.adapters.rate_limit import RedisRateLimiter
+from app.adapters.redis_client import get_sync_client
+from app.config import BASE_DIR, settings
 from app.domain.use_cases import HandleMessageUseCase
 from app.executor.actions import ActionRegistry
 from app.executor.context import ContextCollector
 from app.executor.loop import ExecutionLoop
 from app.intents.parser import IntentParser
+from app.memory.context_store import ProjectContextStore
 from app.orchestrator.approval import PendingPlanStore
 from app.orchestrator.plans import PlanGenerator
+from app.orchestrator.workflow import WorkflowOrchestrator
 from app.ports.embedder import Embedder
 from app.ports.knowledge_store import KnowledgeStore
 
@@ -68,11 +75,29 @@ def _context_collector() -> ContextCollector:
 
 
 @lru_cache(maxsize=1)
+def _audit_logger() -> JsonlAuditLogger:
+    return JsonlAuditLogger(path=BASE_DIR / "logs" / "audit.jsonl")
+
+
+@lru_cache(maxsize=1)
 def _execution_loop() -> ExecutionLoop:
     return ExecutionLoop(
         ai=_ollama(),
         context_collector=_context_collector(),
         working_dir=settings.project_dir,
+    )
+
+
+@lru_cache(maxsize=1)
+def _context_store() -> ProjectContextStore:
+    return ProjectContextStore(BASE_DIR / "data")
+
+
+@lru_cache(maxsize=1)
+def _rate_limiter() -> RedisRateLimiter:
+    return RedisRateLimiter(
+        redis_client=get_sync_client(),
+        cooldown_seconds=settings.rate_limit_seconds,
     )
 
 
@@ -108,6 +133,31 @@ def _knowledge_store() -> KnowledgeStore:
     return InMemoryKnowledgeStore()
 
 
+@lru_cache(maxsize=1)
+def _workflow_orchestrator() -> WorkflowOrchestrator:
+    from app.adapters.workflow_artifacts import FileArtifactStore, RepoFileChecker
+    from app.adapters.workflow_fallback import (
+        PromptArchitect,
+        PromptEngineer,
+        PromptReviewer,
+    )
+
+    ollama = _ollama()
+    return WorkflowOrchestrator(
+        architect=PromptArchitect(ai=ollama, model=settings.agent_role_architect),
+        engineer=PromptEngineer(ai=ollama, model=settings.agent_role_engineer),
+        reviewer=PromptReviewer(ai=ollama, model=settings.agent_role_reviewer),
+        artifacts=FileArtifactStore(BASE_DIR / "data"),
+        file_checker=RepoFileChecker(settings.project_dir),
+        audit=_audit_logger(),
+    )
+
+
+def build_workflow_orchestrator() -> WorkflowOrchestrator:
+    """Compose the architect→engineer→reviewer orchestrator (prompt fallback)."""
+    return _workflow_orchestrator()
+
+
 def build_use_case() -> HandleMessageUseCase:
     """Compose use case dengan semua dependensi konkret."""
     ollama = _ollama()
@@ -120,4 +170,9 @@ def build_use_case() -> HandleMessageUseCase:
         history=SqlAlchemyChatHistory(_session_factory()),
         history_limit=settings.chat_history_limit,
         execution_loop=_execution_loop(),
+        agent_resolver=SqlAgentRoleResolver(_session_factory()),
+        handoff_provider=RedisHandoffContextProvider(),
+        rate_limiter=_rate_limiter(),
+        audit=_audit_logger(),
+        context_provider=_context_store(),
     )

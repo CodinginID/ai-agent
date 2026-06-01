@@ -228,6 +228,10 @@ env/
 # Runtime data (projects.json seed dikecualikan)
 data/chat_project.json
 data/context/
+data/workflow/
 data/*.sqlite3
 data/*.sqlite3-*
 logs/
+
+# Claude Code agent worktrees (embedded git repos — jangan di-track)
+.claude/worktrees/

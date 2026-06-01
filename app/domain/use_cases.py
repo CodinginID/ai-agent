@@ -24,9 +24,13 @@ from app.intents.parser import IntentParser
 from app.intents.schemas import EXECUTABLE_ACTIONS, Intent
 from app.orchestrator.approval import PendingPlanStore
 from app.orchestrator.plans import PlanGenerator
+from app.ports.agents import AgentRoleResolver, HandoffContextProvider
 from app.ports.ai_provider import AIProvider
+from app.ports.audit import AuditLogger
 from app.ports.chat_history import ChatHistoryStore
 from app.ports.execution_loop import ExecutionLoopPort
+from app.ports.project_context import ProjectContextProvider
+from app.ports.rate_limit import RateLimiterPort
 
 _CHAT_PROMPT_TEMPLATE = (
     "Kamu Octopus, AI orchestrator yang dipakai operator server lewat Telegram & TUI.\n"
@@ -42,6 +46,7 @@ _CHAT_PROMPT_TEMPLATE = (
     "   'git status', atau langsung '/cmd <command>'.\n"
     "5. Untuk pertanyaan kompleks (refactor kode, debug deep), suruh pakai Codex/Claude\n"
     "   via /codex atau /claude.\n\n"
+    "{project_context}"
     "Riwayat chat terakhir:\n{history}\n\n"
     "User: {user_text}\nOctopus:"
 )
@@ -142,19 +147,55 @@ class HandleMessageUseCase:
     history_limit: int = 6
     # Optional: when provided, complex requests are routed through the agentic loop.
     execution_loop: ExecutionLoopPort | None = field(default=None)
+    # Injected via composition.py — None disables agent delegation entirely.
+    agent_resolver: AgentRoleResolver | None = field(default=None)
+    handoff_provider: HandoffContextProvider | None = field(default=None)
+    # Optional per-user cooldown gate. None disables rate limiting.
+    rate_limiter: RateLimiterPort | None = field(default=None)
+    # Optional — when wired, every request emits structured audit events.
+    audit: AuditLogger | None = field(default=None)
+    # Optional — injects per-user project context (tasks/decisions/notes) into chat.
+    context_provider: ProjectContextProvider | None = field(default=None)
 
     def handle(self, text: str, ctx: MessageContext) -> Iterator[ChatEvent]:
-        """Pure synchronous generator — adapter layer adapts ke async kalau perlu."""
+        """Public entry — applies rate limit gate, wraps inner in audit envelope."""
         text = text.strip()
         if not text:
             return
 
+        if self.rate_limiter is not None and not self.rate_limiter.is_allowed(ctx.user_id):
+            self._audit("rate_limited", ctx)
+            yield ChatEvent.error(
+                "Sedang memproses pesan kamu sebelumnya, tunggu sebentar..."
+            )
+            return
+
+        self._audit("request_received", ctx, text_preview=text[:200])
+
+        outcome = "ok"
+        try:
+            for event in self._handle_inner(text, ctx):
+                if event.type == ChatEventType.ERROR:
+                    outcome = "error"
+                yield event
+        finally:
+            self._audit("response_sent", ctx, outcome=outcome)
+
+    def _handle_inner(self, text: str, ctx: MessageContext) -> Iterator[ChatEvent]:
         # ── 1. Classify intent ────────────────────────────────────────────────
         try:
             intent = self.intent_parser.parse(text, ctx.project_id)
         except IntentParseError as exc:
+            self._audit("error", ctx, stage="intent_parse", detail=str(exc))
             yield ChatEvent.error(f"Gagal classify intent: {exc}")
             return
+
+        self._audit(
+            "intent_parsed",
+            ctx,
+            intent=intent.intent,
+            confidence=intent.confidence,
+        )
 
         yield ChatEvent.intent_classified(
             intent=intent.intent,
@@ -167,8 +208,13 @@ class HandleMessageUseCase:
         # yang ngerelay ke worker user via WS dispatcher. Use case cuma kasih
         # mapping intent → agent CLI + prompt yang udah dibersihin.
         if intent.is_agent():
-            agent_name = _agent_for_intent(intent.intent, ctx.user_id)
             role = _role_for_intent(intent.intent)
+            if self.agent_resolver is None:
+                yield ChatEvent.error(
+                    f"Agent resolver tidak tersedia untuk role '{role}'."
+                )
+                return
+            agent_name = self.agent_resolver.agent_for_role(ctx.user_id, role)
             if agent_name is None:
                 yield ChatEvent.error(
                     f"Belum ada agent yang assigned untuk role '{role}'. "
@@ -176,9 +222,10 @@ class HandleMessageUseCase:
                 )
                 return
             cleaned = _strip_command_prefix(text)
-            # Hand-off antar role: kalau ini reviewer/architect, ambil output
-            # role sebelumnya (engineer hasil terakhir) sebagai context tambahan.
-            cleaned = _maybe_prepend_handoff(ctx.project_id, role, cleaned)
+            if self.handoff_provider is not None:
+                cleaned = self.handoff_provider.prepend_context(
+                    ctx.project_id, role, cleaned
+                )
             yield ChatEvent.delegate_to_agent(
                 agent=agent_name,
                 prompt=cleaned,
@@ -201,6 +248,19 @@ class HandleMessageUseCase:
         yield from self._handle_action(text, intent, ctx)
 
     # ── private ───────────────────────────────────────────────────────────────
+
+    def _audit(self, event: str, ctx: MessageContext, **fields: Any) -> None:
+        """Forward ke ``AuditLogger`` kalau ada. Best-effort — error di-swallow di adapter."""
+        if self.audit is None:
+            return
+        self.audit.log(
+            event,
+            ctx.trace_id,
+            user_id=ctx.user_id,
+            conversation_id=ctx.conversation_id,
+            project_id=ctx.project_id,
+            **fields,
+        )
 
     def _handle_loop(self, text: str, ctx: MessageContext) -> Iterator[ChatEvent]:
         """Route complex request through ExecutionLoop. Bridge LoopEvents → ChatEvents."""
@@ -239,7 +299,15 @@ class HandleMessageUseCase:
             history_lines.append(f"{role}: {msg.content}")
         history_text = "\n".join(history_lines) if history_lines else "(kosong)"
 
-        prompt = _CHAT_PROMPT_TEMPLATE.format(history=history_text, user_text=text)
+        project_context = ""
+        if self.context_provider is not None:
+            summary = self.context_provider.build_context(ctx.user_id)
+            if summary:
+                project_context = f"{summary}\n\n"
+
+        prompt = _CHAT_PROMPT_TEMPLATE.format(
+            history=history_text, user_text=text, project_context=project_context
+        )
 
         self.history.append(ctx.user_id, "user", text)
 
@@ -346,25 +414,6 @@ def _role_for_intent(intent_name: str) -> str:
     return _INTENT_TO_ROLE.get(intent_name, "engineer")
 
 
-def _agent_for_intent(intent_name: str, user_id: str) -> str | None:
-    """Resolve intent → CLI agent name dari config DB per-user.
-
-    Cari agent yang ``enabled=True`` dan ``role`` cocok. Return None kalau user
-    belum config agent untuk role tersebut.
-    """
-    from app.adapters.agent_configs import UserAgentConfigRepository
-    from app.adapters.database.session import (
-        create_database_engine,
-        create_session_factory,
-    )
-    from app.config import settings as _settings
-
-    role = _role_for_intent(intent_name)
-    factory = create_session_factory(create_database_engine(_settings.database_url))
-    repo = UserAgentConfigRepository(factory)
-    return repo.agent_for_role(user_id, role)
-
-
 def _strip_command_prefix(text: str) -> str:
     """Buang prefix ``/code``, ``/review``, ``/architect``, ``/refactor`` kalau ada."""
     text = text.strip()
@@ -377,39 +426,3 @@ def _strip_command_prefix(text: str) -> str:
     return text
 
 
-# Mapping role yang inherit context dari role sebelumnya. Reviewer biasanya
-# review output engineer; architect bisa pakai output engineer juga.
-_HANDOFF_FROM: dict[str, str] = {
-    "reviewer":  "engineer",
-    "architect": "engineer",
-}
-
-
-def _maybe_prepend_handoff(project_id: str, current_role: str, prompt: str) -> str:
-    """Kalau current_role punya hand-off mapping, prepend hasil role sebelumnya."""
-    prev_role = _HANDOFF_FROM.get(current_role)
-    if not prev_role:
-        return prompt
-
-    import asyncio
-    import concurrent.futures
-
-    from app.adapters.agent_context import build_handoff_prefix, fetch_role
-
-    def _run() -> dict[str, Any] | None:
-        # New event loop in dedicated thread — safe regardless of outer loop state.
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(fetch_role(project_id, prev_role))
-        finally:
-            loop.close()
-
-    try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            prev = pool.submit(_run).result(timeout=5)
-    except Exception:
-        return prompt
-
-    if not prev:
-        return prompt
-    return build_handoff_prefix(prev, current_role) + prompt

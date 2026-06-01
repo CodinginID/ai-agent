@@ -68,6 +68,17 @@ async def cmd_help() -> None:
         ("/clear",                "bersihkan output TUI"),
         ("/quit",                 "keluar dari TUI"),
         ("",                      ""),
+        ("/remember <teks>",      "simpan catatan konteks project"),
+        ("/decision <teks>",      "catat keputusan project"),
+        ("/tasks",                "daftar task project"),
+        ("/task_add <teks>",      "tambah task"),
+        ("/task_done <id>",       "tandai task selesai"),
+        ("/context",              "tampilkan konteks project yang diingat bot"),
+        ("",                      ""),
+        ("/plan <goal>",          "architect bikin rencana implementasi"),
+        ("/implement [plan_id]",  "engineer→reviewer eksekusi plan (loop)"),
+        ("/review_last [plan_id]","review ulang patch terakhir"),
+        ("",                      ""),
         ("(teks bebas)",          "kirim chat ke bot  —  perlu /login dulu"),
     ]
     for cmd, desc in rows:
@@ -597,6 +608,177 @@ async def cmd_audit(args: list[str]) -> None:
             (f"class:{sty}",      f"{status:<8}"),
             ("class:dim",         preview[:80]),
         ])
+    println("", "")
+
+
+# ── project context memory (issue #9) ────────────────────────────────────────
+
+
+async def _context_request(
+    method: str, path: str, json: dict[str, str] | None = None
+) -> dict[str, Any] | list[Any] | None:
+    """Call a /context endpoint with the active session. None on error/not-logged-in."""
+    session = _state.active_session
+    if session is None:
+        println("class:warn", "  login dulu via /login")
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=10.0, trust_env=False) as c:
+            r = await c.request(
+                method,
+                f"{settings.app_url}{path}",
+                json=json,
+                headers={"Authorization": f"Bearer {session.token}"},
+            )
+    except httpx.HTTPError as exc:
+        println("class:err", f"  request gagal: {fmt_http_error(exc)}")
+        return None
+    if r.status_code == 401:
+        println("class:err", "  sesi habis. Ketik /login lagi.")
+        return None
+    if r.status_code not in (200, 201):
+        println("class:err", f"  HTTP {r.status_code}: {r.text[:200]}")
+        return None
+    parsed: dict[str, Any] | list[Any] = r.json()
+    return parsed
+
+
+async def cmd_remember(args: list[str]) -> None:
+    text = " ".join(args).strip()
+    if not text:
+        println("class:warn", "  usage: /remember <catatan>")
+        return
+    result = await _context_request("POST", "/context/remember", {"text": text})
+    if result is not None:
+        println("class:ok", "  ✓ catatan disimpan")
+
+
+async def cmd_decision(args: list[str]) -> None:
+    text = " ".join(args).strip()
+    if not text:
+        println("class:warn", "  usage: /decision <keputusan>")
+        return
+    result = await _context_request("POST", "/context/decision", {"text": text})
+    if result is not None:
+        println("class:ok", "  ✓ keputusan dicatat")
+
+
+async def cmd_task_add(args: list[str]) -> None:
+    text = " ".join(args).strip()
+    if not text:
+        println("class:warn", "  usage: /task_add <deskripsi task>")
+        return
+    result = await _context_request("POST", "/context/tasks", {"text": text})
+    if isinstance(result, dict):
+        println("class:ok", f"  ✓ task #{result['id']} ditambahkan")
+
+
+async def cmd_task_done(args: list[str]) -> None:
+    if not args:
+        println("class:warn", "  usage: /task_done <id>")
+        return
+    task_id = args[0]
+    result = await _context_request("POST", f"/context/tasks/{task_id}/done")
+    if isinstance(result, dict):
+        println("class:ok", f"  ✓ task #{task_id} selesai")
+
+
+async def cmd_tasks() -> None:
+    result = await _context_request("GET", "/context/tasks")
+    if not isinstance(result, list):
+        return
+    if not result:
+        println("class:dim", "  (belum ada task)")
+        return
+    println("class:section", "  Tasks")
+    println("class:rule", "  " + "─" * 52)
+    for t in result:
+        mark = "✓" if t.get("status") == "done" else "○"
+        sty = "class:dim" if t.get("status") == "done" else ""
+        print_parts([
+            ("class:cmd.name", f"  {mark} #{t['id']:<4}"),
+            (sty, t.get("text", "")),
+        ])
+    println("", "")
+
+
+async def cmd_context() -> None:
+    result = await _context_request("GET", "/context")
+    if not isinstance(result, dict):
+        return
+    summary = result.get("summary", "")
+    if not summary:
+        println("class:dim", "  (konteks project masih kosong — pakai /remember, /decision, /task_add)")
+        return
+    println("class:section", "  Konteks Project")
+    println("class:rule", "  " + "─" * 52)
+    for line in summary.splitlines():
+        println("class:dim", "  " + line)
+    println("", "")
+
+
+# ── architect→engineer→reviewer workflow (issue #6) ───────────────────────────
+
+
+def _resolve_plan_id(args: list[str], usage: str) -> str | None:
+    plan_id = args[0] if args else _state.last_plan_id
+    if not plan_id:
+        println("class:warn", f"  {usage} (atau jalankan /plan dulu)")
+        return None
+    return plan_id
+
+
+async def cmd_plan(args: list[str]) -> None:
+    goal = " ".join(args).strip()
+    if not goal:
+        println("class:warn", "  usage: /plan <goal>")
+        return
+    result = await _context_request("POST", "/workflow/plan", {"goal": goal})
+    if not isinstance(result, dict):
+        return
+    _state.last_plan_id = str(result.get("plan_id", "")) or None
+    println("class:section", f"  Plan {result.get('plan_id', '')[:8]}…")
+    println("class:rule", "  " + "─" * 52)
+    println("", f"  Goal: {result.get('goal', '')}")
+    for i, step in enumerate(result.get("steps", []), 1):
+        println("class:dim", f"  {i}. {step}")
+    files = result.get("target_files") or []
+    if files:
+        println("class:dim", f"  Files: {', '.join(files)}")
+    println("class:dim", "  → /implement untuk eksekusi engineer→reviewer")
+    println("", "")
+
+
+async def cmd_implement(args: list[str]) -> None:
+    plan_id = _resolve_plan_id(args, "usage: /implement <plan_id>")
+    if plan_id is None:
+        return
+    println("class:dim", "  engineer→reviewer berjalan (bisa beberapa iterasi)…")
+    result = await _context_request("POST", "/workflow/implement", {"plan_id": plan_id})
+    if not isinstance(result, dict):
+        return
+    approved = result.get("approved")
+    sty = "class:ok" if approved else "class:warn"
+    println(sty, f"  {'✓ approved' if approved else '✗ belum approved'} "
+                 f"(revisi: {result.get('revisions', 0)})")
+    verdict = result.get("verdict", {})
+    if isinstance(verdict, dict) and verdict.get("comments"):
+        println("class:dim", f"  reviewer: {verdict['comments']}")
+    println("", "")
+
+
+async def cmd_review_last(args: list[str]) -> None:
+    plan_id = _resolve_plan_id(args, "usage: /review_last <plan_id>")
+    if plan_id is None:
+        return
+    result = await _context_request("POST", "/workflow/review_last", {"plan_id": plan_id})
+    if not isinstance(result, dict):
+        return
+    approved = result.get("approved")
+    sty = "class:ok" if approved else "class:warn"
+    println(sty, f"  verdict: {'approved' if approved else 'rejected'}")
+    if result.get("comments"):
+        println("class:dim", f"  {result['comments']}")
     println("", "")
 
 

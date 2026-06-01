@@ -1,5 +1,6 @@
 .git
 .venv
+env/
 __pycache__
 *.pyc
 *.pyo
@@ -12,3 +13,5 @@ data/
 .env
 .env.local
 !.env.example
+*.md
+.github/
