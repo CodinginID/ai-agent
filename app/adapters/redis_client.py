@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import redis as syncredis
 import redis.asyncio as aioredis
 
 from app.config import settings
@@ -22,6 +23,7 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 _client: aioredis.Redis | None = None
+_sync_client: syncredis.Redis | None = None
 
 
 def get_client() -> aioredis.Redis:
@@ -38,6 +40,25 @@ def get_client() -> aioredis.Redis:
     return _client
 
 
+def get_sync_client() -> syncredis.Redis:
+    """Return singleton sync Redis client.
+
+    Dipakai dari path sync (mis. ``RedisRateLimiter`` yang dipanggil dari
+    generator sync ``HandleMessageUseCase.handle``) — async client tidak cocok
+    di sana karena butuh event loop.
+    """
+    global _sync_client
+    if _sync_client is None:
+        _sync_client = syncredis.Redis.from_url(
+            settings.redis_url,
+            decode_responses=True,
+            encoding="utf-8",
+            health_check_interval=30,
+        )
+        logger.info("Redis sync client created: %s", _safe_url(settings.redis_url))
+    return _sync_client
+
+
 async def ping() -> bool:
     """Simple connectivity check — return True kalau Redis reachable."""
     try:
@@ -50,10 +71,16 @@ async def ping() -> bool:
 
 async def close() -> None:
     """Cleanup saat shutdown — tutup koneksi pool."""
-    global _client
+    global _client, _sync_client
     if _client is not None:
         await _client.aclose()
         _client = None
+    if _sync_client is not None:
+        try:
+            _sync_client.close()
+        except Exception as exc:
+            logger.warning("Redis sync client close failed: %s", exc)
+        _sync_client = None
 
 
 def _safe_url(url: str) -> str:
