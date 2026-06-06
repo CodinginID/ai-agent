@@ -9,6 +9,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy import inspect as sa_inspect
 
 revision: str = "20260517_0006"
 down_revision: str | None = "20260506_0005"
@@ -17,23 +18,34 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "devices",
-        sa.Column("active_project_id", sa.String(length=36), nullable=True),
-    )
-    op.create_foreign_key(
-        "fk_devices_active_project",
-        "devices",
-        "projects",
-        ["active_project_id"],
-        ["id"],
-        ondelete="SET NULL",
-    )
-    op.create_index(
-        "ix_devices_active_project_id",
-        "devices",
-        ["active_project_id"],
-    )
+    bind = op.get_bind()
+    is_sqlite = bind.dialect.name == "sqlite"
+    existing_cols = {c["name"] for c in sa_inspect(bind).get_columns("devices")}
+
+    if "active_project_id" not in existing_cols:
+        op.add_column(
+            "devices",
+            sa.Column("active_project_id", sa.String(length=36), nullable=True),
+        )
+
+    # SQLite does not support standalone ADD CONSTRAINT — skip for SQLite.
+    if not is_sqlite:
+        op.create_foreign_key(
+            "fk_devices_active_project",
+            "devices",
+            "projects",
+            ["active_project_id"],
+            ["id"],
+            ondelete="SET NULL",
+        )
+
+    existing_indexes = {idx["name"] for idx in sa_inspect(bind).get_indexes("devices")}
+    if "ix_devices_active_project_id" not in existing_indexes:
+        op.create_index(
+            "ix_devices_active_project_id",
+            "devices",
+            ["active_project_id"],
+        )
 
 
 def downgrade() -> None:
