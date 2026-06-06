@@ -179,7 +179,21 @@
       "Bash(GH_HOST=github.com gh issue list --repo CodinginID/ai-agent --state open --json number,title,labels,body)",
       "Bash(xargs cat)",
       "Bash(GH_HOST=github.com gh issue *)",
-      "Bash(GH_HOST=github.com gh pr *)"
+      "Bash(GH_HOST=github.com gh pr *)",
+      "Bash(git fetch *)",
+      "Bash(git merge *)",
+      "Bash(git -c \"credential.helper=!gh auth git-credential\" -c \"url.https://github.com/.insteadOf=git@github-personal:\" -c \"url.https://github.com/.insteadOf=git@github.com:\" fetch origin)",
+      "Bash(git reset *)",
+      "Bash(git rm *)",
+      "Bash(touch /Users/anonymous/.ccs/instances/hamas_team_plan/projects/-Users-anonymous-Documents-office-codinginid-ai-agent/memory/MEMORY.md)",
+      "Bash(mkdir -p tests/memory)",
+      "Bash(touch tests/memory/__init__.py)",
+      "Bash(awk '/async def send_chat/,/^async def [a-z_]+\\\\\\(.*:$/' app/tui/_commands.py)",
+      "Bash(set -e)",
+      "Bash(git restore *)",
+      "Bash(git ls-tree *)",
+      "Bash(echo \"exit:$?\")",
+      "Bash(GH_HOST=github.com gh auth *)"
     ]
   }
 }
