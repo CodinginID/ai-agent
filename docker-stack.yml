@@ -1,0 +1,219 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# docker-stack.yml — Swarm stack untuk octopus (Tahap 1: scalable deployment)
+#
+# Ini versi SWARM dari docker-compose.yml. Dipakai dengan:
+#     docker stack deploy -c docker-stack.yml octopus
+#
+# Beda kunci dari compose (kenapa file ini terpisah):
+#   - `container_name`  → DIHAPUS (swarm kelola nama replica sendiri: octopus_bot.1, .2, …)
+#   - `build`           → DIHAPUS (swarm hanya pakai image yang sudah jadi; build dulu lalu push)
+#   - `depends_on`      → DIHAPUS (tidak ada di swarm; andalkan healthcheck + retry app)
+#   - `mem_limit`       → jadi `deploy.resources.limits`
+#   - `restart`         → jadi `deploy.restart_policy`
+#   - + `deploy.replicas`, `update_config` (rolling), `rollback_config`, `placement`
+#
+# Catatan scaling (lihat docs/SWARM.md):
+#   - bot     = STATELESS dispatcher → boleh banyak replica (ini yang "auto-replicate")
+#   - redis   = state bersama        → SATU replica (pinned), volume di node manager
+#   - ollama  = bottleneck CPU/RAM   → SATU replica (pinned), 4GB
+#   - caddy   = ingress (publish port)→ SATU replica cukup (routing mesh load-balance ke bot)
+#   - telegram-adapter = poller       → WAJIB SATU replica (Telegram getUpdates single-consumer)
+# ─────────────────────────────────────────────────────────────────────────────
+
+networks:
+  octopus_net:
+    driver: overlay
+    attachable: true
+
+volumes:
+  ollama_data:
+    name: aiagent_ollama_data
+  redis_data:
+    name: aiagent_redis_data
+  caddy_data:
+    name: aiagent_caddy_data
+  caddy_config:
+    name: aiagent_caddy_config
+
+services:
+
+  # ── Redis: shared state (sesi, rate-limit, presence, pub/sub antar-instance) ──
+  # SATU replica: ini sumber kebenaran state. Di-pin ke node manager supaya
+  # volume-nya selalu ketemu. Untuk HA sejati nanti: Redis Sentinel / cluster.
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - octopus_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: any
+        delay: 5s
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  # ── Ollama: AI model server — BOTTLENECK sebenarnya ──────────────────────────
+  # SATU replica, di-pin. Menambah replica bot TIDAK menambah throughput AI;
+  # untuk itu Ollama harus dipindah ke node/GPU sendiri (lihat docs Tahap 3).
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - octopus_net
+    environment:
+      OLLAMA_KEEP_ALIVE: "24h"
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_NUM_CTX: "4096"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: any
+        delay: 10s
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+
+  # ── Model init: pull model sekali lalu exit ──────────────────────────────────
+  # Di swarm, one-shot pakai `mode: replicated-job` (Docker 25+). Job jalan
+  # sampai selesai (exit 0), tidak di-restart seperti service biasa.
+  ollama-init:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - octopus_net
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:1.5b}
+    entrypoint: ["ollama", "pull", "${OLLAMA_MODEL:-qwen2.5:1.5b}"]
+    deploy:
+      mode: replicated-job
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+
+  # ── Bot: FastAPI dispatcher — INI yang di-replicate saat user banyak ──────────
+  # Stateless-ish (state di Redis). Kode sudah multi-instance ready (worker_ws B5g
+  # pakai Redis pub/sub utk routing antar-instance). replicas default 2; ubah via:
+  #     docker service scale octopus_bot=N
+  # Rolling update: start replica baru DULU (start-first) sebelum matikan lama →
+  # zero-downtime. Kalau gagal health → auto-rollback ke versi sebelumnya.
+  bot:
+    image: ghcr.io/codinginid/ai-agent:latest
+    env_file: .env
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      REDIS_URL: redis://redis:6379/0
+    networks:
+      - octopus_net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:${PORT:-8080}/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 20s
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        parallelism: 1
+        order: start-first
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+      resources:
+        limits:
+          memory: 768M
+        reservations:
+          memory: 256M
+
+  # ── Telegram adapter: poller — WAJIB SATU replica ────────────────────────────
+  # Telegram getUpdates hanya boleh satu consumer; >1 replica = error 409 Conflict.
+  # CATATAN: di compose pakai `build: ./telegram-adapter`. Swarm tidak bisa build —
+  # harus pre-build & push dulu:
+  #     docker build -t ghcr.io/codinginid/ai-agent-telegram:latest ./telegram-adapter
+  #     docker push  ghcr.io/codinginid/ai-agent-telegram:latest
+  telegram-adapter:
+    image: ghcr.io/codinginid/ai-agent-telegram:latest
+    env_file: .env
+    environment:
+      OCTOPUS_CORE_URL: http://bot:${PORT:-8080}
+    networks:
+      - octopus_net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+        delay: 5s
+      resources:
+        limits:
+          memory: 256M
+
+  # ── Caddy: ingress / reverse proxy ───────────────────────────────────────────
+  # Publish port via routing mesh swarm. Caddy proxy ke "bot:8080" → swarm DNS
+  # otomatis load-balance ke semua replica bot. SATU replica caddy sudah cukup.
+  caddy:
+    image: caddy:2-alpine
+    environment:
+      PORT: ${PORT:-8080}
+    ports:
+      - target: ${PORT:-8080}
+        published: ${CADDY_HOST_PORT:-8090}
+        protocol: tcp
+        mode: ingress
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - octopus_net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:${PORT:-8080}/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: any
+        delay: 5s
+      resources:
+        limits:
+          memory: 128M
