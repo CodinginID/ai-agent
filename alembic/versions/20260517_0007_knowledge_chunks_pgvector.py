@@ -24,6 +24,10 @@ EMBEDDING_DIM = 384
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    # pgvector is Postgres-only; skip entirely on SQLite.
+    if bind.dialect.name == "sqlite":
+        return
     op.execute("CREATE EXTENSION IF NOT EXISTS vector")
     op.create_table(
         "knowledge_chunks",
