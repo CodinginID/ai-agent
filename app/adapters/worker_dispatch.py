@@ -48,13 +48,13 @@ class WorkerDispatchAdapter:
 
     def dispatch(self, user_id: str, role: str, prompt: str) -> DispatchResult:
         try:
-            return asyncio.run(self._dispatch_async(user_id, role, prompt))
+            return asyncio.run(self.dispatch_async(user_id, role, prompt))
         except RuntimeError as exc:
             # e.g. "asyncio.run() cannot be called from a running event loop"
             logger.warning("worker dispatch could not run: %s", exc)
             return DispatchResult(output="", ok=False, error=f"dispatch runtime error: {exc}")
 
-    async def _dispatch_async(
+    async def dispatch_async(
         self, user_id: str, role: str, prompt: str,
     ) -> DispatchResult:
         from app.interfaces.worker_ws import (
