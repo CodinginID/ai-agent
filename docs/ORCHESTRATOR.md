@@ -167,6 +167,14 @@ Tiap item = satu PR (sesuai aturan repo: satu concern, conventional commit, CI h
   reflect → `close_issue` saat semua step satisfied.
 - Test: plan 2-step → mock github + mock dispatcher → issue dibuat, dikomentari, ditutup.
 
+### Wiring end-to-end ✅ DONE (#TBD)
+- `composition.build_task_runner()` — rakit `PMAgent` + `GitHubAdapter` + `WorkerDispatchAdapter`.
+- Endpoint Core `POST /tasks/run` (`app/interfaces/tasks.py`) — auth admin/session
+  sama seperti `/chat/send`; 503 eksplisit kalau GITHUB_TOKEN/REPO kosong.
+- Command Telegram `/task <deskripsi>` (`telegram-adapter/main.py`) → panggil
+  `/tasks/run`, tampilkan link issue + status tiap step + apakah ditutup.
+- Test: 7 endpoint test (closed/failed/no-step/503/admin-needs-email).
+
 ### PR-5 — Observability *(opsional, mempertajam)*
 - Structured log `[TIME][ROLE][TASK_ID][STATUS]` + korelasi `job_id`/`issue`.
 - Endpoint `/tasks` untuk TUI task board (data sudah di job_store + issue).

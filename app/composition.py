@@ -27,6 +27,7 @@ from app.adapters.ollama import OllamaAdapter
 from app.adapters.rate_limit import RedisRateLimiter
 from app.adapters.redis_client import get_sync_client
 from app.adapters.worker_dispatch import WorkerDispatchAdapter
+from app.agents.pm import PMAgent
 from app.config import BASE_DIR, settings
 from app.domain.use_cases import HandleMessageUseCase
 from app.executor.actions import ActionRegistry
@@ -36,6 +37,7 @@ from app.intents.parser import IntentParser
 from app.memory.context_store import ProjectContextStore
 from app.orchestrator.approval import PendingPlanStore
 from app.orchestrator.plans import PlanGenerator
+from app.orchestrator.task_runner import TaskRunner
 from app.orchestrator.workflow import WorkflowOrchestrator
 from app.ports.embedder import Embedder
 from app.ports.knowledge_store import KnowledgeStore
@@ -158,6 +160,22 @@ def _workflow_orchestrator() -> WorkflowOrchestrator:
 def build_workflow_orchestrator() -> WorkflowOrchestrator:
     """Compose the architect→engineer→reviewer orchestrator (prompt fallback)."""
     return _workflow_orchestrator()
+
+
+def build_task_runner() -> TaskRunner:
+    """Compose the PM→Issue→Worker→Close task runner (orchestrator end-to-end).
+
+    Raises ``GitHubUnavailableError`` when GITHUB_TOKEN/REPO are unset — the
+    caller (endpoint) maps that to a 503 so the failure is explicit, not silent.
+    """
+    from app.adapters.github import GitHubAdapter
+
+    github = GitHubAdapter(token=settings.github_token, repo=settings.github_repo)
+    return TaskRunner(
+        pm=PMAgent(ai_provider=_ollama()),
+        github=github,
+        dispatch=WorkerDispatchAdapter(),
+    )
 
 
 def build_use_case() -> HandleMessageUseCase:
