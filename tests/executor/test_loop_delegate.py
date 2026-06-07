@@ -5,7 +5,6 @@ Worker dispatch is mocked via a fake WorkerDispatchPort — no real WS/worker.
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -13,7 +12,6 @@ from unittest.mock import MagicMock
 from app.executor.context import ContextCollector, EnvironmentContext
 from app.executor.loop import ExecutionLoop, _parse_decision
 from app.ports.worker_dispatch import DispatchResult
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
