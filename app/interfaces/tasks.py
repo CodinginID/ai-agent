@@ -55,6 +55,44 @@ class TaskRunResponse(BaseModel):
     outcomes: list[StepOutcomeOut]
 
 
+class TaskEventOut(BaseModel):
+    id: str
+    ts: str = ""
+    task_id: str = ""
+    role: str = ""
+    status: str = ""
+    message: str = ""
+    issue_number: str = ""
+    issue_url: str = ""
+
+
+class TaskBoardResponse(BaseModel):
+    tasks: list[TaskEventOut]
+    events: list[TaskEventOut]
+
+
+@router.get("/", response_model=TaskBoardResponse)
+async def task_board(
+    authorization: str | None = Header(default=None),
+    limit: int = 100,
+) -> TaskBoardResponse:
+    """Task board — recent task events + one collapsed row per task (last state).
+
+    Read-only observability view (PR-5): no SSH needed to see what tasks ran and
+    how they ended. Any authenticated caller (admin or session) may read.
+    """
+    from app.adapters.task_observer import latest_task_states, recent_task_events
+
+    _resolve_caller(authorization)  # auth only; board is not user-scoped
+
+    events = await recent_task_events(limit=limit)
+    states = latest_task_states(events)
+    return TaskBoardResponse(
+        tasks=[TaskEventOut(**ev) for ev in states],
+        events=[TaskEventOut(**ev) for ev in events],
+    )
+
+
 @router.post("/run", response_model=TaskRunResponse)
 async def run_task(
     req: Annotated[TaskRunRequest, Body(...)],

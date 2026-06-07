@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -19,6 +20,9 @@ def _is_dev() -> bool:
 
 def _setup_file_logging(log_dir: Path) -> None:
     log_dir.mkdir(parents=True, exist_ok=True)
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+
     handler = RotatingFileHandler(
         log_dir / "server.log",
         maxBytes=5 * 1024 * 1024,
@@ -29,7 +33,16 @@ def _setup_file_logging(log_dir: Path) -> None:
         "%(asctime)s %(levelname)-8s %(name)s  %(message)s",
         datefmt="%Y-%m-%dT%H:%M:%S",
     ))
-    logging.getLogger().addHandler(handler)
+    root.addHandler(handler)
+
+    # Stdout handler so structured task logs ([ROLE][TASK_ID][STATUS]) are
+    # captured by `docker logs -f` / `docker service logs` — the user's live view.
+    stdout = logging.StreamHandler(sys.stdout)
+    stdout.setFormatter(logging.Formatter(
+        "%(asctime)s %(levelname)-8s %(name)s  %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%S",
+    ))
+    root.addHandler(stdout)
 
 
 def _run_migrations() -> None:

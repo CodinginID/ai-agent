@@ -175,9 +175,17 @@ Tiap item = satu PR (sesuai aturan repo: satu concern, conventional commit, CI h
   `/tasks/run`, tampilkan link issue + status tiap step + apakah ditutup.
 - Test: 7 endpoint test (closed/failed/no-step/503/admin-needs-email).
 
-### PR-5 — Observability *(opsional, mempertajam)*
-- Structured log `[TIME][ROLE][TASK_ID][STATUS]` + korelasi `job_id`/`issue`.
-- Endpoint `/tasks` untuk TUI task board (data sudah di job_store + issue).
+### PR-5 — Observability ✅ DONE (#TBD)
+- Port `app/ports/task_events.py` (`TaskObserver` Protocol + `NullTaskObserver` no-op).
+- Adapter `app/adapters/task_observer.py` (`LoggingTaskObserver`): tiap event →
+  (1) structured stdout `[ROLE][TASK_ID][STATUS] message` (logger `octopus.tasks`,
+  ke-capture `docker logs -f`/`docker service logs`), (2) Redis Stream `task:events` (capped 5000).
+- TaskRunner emit lifecycle: task_started → issue_opened → step_started/finished → task_finished.
+- Endpoint `GET /tasks` (board): event terbaru + 1 baris per task (state terakhir),
+  via `recent_task_events` + `latest_task_states`. Read-only, auth admin/session.
+- `main.py`: tambah StreamHandler stdout (root INFO) supaya log task kelihatan di `docker logs`.
+- Test: 11 (observer emit/collapse/best-effort + runner lifecycle + board endpoint).
+- **Tanpa infra baru** — no Grafana/Prometheus/Loki; cukup `docker logs -f` + Redis + `/tasks`.
 
 ---
 
