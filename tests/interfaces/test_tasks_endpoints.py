@@ -143,3 +143,33 @@ def test_admin_requires_as_email(monkeypatch: pytest.MonkeyPatch, fake: FakeTask
     resp = c.post("/tasks/run", json={"request": "x"})
     assert resp.status_code == 400
     assert "as_email" in resp.json()["detail"]
+
+
+# ── GET /tasks board (PR-5) ──────────────────────────────────────────────────
+
+
+def test_board_returns_collapsed_tasks_and_events(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    events = [
+        {"id": "3-0", "task_id": "t1", "role": "pm", "status": "closed", "message": "done"},
+        {"id": "2-0", "task_id": "t1", "role": "engineer", "status": "step_ok", "message": "x"},
+        {"id": "1-0", "task_id": "t2", "role": "pm", "status": "started", "message": "y"},
+    ]
+
+    async def _fake_recent(limit: int = 100) -> list[dict[str, str]]:
+        return events
+
+    monkeypatch.setattr(tasks_iface, "_resolve_caller", lambda _a: (USER, "user"))
+    import app.adapters.task_observer as obs_mod
+
+    monkeypatch.setattr(obs_mod, "recent_task_events", _fake_recent)
+
+    resp = client.get("/tasks/")
+    assert resp.status_code == 200
+    body = resp.json()
+    # 3 raw events, collapsed to 2 tasks (t1 latest=closed, t2=started).
+    assert len(body["events"]) == 3
+    statuses = {t["task_id"]: t["status"] for t in body["tasks"]}
+    assert statuses == {"t1": "closed", "t2": "started"}
+

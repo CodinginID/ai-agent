@@ -22,11 +22,13 @@ Hexagonal: depends on ``PMAgentPort``, ``GitHubIssuesPort`` and
 from __future__ import annotations
 
 import logging
+import uuid
 from dataclasses import dataclass, field
 
 from app.agents.pm import TaskPlan
 from app.ports.github_issues import GitHubIssuesPort
 from app.ports.pm_agent import PMAgentPort
+from app.ports.task_events import NullTaskObserver, TaskObserver
 from app.ports.worker_dispatch import AsyncWorkerDispatchPort
 
 logger = logging.getLogger(__name__)
@@ -102,12 +104,18 @@ class TaskRunner:
     github: GitHubIssuesPort
     dispatch: AsyncWorkerDispatchPort
     labels: list[str] = field(default_factory=lambda: ["octopus-task"])
+    observer: TaskObserver = field(default_factory=NullTaskObserver)
 
     async def run(self, user_id: str, request: str, context: str = "") -> TaskResult:
+        task_id = uuid.uuid4().hex[:12]
+        self.observer.task_started(task_id, user_id, request)
         plan = self.pm.plan(request, context)
 
         # No actionable steps → don't open an issue; nothing to track.
         if not plan.steps:
+            self.observer.task_finished(
+                task_id, closed=False, ok=False, note="no steps to execute",
+            )
             return TaskResult(
                 plan=plan, issue_number=None, issue_url="",
                 note="no steps to execute",
@@ -118,10 +126,12 @@ class TaskRunner:
             body=_issue_body(request, plan),
             labels=self.labels,
         )
+        self.observer.issue_opened(task_id, issue.number, issue.url)
 
         outcomes: list[StepOutcome] = []
         for step in sorted(plan.steps, key=lambda s: s.order):
             role = role_for_action(step.action)
+            self.observer.step_started(task_id, step.order, role, step.description)
             result = await self.dispatch.dispatch_async(user_id, role, step.description)
             detail = (result.summary or result.output or result.error)[:500]
             outcome = StepOutcome(
@@ -132,6 +142,7 @@ class TaskRunner:
                 detail=detail,
             )
             outcomes.append(outcome)
+            self.observer.step_finished(task_id, step.order, role, result.ok, detail)
 
             status = "✅" if result.ok else "❌"
             await self.github.comment_issue(
@@ -140,19 +151,22 @@ class TaskRunner:
             )
             if not result.ok:
                 # Stop on first failure — leave issue open for resume/retry.
+                note = f"stopped at step {step.order} ({role}): {result.error or 'failed'}"
+                self.observer.task_finished(task_id, closed=False, ok=False, note=note)
                 return TaskResult(
                     plan=plan,
                     issue_number=issue.number,
                     issue_url=issue.url,
                     outcomes=outcomes,
                     closed=False,
-                    note=f"stopped at step {step.order} ({role}): {result.error or 'failed'}",
+                    note=note,
                 )
 
         await self.github.close_issue(
             issue.number,
             comment=f"All {len(outcomes)} steps completed ✅ — closing.",
         )
+        self.observer.task_finished(task_id, closed=True, ok=True, note="completed")
         return TaskResult(
             plan=plan,
             issue_number=issue.number,

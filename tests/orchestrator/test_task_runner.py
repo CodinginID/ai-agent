@@ -170,3 +170,75 @@ async def test_issue_body_lists_steps() -> None:
     assert gh.created is not None
     assert "do X" in gh.created["body"]
     assert "octopus-task" in (gh.created["labels"] or [])
+
+
+# ── observability (PR-5) ─────────────────────────────────────────────────────────
+
+class _RecordingObserver:
+    def __init__(self) -> None:
+        self.events: list[tuple[str, str]] = []
+
+    def task_started(self, task_id, user_id, request):  # type: ignore[no-untyped-def]
+        self.events.append(("task_started", task_id))
+
+    def issue_opened(self, task_id, issue_number, issue_url):  # type: ignore[no-untyped-def]
+        self.events.append(("issue_opened", str(issue_number)))
+
+    def step_started(self, task_id, order, role, description):  # type: ignore[no-untyped-def]
+        self.events.append(("step_started", f"{order}:{role}"))
+
+    def step_finished(self, task_id, order, role, ok, detail):  # type: ignore[no-untyped-def]
+        self.events.append(("step_finished", f"{order}:{ok}"))
+
+    def task_finished(self, task_id, *, closed, ok, note):  # type: ignore[no-untyped-def]
+        self.events.append(("task_finished", f"closed={closed},ok={ok}"))
+
+
+@pytest.mark.asyncio
+async def test_observer_receives_full_lifecycle_on_success() -> None:
+    plan = _plan([
+        TaskStep(order=1, description="write", action="file_write", params={}),
+    ])
+    obs = _RecordingObserver()
+    runner = TaskRunner(
+        pm=_FakePM(plan),
+        github=_FakeGitHub(),
+        dispatch=_FakeDispatch([DispatchResult(output="ok", ok=True)]),
+        observer=obs,
+    )
+    await runner.run("user-1", "req")
+    names = [e[0] for e in obs.events]
+    assert names == [
+        "task_started", "issue_opened", "step_started", "step_finished", "task_finished",
+    ]
+    assert obs.events[-1][1] == "closed=True,ok=True"
+
+
+@pytest.mark.asyncio
+async def test_observer_task_finished_on_failure() -> None:
+    plan = _plan([
+        TaskStep(order=1, description="x", action="file_write", params={}),
+    ])
+    obs = _RecordingObserver()
+    runner = TaskRunner(
+        pm=_FakePM(plan),
+        github=_FakeGitHub(),
+        dispatch=_FakeDispatch([DispatchResult(output="", ok=False, error="boom")]),
+        observer=obs,
+    )
+    await runner.run("user-1", "req")
+    assert ("task_finished", "closed=False,ok=False") in obs.events
+
+
+@pytest.mark.asyncio
+async def test_observer_no_steps_still_finishes() -> None:
+    obs = _RecordingObserver()
+    runner = TaskRunner(
+        pm=_FakePM(_plan([], title="Direct")),
+        github=_FakeGitHub(),
+        dispatch=_FakeDispatch([]),
+        observer=obs,
+    )
+    await runner.run("user-1", "chat")
+    names = [e[0] for e in obs.events]
+    assert names == ["task_started", "task_finished"]
