@@ -356,6 +356,7 @@ async def dispatch_agent_job(
     *,
     timeout_sec: float = 300.0,
     extra: dict[str, Any] | None = None,
+    model: str = "",
 ) -> AsyncIterator[dict[str, Any]]:
     """Dispatch job ke worker user, yield event sampai job_done/job_error.
 
@@ -434,6 +435,8 @@ async def dispatch_agent_job(
                 "agent": agent,
                 "prompt": enriched_prompt,
             }
+            if model:
+                payload["model"] = model
             if extra:
                 payload["extra"] = extra
             try:
