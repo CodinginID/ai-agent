@@ -36,3 +36,9 @@ class DispatchResult:
 
 class WorkerDispatchPort(Protocol):
     def dispatch(self, user_id: str, role: str, prompt: str) -> DispatchResult: ...
+
+
+class AsyncWorkerDispatchPort(Protocol):
+    async def dispatch_async(
+        self, user_id: str, role: str, prompt: str,
+    ) -> DispatchResult: ...
