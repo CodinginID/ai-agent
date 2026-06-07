@@ -29,6 +29,7 @@ from app.agents.pm import TaskPlan
 from app.ports.github_issues import GitHubIssuesPort
 from app.ports.pm_agent import PMAgentPort
 from app.ports.task_events import NullTaskObserver, TaskObserver
+from app.ports.task_memory import NullTaskMemory, TaskMemoryPort
 from app.ports.worker_dispatch import AsyncWorkerDispatchPort
 
 logger = logging.getLogger(__name__)
@@ -105,11 +106,14 @@ class TaskRunner:
     dispatch: AsyncWorkerDispatchPort
     labels: list[str] = field(default_factory=lambda: ["octopus-task"])
     observer: TaskObserver = field(default_factory=NullTaskObserver)
+    memory: TaskMemoryPort = field(default_factory=NullTaskMemory)
 
     async def run(self, user_id: str, request: str, context: str = "") -> TaskResult:
         task_id = uuid.uuid4().hex[:12]
         self.observer.task_started(task_id, user_id, request)
-        plan = self.pm.plan(request, context)
+        # Task-level RAG: enrich planning context with similar past tasks.
+        planning_context = await self.memory.recall_for_planning(user_id, request, context)
+        plan = self.pm.plan(request, planning_context)
 
         # No actionable steps → don't open an issue; nothing to track.
         if not plan.steps:
@@ -167,6 +171,10 @@ class TaskRunner:
             comment=f"All {len(outcomes)} steps completed ✅ — closing.",
         )
         self.observer.task_finished(task_id, closed=True, ok=True, note="completed")
+        # Index this completed task so future planning can recall it.
+        await self.memory.index_task(
+            user_id, request, plan.summary, f"completed {len(outcomes)} steps",
+        )
         return TaskResult(
             plan=plan,
             issue_number=issue.number,
