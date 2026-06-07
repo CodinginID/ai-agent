@@ -169,6 +169,7 @@ def build_task_runner() -> TaskRunner:
     caller (endpoint) maps that to a 503 so the failure is explicit, not silent.
     """
     from app.adapters.github import GitHubAdapter
+    from app.adapters.task_memory import RagTaskMemory
     from app.adapters.task_observer import LoggingTaskObserver
 
     github = GitHubAdapter(token=settings.github_token, repo=settings.github_repo)
@@ -177,6 +178,11 @@ def build_task_runner() -> TaskRunner:
         github=github,
         dispatch=WorkerDispatchAdapter(),
         observer=LoggingTaskObserver(),
+        memory=RagTaskMemory(
+            embedder=_embedder(),
+            store=_knowledge_store(),
+            recall_k=settings.rag_recall_k,
+        ),
     )
 
 

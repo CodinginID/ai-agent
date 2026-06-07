@@ -242,3 +242,77 @@ async def test_observer_no_steps_still_finishes() -> None:
     await runner.run("user-1", "chat")
     names = [e[0] for e in obs.events]
     assert names == ["task_started", "task_finished"]
+
+
+# ── task-level RAG memory ─────────────────────────────────────────────────────────
+
+class _CapturingPM:
+    """PM that records the context it was planned with."""
+
+    def __init__(self, plan: TaskPlan) -> None:
+        self._plan = plan
+        self.seen_context: str | None = None
+
+    def plan(self, request: str, context: str = "") -> TaskPlan:
+        self.seen_context = context
+        return self._plan
+
+
+class _RecordingMemory:
+    def __init__(self, recall_value: str) -> None:
+        self._recall = recall_value
+        self.indexed: list[tuple[str, str, str, str]] = []
+
+    async def recall_for_planning(self, user_id, request, base_context):  # type: ignore[no-untyped-def]
+        return self._recall
+
+    async def index_task(self, user_id, request, summary, outcome_note):  # type: ignore[no-untyped-def]
+        self.indexed.append((user_id, request, summary, outcome_note))
+
+
+@pytest.mark.asyncio
+async def test_memory_recall_feeds_planning_context() -> None:
+    pm = _CapturingPM(_plan([
+        TaskStep(order=1, description="x", action="file_write", params={}),
+    ]))
+    mem = _RecordingMemory("PAST TASK CONTEXT")
+    runner = TaskRunner(
+        pm=pm,
+        github=_FakeGitHub(),
+        dispatch=_FakeDispatch([DispatchResult(output="ok", ok=True)]),
+        memory=mem,
+    )
+    await runner.run("user-1", "do it", context="orig")
+    assert pm.seen_context == "PAST TASK CONTEXT"
+
+
+@pytest.mark.asyncio
+async def test_memory_indexes_task_on_success() -> None:
+    mem = _RecordingMemory("")
+    runner = TaskRunner(
+        pm=_FakePM(_plan([
+            TaskStep(order=1, description="x", action="file_write", params={}),
+        ])),
+        github=_FakeGitHub(),
+        dispatch=_FakeDispatch([DispatchResult(output="ok", ok=True)]),
+        memory=mem,
+    )
+    await runner.run("user-1", "do it")
+    assert len(mem.indexed) == 1
+    assert mem.indexed[0][0] == "user-1"
+    assert mem.indexed[0][1] == "do it"
+
+
+@pytest.mark.asyncio
+async def test_memory_not_indexed_on_failure() -> None:
+    mem = _RecordingMemory("")
+    runner = TaskRunner(
+        pm=_FakePM(_plan([
+            TaskStep(order=1, description="x", action="file_write", params={}),
+        ])),
+        github=_FakeGitHub(),
+        dispatch=_FakeDispatch([DispatchResult(output="", ok=False, error="boom")]),
+        memory=mem,
+    )
+    await runner.run("user-1", "do it")
+    assert mem.indexed == []   # failed task is not memorized

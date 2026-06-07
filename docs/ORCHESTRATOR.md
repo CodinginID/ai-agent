@@ -175,6 +175,16 @@ Tiap item = satu PR (sesuai aturan repo: satu concern, conventional commit, CI h
   `/tasks/run`, tampilkan link issue + status tiap step + apakah ditutup.
 - Test: 7 endpoint test (closed/failed/no-step/503/admin-needs-email).
 
+### Task-level RAG memory ✅ DONE (#TBD)
+- Port `app/ports/task_memory.py` (`TaskMemoryPort` + `NullTaskMemory` no-op default).
+- Adapter `app/adapters/task_memory.py` (`RagTaskMemory`): reuse `Embedder` +
+  `KnowledgeStore`, tag chunk `meta.kind="task_plan"` (tidak campur dgn step-output
+  RAG di `worker_ws`). **Recall sebelum PM plan** (enrich planning context dgn task
+  serupa) + **index ringkasan task setelah close** (belajar untuk task berikutnya).
+- Best-effort: embedder None / backend error → degrade ke base context, task tetap jalan.
+- Beda lapisan dari step-output RAG: ini *task-level* (perencanaan), itu *step-level* (dispatch).
+- Test: 10 (recall filter-by-kind, best-effort, index tagging + runner integration).
+
 ### PR-5 — Observability ✅ DONE (#TBD)
 - Port `app/ports/task_events.py` (`TaskObserver` Protocol + `NullTaskObserver` no-op).
 - Adapter `app/adapters/task_observer.py` (`LoggingTaskObserver`): tiap event →
