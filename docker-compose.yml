@@ -157,7 +157,7 @@ services:
       PORT: ${PORT:-8080}
     ports:
       # Host 8090 dipakai karena 8080 sudah dipegang code-server (vps-ali tunnel).
-      # cloudflared meneruskan bot.flowbiz.id → 127.0.0.1:8090 → caddy:8080 → bot:8080.
+      # cloudflared meneruskan octopus.flowbiz.id → 127.0.0.1:8090 → caddy:8080 → bot:8080.
       - "${CADDY_HOST_PORT:-8090}:${PORT:-8080}"
       # Uncomment dua baris di bawah kalau DOMAIN diset di .env (mode HTTPS):
       # - "80:80"
