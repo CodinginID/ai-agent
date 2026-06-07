@@ -153,11 +153,13 @@ Tiap item = satu PR (sesuai aturan repo: satu concern, conventional commit, CI h
 - Capability-aware pick di `worker_ws._pick_worker` (pakai `k_caps`).
 - Test: matriks role × caps → agent/model benar; fallback saat cap absen.
 
-### PR-3 — Task queue durable *(GAP-2)*
-- Adapter `app/adapters/task_queue.py` pakai **Redis Streams** (`XADD`/`XREADGROUP`).
-  Tidak perlu Celery/RQ — Redis sudah ada di stack swarm.
-- Step di-*enqueue*, konsumer = dispatcher; ack saat `job_done`, re-deliver saat crash.
-- Test: enqueue → consume → ack; pending re-claim setelah "crash".
+### PR-3 — Task queue durable *(GAP-2)* ✅ DONE (#TBD)
+- Adapter `app/adapters/task_queue.py` pakai **Redis Streams** (`XADD`/`XREADGROUP`
+  + consumer group `dispatchers`). Tidak perlu Celery/RQ — Redis sudah ada di stack.
+- Step di-*enqueue*, konsumer = dispatcher; `ack` saat selesai, `reclaim`
+  (`XAUTOCLAIM`, idle > threshold) re-deliver pending yang nyangkut saat crash.
+- Port `app/ports/task_queue.py` (`TaskQueuePort`, `QueuedStep`) — hexagonal.
+- Test: enqueue → consume → ack; pending re-claim setelah "crash" (10 test).
 
 ### PR-4 — Rantai PM → Issue → Worker → Close *(GAP-3)*
 - `app/orchestrator/task_runner.py`: `TaskPlan` → buat GitHub Issue (PRD + steps
