@@ -1,5 +1,30 @@
 services:
 
+  # ── Postgres + pgvector: durable control-plane DB + RAG vector store ─────────
+  # Opsional via profile `postgres`. Tanpa profil ini bot fallback ke SQLite
+  # (data/control_plane.sqlite3) — cukup untuk single-node, tapi RAG pakai
+  # in-memory store (hilang saat restart). Aktifkan untuk RAG persisten:
+  #   docker compose --profile postgres up -d
+  # lalu set DATABASE_URL di .env ke baris postgres (lihat .env.example).
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: aiagent_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-octopus}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-octopus}
+      POSTGRES_DB: ${POSTGRES_DB:-octopus}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    profiles:
+      - postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-octopus} -d ${POSTGRES_DB:-octopus}"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+
   # ── Redis: shared state untuk worker tunnel + agent context ──────────────────
   # Privat di network internal backend (tidak ekspos ke host). Worker user
   # talk ke backend via WS; backend yang akses Redis.
@@ -153,6 +178,8 @@ services:
       start_period: 10s
 
 volumes:
+  postgres_data:
+    name: aiagent_postgres_data
   ollama_data:
     name: aiagent_ollama_data
   redis_data:
