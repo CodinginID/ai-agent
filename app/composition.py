@@ -26,6 +26,7 @@ from app.adapters.knowledge_store_memory import InMemoryKnowledgeStore
 from app.adapters.ollama import OllamaAdapter
 from app.adapters.rate_limit import RedisRateLimiter
 from app.adapters.redis_client import get_sync_client
+from app.adapters.worker_dispatch import WorkerDispatchAdapter
 from app.config import BASE_DIR, settings
 from app.domain.use_cases import HandleMessageUseCase
 from app.executor.actions import ActionRegistry
@@ -85,6 +86,7 @@ def _execution_loop() -> ExecutionLoop:
         ai=_ollama(),
         context_collector=_context_collector(),
         working_dir=settings.project_dir,
+        worker_dispatch=WorkerDispatchAdapter(),
     )
 
 

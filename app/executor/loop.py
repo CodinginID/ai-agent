@@ -30,6 +30,7 @@ from typing import Any
 from app.executor.context import ContextCollector
 from app.executor.runner import DEFAULT_TIMEOUT, run_safe
 from app.ports.ai_provider import AIProvider
+from app.ports.worker_dispatch import WorkerDispatchPort
 
 logger = logging.getLogger(__name__)
 
@@ -67,11 +68,13 @@ class LoopEvent:
 class LLMDecision:
     """Parsed structured output from the LLM think step."""
 
-    action: str                     # "terminal" | "file_read" | "respond" | "multi_step"
+    action: str                     # "terminal" | "file_read" | "respond" | "multi_step" | "delegate"
     command: str = ""               # for "terminal"
     text: str = ""                  # for "respond"
     path: str = ""                  # for "file_read"
     steps: list[str] = field(default_factory=list)  # for "multi_step"
+    role: str = ""                  # for "delegate" — worker role (engineer/reviewer/infra/...)
+    delegate_prompt: str = ""       # for "delegate" — prompt sent to the worker agent
     raw: str = ""                   # original LLM output for debugging
 
 
@@ -105,9 +108,17 @@ Respond ONLY with valid JSON (no markdown, no explanation) — pick one:
 4. Multi-step plan (list of commands):
    {{"action": "multi_step", "steps": ["cmd1", "cmd2"]}}
 
+5. Delegate heavy engineering work to a specialised worker (runs a powerful
+   coding LLM — Claude/Codex/GLM — on the user's machine):
+   {{"action": "delegate", "role": "engineer", "prompt": "<task for the worker>"}}
+   Roles: "engineer" (write/refactor code), "reviewer" (review/critique),
+   "research" (explore code), "infra" (server ops, stays local).
+
 ## Rules
 - Only use terminal commands that are safe and non-destructive.
 - Use "respond" when you have enough info to answer without running anything.
+- Use "delegate" for substantial coding/engineering tasks that exceed a single
+  shell command — the worker has full coding-agent capabilities.
 - Never use rm -rf, shutdown, or other destructive commands.
 - Keep answers concise.
 """
@@ -166,6 +177,8 @@ def _parse_decision(raw: str) -> LLMDecision:
         text=str(data.get("text", "")),
         path=str(data.get("path", "")),
         steps=[str(s) for s in data.get("steps", [])],
+        role=str(data.get("role", "")),
+        delegate_prompt=str(data.get("prompt", "")),
         raw=raw,
     )
 
@@ -217,16 +230,22 @@ class ExecutionLoop:
     ai: AIProvider
     context_collector: ContextCollector
     working_dir: Path
+    worker_dispatch: WorkerDispatchPort | None = None
 
     def run(
         self,
         prompt: str,
         history: str = "",
+        user_id: str = "",
     ) -> Iterator[LoopEvent]:
         """Run the full loop and yield LoopEvent items.
 
         This is a synchronous generator — caller wraps in asyncio.to_thread
         for non-blocking SSE streaming.
+
+        ``user_id`` is required for ``delegate`` actions (routing job to that
+        user's worker). When empty or no dispatcher is wired, delegate degrades
+        gracefully to an error event without crashing the loop.
         """
         # ── 1. OBSERVE ────────────────────────────────────────────────────────
         yield LoopEvent("observing", {"message": "Collecting environment context..."})
@@ -317,6 +336,47 @@ class ExecutionLoop:
                         "exit_code": step_code,
                     })
                 result_text = "\n\n".join(result_parts)
+
+            elif decision.action == "delegate":
+                role = decision.role or "engineer"
+                worker_prompt = decision.delegate_prompt or prompt
+                yield LoopEvent("action_started", {
+                    "action": "delegate",
+                    "command": f"{role}: {worker_prompt[:80]}",
+                })
+                if self.worker_dispatch is None or not user_id:
+                    result_text = (
+                        "(delegate unavailable: no worker dispatcher configured "
+                        "or missing user_id)"
+                    )
+                    yield LoopEvent("action_result", {
+                        "action": "delegate",
+                        "output": result_text,
+                        "exit_code": -1,
+                    })
+                else:
+                    try:
+                        dispatch_result = self.worker_dispatch.dispatch(
+                            user_id, role, worker_prompt,
+                        )
+                    except Exception as exc:  # surface as loop result, never crash
+                        logger.warning("delegate dispatch failed: %s", exc)
+                        result_text = f"(delegate failed: {exc})"
+                        yield LoopEvent("action_result", {
+                            "action": "delegate",
+                            "output": result_text,
+                            "exit_code": -1,
+                        })
+                    else:
+                        body = dispatch_result.output or dispatch_result.summary
+                        if not dispatch_result.ok:
+                            body = f"(delegate error: {dispatch_result.error})\n{body}".strip()
+                        result_text = body[:MAX_OUTPUT_CHARS]
+                        yield LoopEvent("action_result", {
+                            "action": "delegate",
+                            "output": result_text,
+                            "exit_code": 0 if dispatch_result.ok else -1,
+                        })
 
             else:
                 yield LoopEvent("error", {"message": f"Unknown action type: {decision.action!r}"})
