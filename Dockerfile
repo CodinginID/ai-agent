@@ -35,6 +35,11 @@ COPY alembic.ini .
 COPY alembic/ ./alembic/
 COPY app/ ./app/
 
+# Baked build version — surfaced by GET /health. release.yml passes the tag via
+# --build-arg APP_VERSION=<tag>; defaults to "dev" for local builds.
+ARG APP_VERSION=dev
+ENV APP_VERSION=${APP_VERSION}
+
 RUN mkdir -p /app/data
 
 CMD ["python", "-m", "app.main"]
