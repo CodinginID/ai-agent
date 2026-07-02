@@ -89,7 +89,11 @@ services:
   # build: dipakai saat `docker compose up --build` (developer lokal)
   bot:
     image: ghcr.io/codinginid/ai-agent:latest
-    build: .
+    build:
+      context: .
+      args:
+        # Baked into GET /health. Override with APP_VERSION env when building.
+        APP_VERSION: ${APP_VERSION:-dev}
     container_name: aiagent_bot
     env_file: .env
     environment:
