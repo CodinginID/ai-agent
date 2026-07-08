@@ -1,4 +1,5 @@
 anyio==4.13.0
+anthropic>=0.92,<1.0
 alembic>=1.13,<2.0
 qrcode>=8.0,<9.0
 certifi==2026.4.22
