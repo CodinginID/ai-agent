@@ -9,7 +9,6 @@ from app.domain.workflow import (
     LoopLimitExceededError,
     Patch,
     Plan,
-    SameModelError,
     Stage,
     Verdict,
 )
@@ -197,15 +196,17 @@ def test_hallucinated_patch_path_aborts_before_review() -> None:
         orch.implement_and_review("p1")
 
 
-def test_same_engineer_reviewer_model_rejected() -> None:
+def test_same_engineer_reviewer_model_allowed() -> None:
+    # Model identik antar posisi diizinkan — yang membedakan skill/spec posisi,
+    # bukan identitas model.
     orch, _ = _orch(
         plan=_plan(),
         patches=[_patch()],
         verdicts=[_verdict(True)],
         reviewer_model="codex",  # same as engineer
     )
-    with pytest.raises(SameModelError):
-        orch.implement_and_review("p1")
+    result = orch.implement_and_review("p1")
+    assert result.verdict.approved is True
 
 
 def test_loop_cap_raises_when_never_approved() -> None:

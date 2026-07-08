@@ -2,8 +2,11 @@
 
 Pure domain: zero import dari adapter/framework. Mendefinisikan artefak yang
 dihand-off antar role (``Plan`` → ``Patch`` → ``Verdict``), aturan transisi
-state machine, batas iterasi loop revisi, dan aturan model-distinct
-(reviewer tidak boleh pakai model yang sama dengan engineer).
+state machine, dan batas iterasi loop revisi.
+
+Yang membedakan tiap posisi adalah SKILL/spec agent worker di posisi itu
+(prompt, tools, access_mode) — bukan identitas model. Model bebas: boleh sama
+atau beda antar posisi.
 
 Penamaan sengaja ``Plan``/``Patch``/``Verdict`` (bukan ``ExecutionPlan`` /
 ``TaskPlan`` yang sudah ada) karena ini artefak workflow agentik, bukan plan
@@ -37,10 +40,6 @@ class HallucinatedPathError(PatchValidationError):
 
 
 class VerdictValidationError(WorkflowError): ...
-
-
-class SameModelError(WorkflowError):
-    """Reviewer memakai model yang sama dengan engineer untuk task yang sama."""
 
 
 class InvalidTransitionError(WorkflowError):
@@ -141,14 +140,6 @@ def validate_patch_against_plan(
                 f"Patch menyentuh '{path}' yang tidak ada di repo dan tidak "
                 f"dideklarasikan di plan"
             )
-
-
-def require_distinct_models(engineer_model: str, reviewer_model: str) -> None:
-    if engineer_model == reviewer_model:
-        raise SameModelError(
-            f"Reviewer tidak boleh pakai model yang sama dengan engineer "
-            f"('{engineer_model}') untuk task yang sama"
-        )
 
 
 # ── Loop limit policy ─────────────────────────────────────────────────────────

@@ -14,12 +14,10 @@ from app.domain.workflow import (
     Plan,
     PlanValidationError,
     RevisionPolicy,
-    SameModelError,
     Stage,
     Verdict,
     VerdictValidationError,
     assert_transition,
-    require_distinct_models,
     validate_patch_against_plan,
 )
 
@@ -118,18 +116,6 @@ def test_approved_verdict_needs_no_comments() -> None:
 def test_rejected_verdict_without_comments_rejected() -> None:
     with pytest.raises(VerdictValidationError):
         Verdict(verdict_id="v1", patch_id="pt1", trace_id="t1", approved=False, comments="  ", reviewer_model="claude-1")
-
-
-# ── distinct model rule ─────────────────────────────────────────────────────
-
-
-def test_distinct_models_pass() -> None:
-    require_distinct_models(engineer_model="codex-1", reviewer_model="claude-1")
-
-
-def test_same_model_for_engineer_and_reviewer_rejected() -> None:
-    with pytest.raises(SameModelError):
-        require_distinct_models(engineer_model="qwen2.5", reviewer_model="qwen2.5")
 
 
 # ── transition rules ────────────────────────────────────────────────────────

@@ -9,8 +9,8 @@ from fastapi.testclient import TestClient
 from app.domain.workflow import (
     LoopLimitExceededError,
     Patch,
+    PatchValidationError,
     Plan,
-    SameModelError,
     Stage,
     Verdict,
 )
@@ -90,8 +90,8 @@ def test_implement_unknown_plan_404(client: TestClient, fake: FakeOrchestrator) 
     assert client.post("/workflow/implement", json={"plan_id": "x"}).status_code == 404
 
 
-def test_implement_same_model_409(client: TestClient, fake: FakeOrchestrator) -> None:
-    fake.raise_on_implement = SameModelError("same model")
+def test_implement_workflow_error_409(client: TestClient, fake: FakeOrchestrator) -> None:
+    fake.raise_on_implement = PatchValidationError("bad patch")
     assert client.post("/workflow/implement", json={"plan_id": "p1"}).status_code == 409
 
 

@@ -4,7 +4,6 @@ Tanggung jawab:
 - Validasi setiap artefak SEBELUM hand-off ke role berikutnya.
 - Tolak file path yang dihalusinasi (``validate_patch_against_plan``).
 - Cap loop engineer↔reviewer (``RevisionPolicy``).
-- Reviewer tidak boleh pakai model yang sama dengan engineer.
 - Catat setiap transisi role ke audit log (auditable).
 """
 
@@ -20,7 +19,6 @@ from app.domain.workflow import (
     Stage,
     Verdict,
     assert_transition,
-    require_distinct_models,
     validate_patch_against_plan,
 )
 from app.ports.audit import AuditLogger
@@ -64,8 +62,6 @@ class WorkflowOrchestrator:
         if plan is None:
             raise KeyError(f"Plan '{plan_id}' tidak ditemukan")
         trace_id = plan.trace_id
-
-        require_distinct_models(self.engineer.model, self.reviewer.model)
 
         policy = RevisionPolicy(self.max_iterations)
 
@@ -111,7 +107,6 @@ class WorkflowOrchestrator:
         if patch is None:
             raise KeyError(f"Belum ada patch untuk plan '{plan_id}'")
 
-        require_distinct_models(self.engineer.model, self.reviewer.model)
         verdict = self.reviewer.review(patch, plan)
         self.artifacts.save_verdict(verdict)
         self._audit_transition(plan.trace_id, "engineer", "reviewer",
