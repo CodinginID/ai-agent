@@ -33,6 +33,9 @@ from app.adapters.sessions import UserSessionRepository
 from app.composition import _session_factory, build_use_case
 from app.config import BASE_DIR, settings
 from app.domain.messaging import ChatEvent, MessageContext
+from app.domain.use_cases import _conv_id_to_int
+from app.handlers.approval import pending_plans
+from app.handlers.registry import action_registry
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -241,3 +244,71 @@ async def chat_send(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+class PlanDecisionRequest(BaseModel):
+    plan_id: str
+    # sama seperti ChatSendRequest: hanya untuk admin token
+    as_email: str | None = None
+
+
+def _decision_conv_id(authorization: str | None, as_email: str | None) -> str:
+    caller_user_id, mode = _resolve_caller(authorization)
+    if mode == "admin":
+        if not as_email:
+            raise HTTPException(
+                status_code=400, detail="admin token requires 'as_email' field"
+            )
+        return as_email
+    return caller_user_id
+
+
+async def _stream_approval(plan_id: str, conv_id: str) -> AsyncIterator[str]:
+    from app.domain.messaging import ChatEvent
+
+    pending = pending_plans.consume(plan_id, _conv_id_to_int(conv_id))
+    if pending is None:
+        yield _format_sse(
+            ChatEvent.error(
+                f"Plan '{plan_id}' tidak ditemukan atau sudah kedaluwarsa."
+            )
+        )
+        yield "event: done\ndata: {}\n\n"
+        return
+
+    action_name = pending.plan.intent
+    yield _format_sse(ChatEvent.action_started(action_name))
+    try:
+        result = await asyncio.to_thread(
+            action_registry.execute, action_name, pending.action_context
+        )
+    except Exception as exc:  # noqa: BLE001 — batas proses eksternal, relay ke klien
+        yield _format_sse(ChatEvent.error(f"Action {action_name} gagal: {exc}"))
+        yield "event: done\ndata: {}\n\n"
+        return
+
+    yield _format_sse(ChatEvent.action_result(action_name, result))
+    yield _format_sse(ChatEvent.final(f"Approved & executed: {action_name}"))
+    yield "event: done\ndata: {}\n\n"
+
+
+@router.post("/approve")
+async def chat_approve(
+    req: Annotated[PlanDecisionRequest, Body(...)],
+    authorization: str | None = Header(default=None),
+) -> StreamingResponse:
+    conv_id = _decision_conv_id(authorization, req.as_email)
+    return StreamingResponse(
+        _stream_approval(req.plan_id, conv_id),
+        media_type="text/event-stream",
+    )
+
+
+@router.post("/reject")
+async def chat_reject(
+    req: Annotated[PlanDecisionRequest, Body(...)],
+    authorization: str | None = Header(default=None),
+) -> dict[str, bool]:
+    conv_id = _decision_conv_id(authorization, req.as_email)
+    ok = pending_plans.cancel(req.plan_id, _conv_id_to_int(conv_id))
+    return {"ok": ok}
