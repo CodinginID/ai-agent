@@ -264,8 +264,6 @@ def _decision_conv_id(authorization: str | None, as_email: str | None) -> str:
 
 
 async def _stream_approval(plan_id: str, conv_id: str) -> AsyncIterator[str]:
-    from app.domain.messaging import ChatEvent
-
     pending = pending_plans.consume(plan_id, _conv_id_to_int(conv_id))
     if pending is None:
         yield _format_sse(
@@ -301,6 +299,7 @@ async def chat_approve(
     return StreamingResponse(
         _stream_approval(req.plan_id, conv_id),
         media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 

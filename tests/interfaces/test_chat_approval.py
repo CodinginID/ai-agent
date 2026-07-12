@@ -60,6 +60,25 @@ def test_approve_executes_action_and_streams_result(client, monkeypatch):
     assert "event: done" in body
 
 
+def test_approve_action_failure_streams_error_and_closes(client, monkeypatch):
+    monkeypatch.setattr(
+        chat_mod.pending_plans, "consume", lambda plan_id, chat_id: _pending()
+    )
+
+    def _boom(name, ctx):
+        raise Exception("boom")
+
+    monkeypatch.setattr(chat_mod.action_registry, "execute", _boom)
+    resp = client.post(
+        "/chat/approve",
+        json={"plan_id": "abc123"},
+        headers={"Authorization": "Bearer x"},
+    )
+    assert resp.status_code == 200
+    assert "event: error" in resp.text
+    assert "event: done" in resp.text
+
+
 def test_reject_cancels_plan(client, monkeypatch):
     monkeypatch.setattr(
         chat_mod.pending_plans, "cancel", lambda plan_id, chat_id: True
