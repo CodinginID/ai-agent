@@ -12,6 +12,7 @@ Aplikasi desktop chat-first untuk Octopus — pengalaman "smart assistant sepert
 | Aspek | Keputusan |
 |---|---|
 | Pengalaman utama | Chat-first (seperti Claude/ChatGPT desktop), jawaban berupa kartu visual |
+| Input default | **Voice-first (mode Jarvis)** — aplikasi siap mendengarkan; transkrip auto-send; TTS balik aktif default. Input teks tetap tersedia sebagai alternatif |
 | Platform | macOS + Windows + Linux |
 | Hubungan dengan backend | Klien gateway saja — backend FastAPI tidak berubah; worker tetap via `octopus-cli` |
 | Voice input (STT) | **Wajib v1.** Whisper lokal (whisper.cpp), di balik interface swappable |
@@ -51,14 +52,14 @@ Prinsip:
 
 ### Frontend (React + TypeScript)
 
-- **ChatView** — daftar pesan, input teks + tombol mic; pesan asisten dirender live dari stream SSE.
+- **ChatView** — daftar pesan; pesan asisten dirender live dari stream SSE. Area input **voice-first**: tombol mic besar (push-to-talk atau hotkey) sebagai interaksi utama, input teks tersedia sebagai alternatif di bawahnya.
 - **Kartu visual** per tipe event/hasil:
   - `MetricCard` — gauge/angka CPU, memory, disk
   - `TableCard` — docker ps/images, git log/status sebagai tabel
   - `ApprovalCard` — rencana eksekusi + tombol Approve/Reject
   - `DeployCard` — stepper pull → build → up → health check, update live
   - `TextCard` — fallback markdown
-- **VoiceBar** — indikator rekam, level meter mic, toggle mode Jarvis (auto-bacakan jawaban).
+- **VoiceBar** — indikator rekam, level meter mic, toggle mode Jarvis (default **aktif**: transkrip auto-send + jawaban dibacakan; dimatikan = teks masuk input box dulu untuk dikoreksi).
 - **SettingsView** — URL gateway, login, pilihan model Whisper & suara Piper, on/off TTS.
 
 ### Backend Go (`octopus-desktop/internal/`)
@@ -76,7 +77,7 @@ Prinsip:
 ### Perintah suara
 
 1. User tekan/tahan tombol mic (atau hotkey) → Go merekam audio mic.
-2. Selesai bicara → `WhisperAdapter` transkrip lokal → teks masuk input box (user bisa koreksi lalu kirim; di mode Jarvis auto-send).
+2. Selesai bicara → `WhisperAdapter` transkrip lokal → **auto-send** (default, mode Jarvis). Jika mode Jarvis dimatikan, teks masuk input box dulu agar bisa dikoreksi.
 3. `gateway` POST `/chat/send` → SSE mengalir: `thinking` → `intent_classified` → `action_started` → `action_result` → `final`.
 4. Frontend memetakan tiap event ke kartu; `approval_required` memunculkan `ApprovalCard`.
 5. Saat `final` tiba dan TTS aktif → `PiperAdapter` membacakan ringkasan jawaban (teks final, bukan isi tabel mentah).
@@ -91,7 +92,7 @@ Prinsip:
 |---|---|
 | Gateway tidak terjangkau / token expired | Banner status koneksi; tombol reconnect; redirect ke login jika 401; pesan gagal bisa di-retry |
 | SSE terputus di tengah stream | Pesan ditandai "terputus" + tombol retry — tidak ada silent hang |
-| Mic tidak ada / izin ditolak | Tombol mic disabled + tooltip alasan; chat teks tetap penuh |
+| Mic tidak ada / izin ditolak | Tombol mic disabled + tooltip alasan; aplikasi otomatis jatuh ke mode teks (voice-first butuh mic, tapi tanpa mic chat tetap berfungsi penuh) |
 | Download model gagal | Retry/resume; aplikasi tetap bisa teks-only sebelum model siap |
 | Whisper/Piper crash | Error di-wrap per adapter; tampil sebagai toast; sesi chat tidak mati |
 
