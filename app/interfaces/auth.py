@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal
 
 import httpx
-from fastapi import APIRouter, Body, Header, HTTPException
+from fastapi import APIRouter, Body, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import select
 
@@ -382,18 +382,19 @@ def _tui_login_page(code: str) -> str:
 
 @router.post("/tui/start")
 async def tui_start() -> JSONResponse:
-    """TUI minta kode pairing baru. Return code + login URL."""
-    if not settings.google_client_id or not settings.google_client_secret:
-        raise HTTPException(
-            status_code=503,
-            detail="Google OAuth belum dikonfigurasi di server",
-        )
+    """TUI minta kode pairing baru. Return code + login URL.
+    Jika Google OAuth belum terpasang, arahkan ke local login bypass."""
     _purge_expired()
     code = _new_pair_code()
     while code in _pair_codes:
         code = _new_pair_code()
     _pair_codes[code] = _PairCode(created_at=datetime.now(UTC))
-    login_url = f"{settings.app_url}/auth/tui-login?code={urllib.parse.quote(code)}"
+    
+    if not settings.google_client_id or not settings.google_client_secret:
+        login_url = f"{settings.app_url}/auth/tui-local-login?code={urllib.parse.quote(code)}"
+    else:
+        login_url = f"{settings.app_url}/auth/tui-login?code={urllib.parse.quote(code)}"
+        
     return JSONResponse(
         {
             "code": code,
@@ -401,6 +402,86 @@ async def tui_start() -> JSONResponse:
             "expires_in_sec": int(_TUI_CODE_TTL.total_seconds()),
         }
     )
+
+
+@router.get("/tui-local-login", response_class=HTMLResponse)
+async def tui_local_login(code: str | None = None) -> HTMLResponse:
+    """Halaman login lokal / bypass pairing tanpa membutuhkan Google OAuth."""
+    _purge_expired()
+    if not code or code not in _pair_codes:
+        return HTMLResponse(
+            _error_page("Kode pair tidak valid atau sudah kedaluwarsa."),
+            status_code=400,
+        )
+    return HTMLResponse(f"""
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Octopus Local Auth</title>
+  <style>
+    body {{ font-family: 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }}
+    .card {{ background: #1e293b; padding: 2.5rem; border-radius: 8px; border: 1px solid rgba(59, 130, 246, 0.2); text-align: center; max-width: 400px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }}
+    h2 {{ margin-top: 0; color: #3b82f6; font-weight: 800; }}
+    p {{ color: #94a3b8; font-size: 0.9rem; line-height: 1.5; margin-bottom: 2rem; }}
+    .btn {{ display: block; width: 100%; background: #3b82f6; color: white; padding: 0.75rem; text-decoration: none; border-radius: 4px; font-weight: bold; border: none; cursor: pointer; transition: background 0.2s; }}
+    .btn:hover {{ background: #2563eb; }}
+    input {{ display: block; width: 100%; box-sizing: border-box; background: #0f172a; border: 1px solid #334155; padding: 0.75rem; color: white; margin-bottom: 1rem; border-radius: 4px; outline: none; }}
+    input:focus {{ border-color: #3b82f6; }}
+    label {{ display: block; text-align: left; font-size: 0.75rem; text-transform: uppercase; color: #64748b; margin-bottom: 0.35rem; font-weight: bold; }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Octopus Local Dev Auth</h2>
+    <p>Hubungkan aplikasi dengan akun lokal untuk testing / offline mode tanpa Google OAuth.</p>
+    <form action="/auth/tui-local-login/submit" method="post">
+      <input type="hidden" name="code" value="{code}"/>
+      <label>Nama Lengkap</label>
+      <input type="text" name="name" placeholder="Nama Lengkap" value="Local User" required/>
+      <label>Alamat Email</label>
+      <input type="email" name="email" placeholder="Email" value="local@octopus.internal" required/>
+      <button type="submit" class="btn">Hubungkan Sekarang</button>
+    </form>
+  </div>
+</body>
+</html>
+    """)
+
+
+@router.post("/tui-local-login/submit")
+async def tui_local_login_submit(request: Request) -> HTMLResponse:
+    body_bytes = await request.body()
+    params = urllib.parse.parse_qs(body_bytes.decode("utf-8"))
+    
+    code = params.get("code", [""])[0].strip()
+    name = params.get("name", [""])[0].strip()
+    email = params.get("email", [""])[0].strip()
+    
+    if not code or not name or not email:
+        return HTMLResponse(_error_page("Form data tidak lengkap."), status_code=400)
+        
+    _purge_expired()
+    entry = _pair_codes.get(code)
+    if entry is None:
+        return HTMLResponse(_error_page("Kode pair tidak valid atau sudah kedaluwarsa."), status_code=400)
+        
+    factory = _session_factory_lazy()
+    with session_scope(factory) as session:
+        # Cari atau buat local user
+        user = session.scalar(select(UserModel).where(UserModel.email == email))
+        if user is None:
+            user = UserModel(email=email, display_name=name)
+            session.add(user)
+            session.flush()
+        user_id = user.id
+        
+        sessions = UserSessionRepository(factory)
+        session_info = sessions.create(user_id=user_id, user_agent="ai-agent-tui-local")
+        entry.status = "paired"
+        entry.session_token = session_info.token
+        entry.user_id = user_id
+        
+    return HTMLResponse(_tui_success_page(name, email))
 
 
 @router.get("/tui-login", response_class=HTMLResponse)
