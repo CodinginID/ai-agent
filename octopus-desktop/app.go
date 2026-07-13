@@ -138,7 +138,11 @@ func (a *App) IsLoggedIn() bool {
 
 func (a *App) Logout() error { return settings.DeleteToken() }
 
-func (a *App) GetSettings() settings.Settings { return a.cfg }
+func (a *App) GetSettings() settings.Settings {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.cfg
+}
 
 func (a *App) SaveSettings(s settings.Settings) error {
 	if err := settings.Save(a.configDir, s); err != nil {
