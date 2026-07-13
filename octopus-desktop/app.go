@@ -35,7 +35,10 @@ func NewApp() *App {
 	dir := filepath.Join(base, "octopus-desktop")
 	cfg, err := settings.Load(dir)
 	if err != nil {
-		cfg = settings.Settings{JarvisMode: true, TTSEnabled: true}
+		cfg = settings.Settings{GatewayURL: "http://localhost:8080", JarvisMode: true, TTSEnabled: true}
+	}
+	if cfg.GatewayURL == "" {
+		cfg.GatewayURL = "http://localhost:8080"
 	}
 	a := &App{cfg: cfg, configDir: dir}
 	token, _ := settings.Token()

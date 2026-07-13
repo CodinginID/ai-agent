@@ -27,7 +27,7 @@ type Settings struct {
 }
 
 func defaults() Settings {
-	return Settings{JarvisMode: true, TTSEnabled: true}
+	return Settings{GatewayURL: "http://localhost:8080", JarvisMode: true, TTSEnabled: true}
 }
 
 func Load(dir string) (Settings, error) {
