@@ -33,8 +33,13 @@ export function SettingsView({ onClose, onLogout }: { onClose: () => void; onLog
   };
 
   return (
-    <div className="settings-view">
-      <h2>Pengaturan</h2>
+    <div className="settings-view futuristic-card">
+      <div className="corner-bracket top-left"></div>
+      <div className="corner-bracket top-right"></div>
+      <div className="corner-bracket bottom-left"></div>
+      <div className="corner-bracket bottom-right"></div>
+      <div className="glow-effect"></div>
+      <h2>PENGATURAN SYSTEM //</h2>
       <label>
         Gateway URL
         <input value={String(cfg.gateway_url ?? "")} onChange={(e) => set("gateway_url", e.target.value)} />

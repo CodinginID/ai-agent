@@ -35,14 +35,21 @@ export function LoginView({
   };
 
   return (
-    <div className="login-view">
-      <h1>Octopus</h1>
-      <p>Login untuk terhubung ke gateway Octopus kamu.</p>
-      <button onClick={start}>Login dengan Google</button>
+    <div className="login-view futuristic-card">
+      <div className="corner-bracket top-left"></div>
+      <div className="corner-bracket top-right"></div>
+      <div className="corner-bracket bottom-left"></div>
+      <div className="corner-bracket bottom-right"></div>
+      <div className="glow-effect"></div>
+      <h1>OCTOPUS //</h1>
+      <p className="subtitle">[GATEWAY AUTHENTICATION PORTAL]</p>
+      <button onClick={start} className="cyber-btn">INITIALIZE LOGIN SEQUENCE</button>
       {code && (
-        <p>
-          Browser terbuka — pastikan kodenya sama: <strong>{code}</strong>
-        </p>
+        <div className="pairing-box">
+          <p className="pairing-status">AUTHENTICATING VIA BROWSER...</p>
+          <p className="pairing-label">VERIFICATION CODE:</p>
+          <div className="pairing-code">{code}</div>
+        </div>
       )}
       {error && <p className="voice-error">{error}</p>}
     </div>

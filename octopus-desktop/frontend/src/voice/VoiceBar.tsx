@@ -51,6 +51,15 @@ export function VoiceBar({
       >
         {state === "recording" ? "🔴" : state === "transcribing" ? "…" : "🎤"}
       </button>
+      {state === "recording" && (
+        <div className="audio-wave">
+          <span className="stroke"></span>
+          <span className="stroke"></span>
+          <span className="stroke"></span>
+          <span className="stroke"></span>
+          <span className="stroke"></span>
+        </div>
+      )}
       <label className="jarvis-toggle">
         <input type="checkbox" checked={jarvis} onChange={onToggleJarvis} /> Jarvis
       </label>
