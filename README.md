@@ -124,6 +124,20 @@ Low-risk reads (status, logs, git log) run immediately without confirmation.
 
 You can register as many machines as you want. Each one runs the `octopus` worker independently. From Telegram, `/devices` shows all your connected machines and `/agents` shows which AI CLIs are ready on each one.
 
+## Desktop App
+
+Aplikasi desktop Wails (`octopus-desktop`) menyediakan antarmuka chat-first dan voice-first (Jarvis Mode) untuk mengontrol Octopus. Aplikasi ini menggunakan `whisper-cli` (whisper.cpp) untuk speech-to-text lokal dan `piper` untuk text-to-speech lokal.
+
+**Cara build:**
+```bash
+cd octopus-desktop
+wails build
+```
+Untuk menjalankan dalam mode pengembangan:
+```bash
+wails dev
+```
+
 ---
 
 ## Contributing

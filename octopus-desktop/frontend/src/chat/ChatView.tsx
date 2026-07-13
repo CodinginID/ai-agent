@@ -1,0 +1,136 @@
+import { useEffect, useRef, useState } from "react";
+import { approvePlan, onChatEvent, rejectPlan, sendChat } from "./bindings";
+import { applyEvent } from "./reducer";
+import type { AssistantMessage, Message, Part } from "./types";
+import { ActionCard } from "./cards/ActionCard";
+import { ApprovalCard } from "./cards/ApprovalCard";
+import { ErrorCard } from "./cards/ErrorCard";
+import { MetricCard } from "./cards/MetricCard";
+import { StatusLine } from "./cards/StatusLine";
+import { TableCard } from "./cards/TableCard";
+import { TextCard } from "./cards/TextCard";
+
+const METRIC_ACTIONS = new Set(["memory", "disk", "server_status", "docker_stats"]);
+const TABLE_ACTIONS = new Set(["docker_ps", "docker_images", "docker_compose_ps", "processes"]);
+
+let counter = 0;
+const newMsgId = () => `m-${Date.now()}-${counter++}`;
+
+export function ChatView({
+  onFinal,
+  inputExtra,
+  registerSubmit,
+}: {
+  onFinal?: (text: string) => void;
+  inputExtra?: React.ReactNode; // slot untuk tombol mic (Task 11)
+  registerSubmit?: (fn: (text: string) => void) => void;
+}) {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [draft, setDraft] = useState("");
+  const lastFinal = useRef("");
+
+  useEffect(() => {
+    return onChatEvent((ev) => setMessages((prev) => applyEvent(prev, ev)));
+  }, []);
+
+  useEffect(() => {
+    registerSubmit?.(submit);
+  }, [registerSubmit]);
+
+  useEffect(() => {
+    const handleVoiceDraft = (e: Event) => {
+      const customEvent = e as CustomEvent<string>;
+      setDraft(customEvent.detail);
+    };
+    window.addEventListener("voice:draft", handleVoiceDraft);
+    return () => window.removeEventListener("voice:draft", handleVoiceDraft);
+  }, []);
+
+  useEffect(() => {
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg?.role === "assistant" && lastMsg.done && lastMsg.finalText && lastMsg.finalText !== lastFinal.current) {
+      lastFinal.current = lastMsg.finalText;
+      onFinal?.(lastMsg.finalText);
+    }
+  }, [messages, onFinal]);
+
+  const submit = (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const msgId = newMsgId();
+    setMessages((prev) => [...prev, { msgId: `u-${msgId}`, role: "user", text: trimmed }]);
+    void sendChat(msgId, trimmed);
+    setDraft("");
+  };
+
+  const decide = (msg: AssistantMessage, planId: string, decision: "approved" | "rejected") => {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.msgId === msg.msgId && m.role === "assistant"
+          ? {
+              ...m,
+              parts: m.parts.map((p) =>
+                p.kind === "approval" && p.planId === planId ? { ...p, decided: decision } : p,
+              ),
+            }
+          : m,
+      ),
+    );
+    if (decision === "approved") void approvePlan(newMsgId(), planId);
+    else void rejectPlan(planId);
+  };
+
+  const renderPart = (msg: AssistantMessage, p: Part, i: number) => {
+    switch (p.kind) {
+      case "status":
+        return <StatusLine key={i} text={p.text} />;
+      case "text":
+        return <TextCard key={i} text={p.text} streaming={p.streaming} />;
+      case "action":
+        if (!p.running && METRIC_ACTIONS.has(p.action))
+          return <MetricCard key={i} action={p.action} output={p.output} />;
+        if (!p.running && TABLE_ACTIONS.has(p.action))
+          return <TableCard key={i} action={p.action} output={p.output} />;
+        return <ActionCard key={i} action={p.action} running={p.running} output={p.output} />;
+      case "approval":
+        return (
+          <ApprovalCard
+            key={i}
+            planId={p.planId}
+            summary={p.summary}
+            decided={p.decided}
+            onApprove={(id) => decide(msg, id, "approved")}
+            onReject={(id) => decide(msg, id, "rejected")}
+          />
+        );
+      case "error":
+        return <ErrorCard key={i} message={p.message} retryable={p.retryable} />;
+    }
+  };
+
+  return (
+    <div className="chat-view">
+      <div className="chat-messages">
+        {messages.map((m) =>
+          m.role === "user" ? (
+            <div key={m.msgId} className="msg-user">{m.text}</div>
+          ) : (
+            <div key={m.msgId} className="msg-assistant">
+              {m.parts.map((p, i) => renderPart(m, p, i))}
+            </div>
+          ),
+        )}
+      </div>
+      <div className="chat-input">
+        {inputExtra}
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && submit(draft)}
+          placeholder="Ketik perintah… (atau tahan tombol mic)"
+        />
+        <button onClick={() => submit(draft)}>Kirim</button>
+      </div>
+    </div>
+  );
+}

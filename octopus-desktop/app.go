@@ -2,13 +2,18 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 
+	modelassets "github.com/codinginid/octopus-desktop/internal/assets"
 	"github.com/codinginid/octopus-desktop/internal/gateway"
+	"github.com/codinginid/octopus-desktop/internal/speech"
 	"github.com/codinginid/octopus-desktop/internal/settings"
+	"github.com/codinginid/octopus-desktop/internal/voice"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -154,4 +159,96 @@ func (a *App) SaveSettings(s settings.Settings) error {
 	a.client = gateway.New(s.GatewayURL, token)
 	a.mu.Unlock()
 	return nil
+}
+
+func resolveBin(configured, name string) string {
+	if configured != "" {
+		return configured
+	}
+	p, err := exec.LookPath(name)
+	if err == nil {
+		return p
+	}
+	return ""
+}
+
+func (a *App) stt() speech.SpeechToText {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	bin := resolveBin(a.cfg.WhisperBin, "whisper-cli")
+	return &speech.WhisperCLI{Bin: bin, ModelPath: a.cfg.WhisperModelPath}
+}
+
+func (a *App) tts() voice.TextToSpeech {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	bin := resolveBin(a.cfg.PiperBin, "piper")
+	return &voice.PiperCLI{Bin: bin, VoicePath: a.cfg.PiperVoicePath}
+}
+
+// Transcribe menerima WAV base64 dari frontend, return transkrip.
+func (a *App) Transcribe(wavB64 string) (string, error) {
+	wav, err := base64.StdEncoding.DecodeString(wavB64)
+	if err != nil {
+		return "", fmt.Errorf("wav base64 tidak valid: %w", err)
+	}
+	return a.stt().Transcribe(a.ctx, wav)
+}
+
+// Speak sintesis teks → WAV base64 untuk diputar frontend.
+func (a *App) Speak(text string) (string, error) {
+	wav, err := a.tts().Synthesize(a.ctx, text)
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(wav), nil
+}
+
+// DownloadAssets unduh model default; progress via event "assets:progress".
+func (a *App) DownloadAssets() error {
+	dir := filepath.Join(a.configDir, "models")
+	for _, it := range modelassets.DefaultItems() {
+		item := it
+		path, err := modelassets.Download(a.ctx, item, dir, func(done, total int64) {
+			runtime.EventsEmit(a.ctx, "assets:progress", map[string]any{
+				"name":  item.Name,
+				"done":  done,
+				"total": total,
+			})
+		})
+		if err != nil {
+			return err
+		}
+		a.mu.Lock()
+		switch item.Name {
+		case "whisper-base":
+			a.cfg.WhisperModelPath = path
+		case "piper-voice":
+			a.cfg.PiperVoicePath = path
+		}
+		a.mu.Unlock()
+	}
+	a.mu.Lock()
+	cfgCopy := a.cfg
+	a.mu.Unlock()
+	return settings.Save(a.configDir, cfgCopy)
+}
+
+// BinaryStatus cek ketersediaan whisper-cli & piper di PATH/settings.
+func (a *App) BinaryStatus() map[string]bool {
+	a.mu.Lock()
+	cfg := a.cfg
+	a.mu.Unlock()
+	find := func(configured, name string) bool {
+		if configured != "" {
+			_, err := os.Stat(configured)
+			return err == nil
+		}
+		_, err := exec.LookPath(name)
+		return err == nil
+	}
+	return map[string]bool{
+		"whisper": find(cfg.WhisperBin, "whisper-cli"),
+		"piper":   find(cfg.PiperBin, "piper"),
+	}
 }
