@@ -63,6 +63,14 @@ func (a *App) emit(payload map[string]any) {
 	runtime.EventsEmit(a.ctx, "chat:event", payload)
 }
 
+// gw membaca client di bawah mutex karena PollLogin dan SaveSettings bisa
+// mengganti client saat binding lain sedang berjalan di goroutine terpisah.
+func (a *App) gw() *gateway.Client {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.client
+}
+
 // runStream mengirim tiap event ke frontend saat event itu tiba (bukan
 // menunggu stream selesai), lalu setelah channel ditutup baca err dari
 // done-channel untuk emit stream_error bila perlu.
@@ -83,22 +91,22 @@ func (a *App) runStream(msgID string, run func(chan<- gateway.Event) error) {
 
 func (a *App) SendChat(msgID, text string) {
 	go a.runStream(msgID, func(out chan<- gateway.Event) error {
-		return a.client.SendChat(a.ctx, text, out)
+		return a.gw().SendChat(a.ctx, text, out)
 	})
 }
 
 func (a *App) ApprovePlan(msgID, planID string) {
 	go a.runStream(msgID, func(out chan<- gateway.Event) error {
-		return a.client.Approve(a.ctx, planID, out)
+		return a.gw().Approve(a.ctx, planID, out)
 	})
 }
 
 func (a *App) RejectPlan(planID string) (bool, error) {
-	return a.client.Reject(a.ctx, planID)
+	return a.gw().Reject(a.ctx, planID)
 }
 
 func (a *App) StartLogin() (map[string]any, error) {
-	ls, err := a.client.StartLogin(a.ctx)
+	ls, err := a.gw().StartLogin(a.ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +115,7 @@ func (a *App) StartLogin() (map[string]any, error) {
 }
 
 func (a *App) PollLogin(code string) (string, error) {
-	token, pending, err := a.client.PollLogin(a.ctx, code)
+	token, pending, err := a.gw().PollLogin(a.ctx, code)
 	if err != nil {
 		return "", err
 	}
