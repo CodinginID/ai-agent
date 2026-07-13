@@ -1,7 +1,8 @@
-// octopus-desktop/internal/settings/settings_test.go
 package settings
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/zalando/go-keyring"
@@ -29,6 +30,16 @@ func TestSaveThenLoadRoundtrip(t *testing.T) {
 	}
 	if out.GatewayURL != in.GatewayURL || out.JarvisMode != in.JarvisMode {
 		t.Fatalf("roundtrip mismatch: %+v", out)
+	}
+}
+
+func TestLoadCorruptJSONReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte("{invalid"), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if _, err := Load(dir); err == nil {
+		t.Fatal("Load harus error untuk JSON korup")
 	}
 }
 
