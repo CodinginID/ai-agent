@@ -23,7 +23,8 @@ func New(baseURL, token string) *Client {
 	return &Client{
 		baseURL: baseURL,
 		token:   token,
-		// Timeout hanya untuk request non-stream; stream pakai context caller.
+		// Tanpa timeout global: batas waktu diserahkan ke context caller
+		// (stream bisa berjalan lama); hanya Reject yang pakai timeout eksplisit.
 		http: &http.Client{},
 	}
 }
@@ -37,11 +38,11 @@ type LoginStart struct {
 func (c *Client) postJSON(ctx context.Context, path string, body any) (*http.Response, error) {
 	raw, err := json.Marshal(body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("siapkan request %s: %w", path, err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(raw))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("siapkan request %s: %w", path, err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if c.token != "" {
@@ -64,9 +65,12 @@ func (c *Client) StartLogin(ctx context.Context) (LoginStart, error) {
 		return LoginStart{}, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return LoginStart{}, fmt.Errorf("/auth/tui/start gagal: HTTP %d", resp.StatusCode)
+	}
 	var ls LoginStart
 	if err := json.NewDecoder(resp.Body).Decode(&ls); err != nil {
-		return LoginStart{}, err
+		return LoginStart{}, fmt.Errorf("decode respons /auth/tui/start: %w", err)
 	}
 	return ls, nil
 }
@@ -87,7 +91,7 @@ func (c *Client) PollLogin(ctx context.Context, code string) (string, bool, erro
 		SessionToken string `json:"session_token"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return "", false, err
+		return "", false, fmt.Errorf("decode respons /auth/tui/poll: %w", err)
 	}
 	return out.SessionToken, false, nil
 }
@@ -121,11 +125,14 @@ func (c *Client) Reject(ctx context.Context, planID string) (bool, error) {
 		return false, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("/chat/reject gagal: HTTP %d", resp.StatusCode)
+	}
 	var out struct {
 		OK bool `json:"ok"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return false, err
+		return false, fmt.Errorf("decode respons /chat/reject: %w", err)
 	}
 	return out.OK, nil
 }

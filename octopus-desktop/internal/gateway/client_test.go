@@ -3,6 +3,7 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -125,5 +126,64 @@ func TestReject(t *testing.T) {
 	ok, err := New(srv.URL, "tok").Reject(context.Background(), "plan-1")
 	if err != nil || !ok {
 		t.Fatalf("reject: %v %v", ok, err)
+	}
+}
+
+func TestApproveParsesSSEEvents(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/approve" {
+			t.Errorf("path salah: %s", r.URL.Path)
+		}
+		var body struct {
+			PlanID string `json:"plan_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.PlanID != "plan-1" {
+			t.Errorf("body plan_id salah: %+v err=%v", body, err)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "event: action_started\ndata: {\"action\":\"restart\"}\n\n")
+		fmt.Fprint(w, "event: final\ndata: {\"text\":\"beres\"}\n\n")
+		fmt.Fprint(w, "event: done\ndata: {}\n\n")
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	evs, err := collect(t, func(out chan<- Event) error {
+		return c.Approve(context.Background(), "plan-1", out)
+	})
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if len(evs) != 2 || evs[0].Type != "action_started" || evs[1].Type != "final" {
+		t.Fatalf("events salah: %+v", evs)
+	}
+}
+
+func TestStartLoginServerErrorReturnsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprint(w, `{"detail":"boom"}`)
+	}))
+	defer srv.Close()
+
+	_, err := New(srv.URL, "").StartLogin(context.Background())
+	if err == nil {
+		t.Fatal("HTTP 500 harus menghasilkan error, bukan zero value")
+	}
+}
+
+func TestRejectServerErrorReturnsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprint(w, `{"detail":"boom"}`)
+	}))
+	defer srv.Close()
+
+	ok, err := New(srv.URL, "tok").Reject(context.Background(), "plan-1")
+	if err == nil {
+		t.Fatal("HTTP 500 harus menghasilkan error")
+	}
+	if ok {
+		t.Fatal("ok harus false saat server error")
 	}
 }
