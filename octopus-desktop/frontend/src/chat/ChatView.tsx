@@ -9,6 +9,8 @@ import { MetricCard } from "./cards/MetricCard";
 import { StatusLine } from "./cards/StatusLine";
 import { TableCard } from "./cards/TableCard";
 import { TextCard } from "./cards/TextCard";
+import { UserBubble } from "./UserBubble";
+import { usePointerTilt } from "../hooks/usePointerTilt";
 
 const METRIC_ACTIONS = new Set(["memory", "disk", "server_status", "docker_stats"]);
 const TABLE_ACTIONS = new Set(["docker_ps", "docker_images", "docker_compose_ps", "processes"]);
@@ -18,16 +20,19 @@ const newMsgId = () => `m-${Date.now()}-${counter++}`;
 
 export function ChatView({
   onFinal,
+  onPendingChange,
   inputExtra,
   registerSubmit,
 }: {
   onFinal?: (text: string) => void;
+  onPendingChange?: (pending: boolean) => void;
   inputExtra?: React.ReactNode; // slot untuk tombol mic (Task 11)
   registerSubmit?: (fn: (text: string) => void) => void;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const lastFinal = useRef("");
+  const sendButtonRef = usePointerTilt<HTMLButtonElement>();
 
   useEffect(() => {
     return onChatEvent((ev) => setMessages((prev) => applyEvent(prev, ev)));
@@ -54,11 +59,19 @@ export function ChatView({
     }
   }, [messages, onFinal]);
 
+  useEffect(() => {
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg?.role === "assistant" && lastMsg.done) {
+      onPendingChange?.(false);
+    }
+  }, [messages, onPendingChange]);
+
   const submit = (text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return;
     const msgId = newMsgId();
     setMessages((prev) => [...prev, { msgId: `u-${msgId}`, role: "user", text: trimmed }]);
+    onPendingChange?.(true);
     void sendChat(msgId, trimmed);
     setDraft("");
   };
@@ -113,7 +126,7 @@ export function ChatView({
       <div className="chat-messages">
         {messages.map((m) =>
           m.role === "user" ? (
-            <div key={m.msgId} className="msg-user">{m.text}</div>
+            <UserBubble key={m.msgId} text={m.text} />
           ) : (
             <div key={m.msgId} className="msg-assistant">
               {m.parts.map((p, i) => renderPart(m, p, i))}
@@ -129,7 +142,9 @@ export function ChatView({
           onKeyDown={(e) => e.key === "Enter" && submit(draft)}
           placeholder="Ketik perintah… (atau tahan tombol mic)"
         />
-        <button onClick={() => submit(draft)}>Kirim</button>
+        <button ref={sendButtonRef} className="tilt-surface" onClick={() => submit(draft)}>
+          Kirim
+        </button>
       </div>
     </div>
   );
