@@ -4,13 +4,20 @@ import { VoiceBar } from "./voice/VoiceBar";
 import { speak } from "./voice/tts";
 import { LoginView } from "./setup/LoginView";
 import { SettingsView } from "./setup/SettingsView";
+import { AiOrb } from "./orb/AiOrb";
+import { deriveAiState } from "./orb/orbState";
 import "./style.css";
 
 export default function App() {
   const [screen, setScreen] = useState<"loading" | "login" | "chat">("loading");
   const [showSettings, setShowSettings] = useState(false);
   const [jarvis, setJarvis] = useState(true);
+  const [pending, setPending] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [amplitude, setAmplitude] = useState(0);
   const submitRef = useRef<((text: string) => void) | null>(null);
+
+  const aiState = deriveAiState(pending, isSpeaking);
 
   useEffect(() => {
     window.go.main.App.IsLoggedIn().then((loggedIn) => {
@@ -28,6 +35,18 @@ export default function App() {
     }
   }, [screen]);
 
+  useEffect(() => {
+    if (screen !== "chat") return;
+    const handleMove = (e: PointerEvent) => {
+      const px = (e.clientX / window.innerWidth - 0.5) * 2;
+      const py = (e.clientY / window.innerHeight - 0.5) * 2;
+      document.documentElement.style.setProperty("--bg-parallax-x", `${(px * 6).toFixed(2)}px`);
+      document.documentElement.style.setProperty("--bg-parallax-y", `${(py * 6).toFixed(2)}px`);
+    };
+    window.addEventListener("pointermove", handleMove);
+    return () => window.removeEventListener("pointermove", handleMove);
+  }, [screen]);
+
   const handleTranscript = (text: string) => {
     if (jarvis) {
       submitRef.current?.(text); // auto-send
@@ -37,7 +56,14 @@ export default function App() {
   };
 
   const handleFinal = (text: string) => {
-    if (jarvis) void speak(text).catch(() => {}); // TTS gagal tidak boleh ganggu chat
+    if (!jarvis) return;
+    setIsSpeaking(true);
+    void speak(text, (level) => setAmplitude(level))
+      .catch(() => {}) // TTS gagal tidak boleh ganggu chat
+      .finally(() => {
+        setIsSpeaking(false);
+        setAmplitude(0);
+      });
   };
 
   const handleLogout = async () => {
@@ -58,11 +84,15 @@ export default function App() {
     <div className="app-container">
       <header className="app-header">
         <h1>Octopus Desktop</h1>
+        <div className="app-header-orb">
+          <AiOrb state={aiState} amplitude={amplitude} />
+        </div>
         <button className="settings-toggle-btn" onClick={() => setShowSettings(true)}>⚙️</button>
       </header>
       <main className="app-main">
         <ChatView
           onFinal={handleFinal}
+          onPendingChange={setPending}
           registerSubmit={(fn) => (submitRef.current = fn)}
           inputExtra={
             <VoiceBar onTranscript={handleTranscript} jarvis={jarvis} onToggleJarvis={() => {

@@ -47,7 +47,7 @@ body::before {
         linear-gradient(rgba(18, 24, 38, 0.5) 1px, transparent 1px),
         linear-gradient(90deg, rgba(18, 24, 38, 0.5) 1px, transparent 1px);
     background-size: 24px 24px;
-    background-position: center;
+    background-position: calc(50% + var(--bg-parallax-x, 0px)) calc(50% + var(--bg-parallax-y, 0px));
     pointer-events: none;
     z-index: 1;
 }
@@ -110,8 +110,8 @@ body::after {
 }
 
 .app-header {
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
     align-items: center;
     padding: 0.85rem 2rem;
     background-color: rgba(8, 12, 20, 0.8);
@@ -119,6 +119,12 @@ body::after {
     border-bottom: 1px solid var(--border-color);
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
     z-index: 10;
+}
+
+.app-header-orb {
+    width: 64px;
+    height: 64px;
+    justify-self: center;
 }
 
 .app-header h1 {
@@ -147,6 +153,7 @@ body::after {
     align-items: center;
     justify-content: center;
     background-color: rgba(59, 130, 246, 0.05);
+    justify-self: end;
 }
 
 .settings-toggle-btn:hover {
