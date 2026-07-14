@@ -126,17 +126,24 @@ You can register as many machines as you want. Each one runs the `octopus` worke
 
 ## Desktop App
 
-Aplikasi desktop Wails (`octopus-desktop`) menyediakan antarmuka chat-first dan voice-first (Jarvis Mode) untuk mengontrol Octopus. Aplikasi ini menggunakan `whisper-cli` (whisper.cpp) untuk speech-to-text lokal dan `piper` untuk text-to-speech lokal.
+Aplikasi desktop Wails (`octopus-desktop`) menyediakan antarmuka chat-first dan voice-first (Jarvis Mode) untuk mengontrol Octopus. Backend Go menangani koneksi SSE ke gateway dan subprocess STT/TTS lokal; frontend React/TS merender kartu visual per event.
 
-**Cara build:**
+**Dependency:** Go ≥ 1.25, [Wails CLI v2](https://wails.io/docs/gettingstarted/installation), `whisper-cli` (whisper.cpp) untuk STT, `piper` untuk TTS.
+
+**Build & jalankan:**
 ```bash
+# Instalasi Wails CLI (sekali)
+go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+# Build distribusi
 cd octopus-desktop
 wails build
-```
-Untuk menjalankan dalam mode pengembangan:
-```bash
+
+# Mode pengembangan (hot-reload)
 wails dev
 ```
+
+Model STT/TTS dapat diunduh langsung dari menu Settings → "Unduh model" saat pertama kali buka aplikasi.
 
 ---
 
