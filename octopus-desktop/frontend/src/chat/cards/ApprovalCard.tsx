@@ -1,3 +1,5 @@
+import { Tilt } from "../../components/Tilt";
+
 export function ApprovalCard({
   planId,
   summary,
@@ -13,7 +15,7 @@ export function ApprovalCard({
 }) {
   const disabled = decided !== "";
   return (
-    <div className="card card-approval">
+    <Tilt className="card card-approval">
       <div className="card-title">Butuh persetujuan</div>
       <pre className="approval-summary">{summary}</pre>
       <div className="approval-buttons">
@@ -25,6 +27,6 @@ export function ApprovalCard({
         </button>
       </div>
       {decided !== "" && <div className="approval-decided">{decided}</div>}
-    </div>
+    </Tilt>
   );
 }

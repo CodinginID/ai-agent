@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { usePointerTilt } from "../hooks/usePointerTilt";
 
 export function LoginView({
   onPaired,
@@ -10,6 +11,7 @@ export function LoginView({
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const timer = useRef<number | null>(null);
+  const tiltRef = usePointerTilt<HTMLDivElement>();
 
   useEffect(() => () => { if (timer.current) window.clearInterval(timer.current); }, []);
 
@@ -35,7 +37,7 @@ export function LoginView({
   };
 
   return (
-    <div className="login-view futuristic-card">
+    <div ref={tiltRef} className="login-view futuristic-card tilt-surface">
       <div className="corner-bracket top-left"></div>
       <div className="corner-bracket top-right"></div>
       <div className="corner-bracket bottom-left"></div>

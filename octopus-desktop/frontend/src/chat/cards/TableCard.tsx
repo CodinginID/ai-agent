@@ -1,3 +1,5 @@
+import { Tilt } from "../../components/Tilt";
+
 export interface ParsedTable {
   header: string[];
   rows: string[][];
@@ -16,7 +18,7 @@ export function TableCard({ action, output }: { action: string; output: string }
   const table = parseColumns(output);
   if (!table) return <pre className="card card-pre">{output}</pre>;
   return (
-    <div className="card card-table">
+    <Tilt className="card card-table">
       <div className="card-title">{action}</div>
       <div className="table-scroll">
         <table>
@@ -38,6 +40,6 @@ export function TableCard({ action, output }: { action: string; output: string }
           </tbody>
         </table>
       </div>
-    </div>
+    </Tilt>
   );
 }

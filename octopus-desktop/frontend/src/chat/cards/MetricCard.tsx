@@ -1,3 +1,5 @@
+import { Tilt } from "../../components/Tilt";
+
 const PCT_RE = /([A-Za-z /]+)?:?\s*(\d+(?:\.\d+)?)\s*%/g;
 
 export function MetricCard({ action, output }: { action: string; output: string }) {
@@ -9,7 +11,7 @@ export function MetricCard({ action, output }: { action: string; output: string 
     return <pre className="card card-pre">{output}</pre>;
   }
   return (
-    <div className="card card-metric">
+    <Tilt className="card card-metric">
       <div className="card-title">{action}</div>
       {metrics.map((m, i) => (
         <div key={i} className="metric-row">
@@ -27,6 +29,6 @@ export function MetricCard({ action, output }: { action: string; output: string 
         <summary>output mentah</summary>
         <pre>{output}</pre>
       </details>
-    </div>
+    </Tilt>
   );
 }
