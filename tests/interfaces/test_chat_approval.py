@@ -5,8 +5,8 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from app.interfaces.gateway import app as gateway_app
 import app.interfaces.chat as chat_mod
+from app.interfaces.gateway import app as gateway_app
 
 
 @pytest.fixture()

@@ -212,10 +212,14 @@ async def _stream_events(text: str, ctx: MessageContext) -> AsyncIterator[str]:
 async def chat_send(
     req: Annotated[ChatSendRequest, Body(...)],
     authorization: str | None = Header(default=None),
+    x_personal_anthropic_key: str | None = Header(default=None, alias="X-Personal-Anthropic-Key"),
 ) -> StreamingResponse:
     text = req.text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="text is empty")
+
+    from app.adapters.ai_provider_db import personal_anthropic_key_var
+    personal_anthropic_key_var.set(x_personal_anthropic_key)
 
     caller_user_id, mode = _resolve_caller(authorization)
 
@@ -280,7 +284,7 @@ async def _stream_approval(plan_id: str, conv_id: str) -> AsyncIterator[str]:
         result = await asyncio.to_thread(
             action_registry.execute, action_name, pending.action_context
         )
-    except Exception as exc:  # noqa: BLE001 — batas proses eksternal, relay ke klien
+    except Exception as exc:
         yield _format_sse(ChatEvent.error(f"Action {action_name} gagal: {exc}"))
         yield "event: done\ndata: {}\n\n"
         return
