@@ -376,6 +376,11 @@ def _tui_login_page(code: str) -> str:
   <a class="btn" href="/auth/google/login?tui_code={urllib.parse.quote(code)}">
     Login dengan Google
   </a>
+  <div style="margin-top: 15px;">
+    <a href="/auth/tui-local-login?code={urllib.parse.quote(code)}" style="color: #3b82f6; font-size: 0.85rem; text-decoration: none; font-weight: bold;">
+      Gunakan Login Lokal (Bypass)
+    </a>
+  </div>
   <p class="dim" style="margin-top:20px">Kode ini berlaku 10 menit.</p>
 </div>""")
 
@@ -389,12 +394,12 @@ async def tui_start() -> JSONResponse:
     while code in _pair_codes:
         code = _new_pair_code()
     _pair_codes[code] = _PairCode(created_at=datetime.now(UTC))
-    
+
     if not settings.google_client_id or not settings.google_client_secret:
         login_url = f"{settings.app_url}/auth/tui-local-login?code={urllib.parse.quote(code)}"
     else:
         login_url = f"{settings.app_url}/auth/tui-login?code={urllib.parse.quote(code)}"
-        
+
     return JSONResponse(
         {
             "code": code,
@@ -452,19 +457,19 @@ async def tui_local_login(code: str | None = None) -> HTMLResponse:
 async def tui_local_login_submit(request: Request) -> HTMLResponse:
     body_bytes = await request.body()
     params = urllib.parse.parse_qs(body_bytes.decode("utf-8"))
-    
+
     code = params.get("code", [""])[0].strip()
     name = params.get("name", [""])[0].strip()
     email = params.get("email", [""])[0].strip()
-    
+
     if not code or not name or not email:
         return HTMLResponse(_error_page("Form data tidak lengkap."), status_code=400)
-        
+
     _purge_expired()
     entry = _pair_codes.get(code)
     if entry is None:
         return HTMLResponse(_error_page("Kode pair tidak valid atau sudah kedaluwarsa."), status_code=400)
-        
+
     factory = _session_factory_lazy()
     with session_scope(factory) as session:
         # Cari atau buat local user
@@ -474,13 +479,13 @@ async def tui_local_login_submit(request: Request) -> HTMLResponse:
             session.add(user)
             session.flush()
         user_id = user.id
-        
-        sessions = UserSessionRepository(factory)
-        session_info = sessions.create(user_id=user_id, user_agent="ai-agent-tui-local")
-        entry.status = "paired"
-        entry.session_token = session_info.token
-        entry.user_id = user_id
-        
+
+    sessions = UserSessionRepository(factory)
+    session_info = sessions.create(user_id=user_id, user_agent="ai-agent-tui-local")
+    entry.status = "paired"
+    entry.session_token = session_info.token
+    entry.user_id = user_id
+
     return HTMLResponse(_tui_success_page(name, email))
 
 
