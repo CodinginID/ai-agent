@@ -158,6 +158,14 @@ def build_workflow_orchestrator() -> WorkflowOrchestrator:
     return _workflow_orchestrator()
 
 
+@lru_cache(maxsize=1)
+def _provider_resolver() -> Any:
+    from app.adapters.ai_provider_db import DbAIProviderResolver
+    from app.adapters.user_provider_config import UserProviderConfigRepository
+    repo = UserProviderConfigRepository(_session_factory())
+    return DbAIProviderResolver(repo, settings)
+
+
 def build_use_case() -> HandleMessageUseCase:
     """Compose use case dengan semua dependensi konkret."""
     ollama = _ollama()
@@ -175,4 +183,5 @@ def build_use_case() -> HandleMessageUseCase:
         rate_limiter=_rate_limiter(),
         audit=_audit_logger(),
         context_provider=_context_store(),
+        provider_resolver=_provider_resolver(),
     )
