@@ -15,7 +15,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.domain.exceptions import ActionExecutionError, AIProviderError, IntentParseError
 from app.domain.messaging import ChatEvent, ChatEventType, MessageContext
@@ -31,6 +31,9 @@ from app.ports.chat_history import ChatHistoryStore
 from app.ports.execution_loop import ExecutionLoopPort
 from app.ports.project_context import ProjectContextProvider
 from app.ports.rate_limit import RateLimiterPort
+
+if TYPE_CHECKING:
+    from app.ports.ai_provider_resolver import AIProviderResolver
 
 _CHAT_PROMPT_TEMPLATE = (
     "Kamu Octopus, AI orchestrator yang dipakai operator server lewat Telegram & TUI.\n"
@@ -156,6 +159,7 @@ class HandleMessageUseCase:
     audit: AuditLogger | None = field(default=None)
     # Optional — injects per-user project context (tasks/decisions/notes) into chat.
     context_provider: ProjectContextProvider | None = field(default=None)
+    provider_resolver: AIProviderResolver | None = field(default=None)
 
     def handle(self, text: str, ctx: MessageContext) -> Iterator[ChatEvent]:
         """Public entry — applies rate limit gate, wraps inner in audit envelope."""
@@ -262,6 +266,11 @@ class HandleMessageUseCase:
             **fields,
         )
 
+    def _resolve_ai(self, user_id: str) -> AIProvider:
+        if self.provider_resolver is not None:
+            return self.provider_resolver.for_user(user_id)
+        return self.ai
+
     def _handle_loop(self, text: str, ctx: MessageContext) -> Iterator[ChatEvent]:
         """Route complex request through ExecutionLoop. Bridge LoopEvents → ChatEvents."""
         assert self.execution_loop is not None  # caller checks before routing here
@@ -276,7 +285,9 @@ class HandleMessageUseCase:
 
         final_text = ""
         try:
-            for loop_ev in self.execution_loop.run(text, history=history_text):
+            for loop_ev in self.execution_loop.run(
+                text, history=history_text, ai=self._resolve_ai(ctx.user_id)
+            ):
                 chat_ev = _loop_event_to_chat_event(loop_ev.type, loop_ev.data)
                 if chat_ev is not None:
                     if chat_ev.type == ChatEventType.FINAL:
@@ -311,9 +322,10 @@ class HandleMessageUseCase:
 
         self.history.append(ctx.user_id, "user", text)
 
+        ai = self._resolve_ai(ctx.user_id)
         collected: list[str] = []
         try:
-            for chunk in self.ai.chat_stream(prompt):
+            for chunk in ai.chat_stream(prompt):
                 if not chunk:
                     continue
                 collected.append(chunk)
@@ -364,8 +376,9 @@ class HandleMessageUseCase:
             yield ChatEvent.final(result)
             return
 
+        ai = self._resolve_ai(ctx.user_id)
         try:
-            summary = self.ai.chat(_SUMMARIZE_PROMPT.format(output=result))
+            summary = ai.chat(_SUMMARIZE_PROMPT.format(output=result))
         except AIProviderError:
             summary = result
 
