@@ -188,7 +188,9 @@ class HandleMessageUseCase:
     def _handle_inner(self, text: str, ctx: MessageContext) -> Iterator[ChatEvent]:
         # ── 1. Classify intent ────────────────────────────────────────────────
         try:
-            intent = self.intent_parser.parse(text, ctx.project_id)
+            intent = self.intent_parser.parse_with(
+                self._resolve_ai(ctx.user_id).chat, text, ctx.project_id
+            )
         except IntentParseError as exc:
             self._audit("error", ctx, stage="intent_parse", detail=str(exc))
             yield ChatEvent.error(f"Gagal classify intent: {exc}")

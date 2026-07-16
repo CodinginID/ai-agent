@@ -286,3 +286,42 @@ class TestIntentParserAIFallback:
     def test_local_match_returns_correct_project_id(self) -> None:
         intent = _parse_local("cek memory", "my-proj-id")
         assert intent.project_id == "my-proj-id"
+
+
+# ── parse_with caller injection ───────────────────────────────────────────────
+
+
+class TestParseWithCallerInjection:
+    def test_parse_with_uses_injected_caller(self) -> None:
+        """Verify that parse_with uses the injected caller, not self._call_qwen."""
+        default_called = False
+        injected_called = False
+
+        def default_caller(prompt: str) -> str:
+            nonlocal default_called
+            default_called = True
+            return '{"intent":"memory","confidence":0.8,"reason":"default"}'
+
+        def injected_caller(prompt: str) -> str:
+            nonlocal injected_called
+            injected_called = True
+            return '{"intent":"processes","confidence":0.9,"reason":"injected"}'
+
+        parser = IntentParser(default_caller)
+        # Input tidak match heuristic lokal → fallback ke AI caller.
+        intent = parser.parse_with(injected_caller, "buka kulkas", "proj-1")
+        assert intent.intent == "processes"
+        assert intent.reason == "injected"
+        assert injected_called is True
+        assert default_called is False
+
+    def test_parse_delegates_to_parse_with(self) -> None:
+        """Verify that parse() delegates to parse_with with self._call_qwen."""
+        def mock_qwen(prompt: str) -> str:
+            return '{"intent":"disk","confidence":0.95,"reason":"qwen"}'
+
+        parser = IntentParser(mock_qwen)
+        # Input tidak match heuristic lokal → fallback ke AI.
+        intent = parser.parse("buka peti", "proj-2")
+        assert intent.intent == "disk"
+        assert intent.reason == "qwen"

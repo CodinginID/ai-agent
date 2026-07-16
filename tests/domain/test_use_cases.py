@@ -46,6 +46,9 @@ def _make_use_case(**overrides: Any) -> HandleMessageUseCase:
         "history": MagicMock(),
     }
     defaults.update(overrides)
+    # Set up parse_with to delegate to parse for backward compatibility with existing tests
+    parser = defaults["intent_parser"]
+    parser.parse_with.side_effect = lambda caller, text, project_id: parser.parse(text, project_id)
     return HandleMessageUseCase(**defaults)
 
 

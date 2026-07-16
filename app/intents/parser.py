@@ -206,14 +206,17 @@ class IntentParser:
         self._call_qwen = qwen_caller
 
     def parse(self, text: str, project_id: str = "default") -> Intent:
+        return self.parse_with(self._call_qwen, text, project_id)
+
+    def parse_with(
+        self, caller: Callable[[str], str], text: str, project_id: str
+    ) -> Intent:
         local = _parse_local(text, project_id)
         if local is not None:
             return local
 
         try:
-            raw = self._call_qwen(
-                _JSON_PROMPT.format(user_text=text, project_id=project_id)
-            )
+            raw = caller(_JSON_PROMPT.format(user_text=text, project_id=project_id))
             return self._extract(raw, project_id)
         except Exception:
             return _make("unknown", project_id, 0.0, False, "AI call failed")
