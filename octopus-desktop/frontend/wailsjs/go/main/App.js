@@ -10,8 +10,24 @@ export function BinaryStatus() {
   return window['go']['main']['App']['BinaryStatus']();
 }
 
+export function DeletePersonalKey() {
+  return window['go']['main']['App']['DeletePersonalKey']();
+}
+
 export function DownloadAssets() {
   return window['go']['main']['App']['DownloadAssets']();
+}
+
+export function GetAgents() {
+  return window['go']['main']['App']['GetAgents']();
+}
+
+export function GetPersonalKey() {
+  return window['go']['main']['App']['GetPersonalKey']();
+}
+
+export function GetProvider() {
+  return window['go']['main']['App']['GetProvider']();
 }
 
 export function GetSettings() {
@@ -34,6 +50,10 @@ export function RejectPlan(arg1) {
   return window['go']['main']['App']['RejectPlan'](arg1);
 }
 
+export function SavePersonalKey(arg1) {
+  return window['go']['main']['App']['SavePersonalKey'](arg1);
+}
+
 export function SaveSettings(arg1) {
   return window['go']['main']['App']['SaveSettings'](arg1);
 }
@@ -42,12 +62,20 @@ export function SendChat(arg1, arg2) {
   return window['go']['main']['App']['SendChat'](arg1, arg2);
 }
 
+export function SetProvider(arg1, arg2) {
+  return window['go']['main']['App']['SetProvider'](arg1, arg2);
+}
+
 export function Speak(arg1) {
   return window['go']['main']['App']['Speak'](arg1);
 }
 
 export function StartLogin() {
   return window['go']['main']['App']['StartLogin']();
+}
+
+export function ToggleAgent(arg1, arg2) {
+  return window['go']['main']['App']['ToggleAgent'](arg1, arg2);
 }
 
 export function Transcribe(arg1) {

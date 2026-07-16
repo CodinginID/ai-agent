@@ -6,7 +6,15 @@ export function ApprovePlan(arg1:string,arg2:string):Promise<void>;
 
 export function BinaryStatus():Promise<Record<string, boolean>>;
 
+export function DeletePersonalKey():Promise<void>;
+
 export function DownloadAssets():Promise<void>;
+
+export function GetAgents():Promise<Record<string, any>>;
+
+export function GetPersonalKey():Promise<string>;
+
+export function GetProvider():Promise<Record<string, any>>;
 
 export function GetSettings():Promise<settings.Settings>;
 
@@ -18,12 +26,18 @@ export function PollLogin(arg1:string):Promise<string>;
 
 export function RejectPlan(arg1:string):Promise<boolean>;
 
+export function SavePersonalKey(arg1:string):Promise<void>;
+
 export function SaveSettings(arg1:settings.Settings):Promise<void>;
 
 export function SendChat(arg1:string,arg2:string):Promise<void>;
 
+export function SetProvider(arg1:string,arg2:string):Promise<void>;
+
 export function Speak(arg1:string):Promise<string>;
 
 export function StartLogin():Promise<Record<string, any>>;
+
+export function ToggleAgent(arg1:string,arg2:boolean):Promise<void>;
 
 export function Transcribe(arg1:string):Promise<string>;

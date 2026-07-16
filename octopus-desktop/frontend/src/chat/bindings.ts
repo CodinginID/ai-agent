@@ -14,6 +14,13 @@ type GoApp = {
   Logout(): Promise<void>;
   StartLogin(): Promise<Record<string, unknown>>;
   PollLogin(code: string): Promise<string>;
+  GetProvider(): Promise<Record<string, any>>;
+  SetProvider(provider: string, model: string): Promise<void>;
+  GetAgents(): Promise<Record<string, any>>;
+  ToggleAgent(agentId: string, enabled: boolean): Promise<void>;
+  GetPersonalKey(): Promise<string>;
+  SavePersonalKey(key: string): Promise<void>;
+  DeletePersonalKey(): Promise<void>;
 };
 
 declare global {

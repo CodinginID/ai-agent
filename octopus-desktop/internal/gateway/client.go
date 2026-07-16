@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/codinginid/octopus-desktop/internal/settings"
 )
 
 var ErrUnauthorized = errors.New("unauthorized")
@@ -35,19 +37,35 @@ type LoginStart struct {
 	ExpiresInSec int    `json:"expires_in_sec"`
 }
 
-func (c *Client) postJSON(ctx context.Context, path string, body any) (*http.Response, error) {
-	raw, err := json.Marshal(body)
+func (c *Client) requestJSON(ctx context.Context, method, path string, body any) (*http.Response, error) {
+	var bodyReader *bytes.Reader
+	if body != nil {
+		raw, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("siapkan request %s: %w", path, err)
+		}
+		bodyReader = bytes.NewReader(raw)
+	}
+
+	var req *http.Request
+	var err error
+	if bodyReader != nil {
+		req, err = http.NewRequestWithContext(ctx, method, c.baseURL+path, bodyReader)
+	} else {
+		req, err = http.NewRequestWithContext(ctx, method, c.baseURL+path, nil)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("siapkan request %s: %w", path, err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(raw))
-	if err != nil {
-		return nil, fmt.Errorf("siapkan request %s: %w", path, err)
-	}
+
 	req.Header.Set("Content-Type", "application/json")
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
+	if key, err := settings.PersonalKey(); err == nil && key != "" {
+		req.Header.Set("X-Personal-Anthropic-Key", key)
+	}
+
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("gateway tidak terjangkau: %w", err)
@@ -57,6 +75,18 @@ func (c *Client) postJSON(ctx context.Context, path string, body any) (*http.Res
 		return nil, ErrUnauthorized
 	}
 	return resp, nil
+}
+
+func (c *Client) postJSON(ctx context.Context, path string, body any) (*http.Response, error) {
+	return c.requestJSON(ctx, http.MethodPost, path, body)
+}
+
+func (c *Client) getJSON(ctx context.Context, path string) (*http.Response, error) {
+	return c.requestJSON(ctx, http.MethodGet, path, nil)
+}
+
+func (c *Client) putJSON(ctx context.Context, path string, body any) (*http.Response, error) {
+	return c.requestJSON(ctx, http.MethodPut, path, body)
 }
 
 func (c *Client) StartLogin(ctx context.Context) (LoginStart, error) {
@@ -135,4 +165,64 @@ func (c *Client) Reject(ctx context.Context, planID string) (bool, error) {
 		return false, fmt.Errorf("decode respons /chat/reject: %w", err)
 	}
 	return out.OK, nil
+}
+
+func (c *Client) GetProvider(ctx context.Context) (map[string]any, error) {
+	resp, err := c.getJSON(ctx, "/provider")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GET /provider gagal: HTTP %d", resp.StatusCode)
+	}
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("decode /provider: %w", err)
+	}
+	return out, nil
+}
+
+func (c *Client) SetProvider(ctx context.Context, provider, model string) error {
+	body := map[string]any{"provider": provider}
+	if model != "" {
+		body["model"] = model
+	}
+	resp, err := c.postJSON(ctx, "/provider", body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("POST /provider gagal: HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func (c *Client) GetAgents(ctx context.Context) (map[string]any, error) {
+	resp, err := c.getJSON(ctx, "/me/agents")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GET /me/agents gagal: HTTP %d", resp.StatusCode)
+	}
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("decode /me/agents: %w", err)
+	}
+	return out, nil
+}
+
+func (c *Client) ToggleAgent(ctx context.Context, agentID string, enabled bool) error {
+	resp, err := c.putJSON(ctx, "/me/agents/"+agentID, map[string]any{"enabled": enabled})
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("PUT /me/agents/%s gagal: HTTP %d", agentID, resp.StatusCode)
+	}
+	return nil
 }

@@ -24,6 +24,8 @@ type Settings struct {
 	PiperBin         string `json:"piper_bin"`
 	WhisperModelPath string `json:"whisper_model_path"`
 	PiperVoicePath   string `json:"piper_voice_path"`
+	AIProvider       string `json:"ai_provider"`
+	AIModel          string `json:"ai_model"`
 }
 
 func defaults() Settings {
@@ -77,6 +79,28 @@ func Token() (string, error) {
 func DeleteToken() error {
 	if err := keyring.Delete(keyringService, keyringAccount); err != nil {
 		return fmt.Errorf("keyring delete: %w", err)
+	}
+	return nil
+}
+
+func SavePersonalKey(key string) error {
+	if err := keyring.Set(keyringService, "personal_anthropic_key", key); err != nil {
+		return fmt.Errorf("keyring set personal key: %w", err)
+	}
+	return nil
+}
+
+func PersonalKey() (string, error) {
+	key, err := keyring.Get(keyringService, "personal_anthropic_key")
+	if err != nil {
+		return "", fmt.Errorf("keyring get personal key: %w", err)
+	}
+	return key, nil
+}
+
+func DeletePersonalKey() error {
+	if err := keyring.Delete(keyringService, "personal_anthropic_key"); err != nil {
+		return fmt.Errorf("keyring delete personal key: %w", err)
 	}
 	return nil
 }

@@ -8,6 +8,8 @@ export namespace settings {
 	    piper_bin: string;
 	    whisper_model_path: string;
 	    piper_voice_path: string;
+	    ai_provider: string;
+	    ai_model: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -22,6 +24,8 @@ export namespace settings {
 	        this.piper_bin = source["piper_bin"];
 	        this.whisper_model_path = source["whisper_model_path"];
 	        this.piper_voice_path = source["piper_voice_path"];
+	        this.ai_provider = source["ai_provider"];
+	        this.ai_model = source["ai_model"];
 	    }
 	}
 

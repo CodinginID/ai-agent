@@ -164,6 +164,38 @@ func (a *App) SaveSettings(s settings.Settings) error {
 	return nil
 }
 
+func (a *App) GetProvider() (map[string]any, error) {
+	return a.gw().GetProvider(context.Background())
+}
+
+func (a *App) SetProvider(provider, model string) error {
+	return a.gw().SetProvider(context.Background(), provider, model)
+}
+
+func (a *App) GetAgents() (map[string]any, error) {
+	return a.gw().GetAgents(context.Background())
+}
+
+func (a *App) ToggleAgent(agentID string, enabled bool) error {
+	return a.gw().ToggleAgent(context.Background(), agentID, enabled)
+}
+
+func (a *App) GetPersonalKey() (string, error) {
+	k, err := settings.PersonalKey()
+	if err != nil {
+		return "", nil // Return empty if not found/error
+	}
+	return k, nil
+}
+
+func (a *App) SavePersonalKey(key string) error {
+	return settings.SavePersonalKey(key)
+}
+
+func (a *App) DeletePersonalKey() error {
+	return settings.DeletePersonalKey()
+}
+
 func resolveBin(configured, name string) string {
 	if configured != "" {
 		return configured
