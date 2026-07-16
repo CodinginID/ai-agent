@@ -98,6 +98,11 @@ class Settings:
     telegram_bot_username: str
     rate_limit_seconds: int
 
+    ai_provider_default: str
+    anthropic_api_key: str
+    anthropic_model: str
+    anthropic_max_tokens: int
+
     # ── RAG ───────────────────────────────────────────────────────────────────
     rag_enabled: bool
     embedder_backend: str       # "fastembed" | "ollama" | "none"
@@ -198,6 +203,10 @@ def load_settings() -> Settings:
         ),
         telegram_bot_username=os.getenv("TELEGRAM_BOT_USERNAME", "").strip(),
         rate_limit_seconds=max(0, int(os.getenv("RATE_LIMIT_SECONDS", "3"))),
+        ai_provider_default=os.getenv("AI_PROVIDER_DEFAULT", "ollama").strip().lower(),
+        anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", "").strip(),
+        anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-opus-4-8").strip(),
+        anthropic_max_tokens=int(os.getenv("ANTHROPIC_MAX_TOKENS", "16000")),
         rag_enabled=_env_bool("RAG_ENABLED", default=True),
         embedder_backend=os.getenv("EMBEDDER_BACKEND", "fastembed").strip().lower(),
         rag_recall_k=max(1, int(os.getenv("RAG_RECALL_K", "5"))),

@@ -37,7 +37,7 @@ class AnthropicAdapter:
         except Exception as exc:  # SDK exceptions + koneksi
             raise AIProviderError(f"Anthropic request failed: {exc}") from exc
         return "".join(
-            b.text for b in resp.content if getattr(b, "type", None) == "text"
+            getattr(b, "text", "") for b in resp.content if getattr(b, "type", None) == "text"
         ).strip()
 
     def chat_stream(self, prompt: str) -> Iterator[str]:
