@@ -256,6 +256,27 @@ def test_run_emits_error_on_ai_failure(tmp_path: Path) -> None:
     assert "AI think failed" in error_ev.data["message"]
 
 
+def test_run_with_ai_override(tmp_path: Path) -> None:
+    """If run is given an ai override, it uses it instead of self.ai."""
+    default_ai = MagicMock()
+    override_ai = MagicMock()
+
+    # Respond to think prompt with respond action, then final synthesis
+    override_ai.chat.side_effect = [
+        json.dumps({"action": "respond", "text": "override answer"}),
+        "final override summary"
+    ]
+
+    collector = _make_collector()
+    loop = ExecutionLoop(ai=default_ai, context_collector=collector, working_dir=tmp_path)
+
+    events = list(loop.run("hello", ai=override_ai))
+
+    override_ai.chat.assert_called()
+    default_ai.chat.assert_not_called()
+    assert any("override answer" in e.data.get("text", "") for e in events if e.type == "final")
+
+
 # ── _execute_file_read tests ──────────────────────────────────────────────────
 
 def test_execute_file_read_returns_content(tmp_path: Path) -> None:

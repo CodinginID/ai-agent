@@ -222,12 +222,15 @@ class ExecutionLoop:
         self,
         prompt: str,
         history: str = "",
+        *,
+        ai: AIProvider | None = None,
     ) -> Iterator[LoopEvent]:
         """Run the full loop and yield LoopEvent items.
 
         This is a synchronous generator — caller wraps in asyncio.to_thread
         for non-blocking SSE streaming.
         """
+        active_ai = ai or self.ai
         # ── 1. OBSERVE ────────────────────────────────────────────────────────
         yield LoopEvent("observing", {"message": "Collecting environment context..."})
         try:
@@ -267,7 +270,7 @@ class ExecutionLoop:
             )
 
             try:
-                raw_decision = self.ai.chat(think_prompt)
+                raw_decision = active_ai.chat(think_prompt)
             except Exception as exc:
                 yield LoopEvent("error", {"message": f"AI think failed: {exc}"})
                 return
@@ -336,7 +339,7 @@ class ExecutionLoop:
             )
 
             try:
-                raw_reflection = self.ai.chat(reflect_prompt)
+                raw_reflection = active_ai.chat(reflect_prompt)
             except Exception as exc:
                 logger.warning("reflection call failed: %s", exc)
                 break  # treat as satisfied, skip retry
@@ -373,7 +376,7 @@ class ExecutionLoop:
             "Do NOT return JSON."
         )
         try:
-            final_text = self.ai.chat(final_prompt)
+            final_text = active_ai.chat(final_prompt)
         except Exception as exc:
             # Fallback: return raw action output if synthesis fails.
             final_text = result_text

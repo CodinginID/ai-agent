@@ -7,8 +7,13 @@ Use case menerima objek yang implement Protocol ini. Implementasi konkret ada di
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
+
+if TYPE_CHECKING:
+    from app.ports.ai_provider import AIProvider
 
 
 class ExecutionLoopPort(Protocol):
-    def run(self, prompt: str, history: str = "") -> Iterator[Any]: ...
+    def run(
+        self, prompt: str, history: str = "", *, ai: AIProvider | None = None
+    ) -> Iterator[Any]: ...
