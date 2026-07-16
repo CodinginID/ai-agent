@@ -17,6 +17,69 @@ if TYPE_CHECKING:
     from telegram import Update
     from telegram.ext import ContextTypes
 
+_PROVIDER_CHOICES = ("ollama", "anthropic")
+
+
+async def provider_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Provider AI per-user — lihat atau ganti.
+
+    Usage:
+        /provider                — tampilkan provider aktif + pilihan
+        /provider <name> [model] — set provider (ollama/anthropic)
+    """
+    if await deny_if_unauthorized(update):
+        return
+
+    from app.handlers.auth import resolve_user_id_from_telegram
+
+    tg_user = update.effective_user
+    user_id = resolve_user_id_from_telegram(tg_user.id if tg_user else None)
+    if user_id is None:
+        await update.message.reply_text(  # type: ignore[union-attr]
+            "Akun belum terdaftar. /start dulu, atau pair via /pair-telegram di TUI."
+        )
+        return
+
+    from app.adapters.ai_provider_factory import build_ai_provider
+    from app.adapters.user_provider_config import UserProviderConfigRepository
+    from app.config import settings
+
+    repo = UserProviderConfigRepository(get_db_session_factory())
+    args = context.args or []
+
+    if not args:
+        pref = repo.get(user_id)
+        if pref is None:
+            provider, model = settings.ai_provider_default, None
+            tag = " (default)"
+        else:
+            provider, model = pref
+            tag = ""
+        model = model or (
+            settings.qwen_model if provider == "ollama" else settings.anthropic_model
+        )
+        await update.message.reply_text(  # type: ignore[union-attr]
+            f"Provider aktif: {provider}{tag}\n"
+            f"Model: {model}\n"
+            f"Pilihan: {', '.join(_PROVIDER_CHOICES)}\n\n"
+            "Usage: /provider <name> [model]"
+        )
+        return
+
+    name = args[0].lower()
+    model_arg = args[1] if len(args) > 1 else None
+    try:
+        build_ai_provider(name, model_arg, settings)
+    except ValueError as exc:
+        await update.message.reply_text(f"Provider tidak dikenal: {exc}")  # type: ignore[union-attr]
+        return
+
+    repo.set(user_id, name, model_arg)
+    suffix = f" ({model_arg})" if model_arg else ""
+    await update.message.reply_text(  # type: ignore[union-attr]
+        f"✓ provider diubah ke {name}{suffix}"
+    )
+
 
 async def agents_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Per-user agent config — list/toggle/set role/set model.

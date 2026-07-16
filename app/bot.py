@@ -34,6 +34,7 @@ _HELP_TEXT = (
     "  git status\n\n"
     "Agent CLI:\n"
     "  /agents — lihat agent terdaftar\n"
+    "  /provider — pilih provider AI (ollama/anthropic)\n"
     "  /codex <instruksi>\n"
     "  /claude <instruksi>\n\n"
     "Terminal:\n"

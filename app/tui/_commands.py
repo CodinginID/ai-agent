@@ -566,6 +566,75 @@ async def _agents_update(token: str, agent_id: str, payload: dict[str, Any]) -> 
             f"model={cfg.get('model') or '(default)'}")
 
 
+# ── /provider — per-user AI provider ─────────────────────────────────────────
+
+async def cmd_provider(args: list[str]) -> None:
+    """Tampilkan atau pilih AI provider per-user.
+
+    Usage:
+      /provider                — tampilkan provider aktif + pilihan
+      /provider <name> [model] — set provider (ollama/anthropic), model opsional
+    """
+    session = _state.active_session
+    if session is None:
+        println("class:warn", "  login dulu via /login")
+        return
+
+    if not args:
+        await _provider_show(session.token)
+        return
+
+    name = args[0].lower()
+    model = args[1] if len(args) >= 2 else None
+    await _provider_set(session.token, name, model)
+
+
+async def _provider_show(token: str) -> None:
+    try:
+        async with httpx.AsyncClient(timeout=10.0, trust_env=False) as c:
+            r = await c.get(
+                f"{settings.app_url}/provider",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    except httpx.HTTPError as exc:
+        println("class:err", f"  request gagal: {fmt_http_error(exc)}")
+        return
+    if r.status_code != 200:
+        println("class:err", f"  HTTP {r.status_code}: {r.text[:200]}")
+        return
+    data = r.json()
+    tag = " (default)" if data.get("is_default") else ""
+    println("class:section", "  AI Provider")
+    println("", f"  aktif : {data.get('provider')}{tag}")
+    println("", f"  model : {data.get('model') or '(default)'}")
+    println("class:dim", "  Pilihan: ollama | anthropic")
+    println("class:dim", "  Set:     /provider anthropic claude-opus-4-8")
+
+
+async def _provider_set(token: str, name: str, model: str | None) -> None:
+    payload: dict[str, Any] = {"provider": name}
+    if model:
+        payload["model"] = model
+    try:
+        async with httpx.AsyncClient(timeout=10.0, trust_env=False) as c:
+            r = await c.post(
+                f"{settings.app_url}/provider",
+                headers={"Authorization": f"Bearer {token}"},
+                json=payload,
+            )
+    except httpx.HTTPError as exc:
+        println("class:err", f"  request gagal: {fmt_http_error(exc)}")
+        return
+    if r.status_code == 400:
+        detail = r.json().get("detail", r.text[:200])
+        println("class:warn", f"  provider ditolak: {detail}")
+        return
+    if r.status_code != 200:
+        println("class:err", f"  HTTP {r.status_code}: {r.text[:200]}")
+        return
+    println("class:ok", f"  ✓ provider diubah ke {name}" + (f" ({model})" if model else ""))
+
+
 # ── /audit — Redis Streams audit log ─────────────────────────────────────────
 
 async def cmd_audit(args: list[str]) -> None:
