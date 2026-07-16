@@ -277,6 +277,57 @@ def test_intent_parse_error_yields_error_event() -> None:
     assert "boom" in events[0].payload["message"]
 
 
+def test_intent_classification_menggunakan_provider_hasil_resolve_per_user() -> None:
+    """Regression: verify parse_with receives the resolved provider's chat method."""
+    # Set up two distinct AI providers
+    default_ai = MagicMock()
+    default_ai.chat.return_value = "default response"
+
+    resolved_ai = MagicMock()
+    resolved_ai.chat.return_value = "resolved response"
+
+    # Provider resolver returns the resolved AI for user u1
+    provider_resolver = MagicMock()
+    provider_resolver.for_user.return_value = resolved_ai
+
+    # Intent parser that returns chat intent (simplest path)
+    intent_parser = MagicMock()
+    intent_parser.parse_with.return_value = _make_intent("chat", confidence=1.0)
+
+    # History mock
+    history = MagicMock()
+    history.recent.return_value = []
+
+    # Build use case WITHOUT using _make_use_case to avoid the shim
+    uc = HandleMessageUseCase(
+        ai=default_ai,
+        intent_parser=intent_parser,
+        plan_generator=MagicMock(),
+        action_registry=MagicMock(),
+        pending_plans=MagicMock(),
+        history=history,
+        provider_resolver=provider_resolver,
+    )
+
+    # Execute
+    list(uc.handle("halo", _make_ctx(user_id="u1")))
+
+    # Verify parse_with was called with the RESOLVED provider's chat method
+    assert intent_parser.parse_with.called
+    call_args = intent_parser.parse_with.call_args
+    caller_arg = call_args[0][0]  # First positional arg is the caller
+    text_arg = call_args[0][1]
+    project_id_arg = call_args[0][2]
+
+    # The caller should be resolved_ai.chat, NOT default_ai.chat
+    assert caller_arg is resolved_ai.chat
+    assert text_arg == "halo"
+    assert project_id_arg == "p1"
+
+    # Verify the resolver was actually called for the user
+    provider_resolver.for_user.assert_called_with("u1")
+
+
 # ── Chat path ────────────────────────────────────────────────────────────────
 
 
