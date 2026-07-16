@@ -290,6 +290,28 @@ class UserAgentConfigModel(Base):
     )
 
 
+class UserProviderConfigModel(Base):
+    """Pilihan provider 'otak' orchestrator per-user (satu baris per user).
+
+    Hanya menyimpan nama provider + model — kredensial tetap di config server.
+    """
+
+    __tablename__ = "user_provider_configs"
+    __table_args__ = (
+        UniqueConstraint("user_id", name="uq_user_provider_configs_user"),
+    )
+
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    provider: Mapped[str] = mapped_column(String(40), default="ollama")  # ollama, anthropic
+    model: Mapped[str | None] = mapped_column(String(120))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+
 class ChatMessageModel(Base):
     __tablename__ = "chat_messages"
     __table_args__ = (
