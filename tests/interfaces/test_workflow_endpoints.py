@@ -51,7 +51,7 @@ def fake() -> FakeOrchestrator:
 
 @pytest.fixture
 def client(fake: FakeOrchestrator, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
-    monkeypatch.setattr(wf, "_orchestrator", lambda: fake)
+    monkeypatch.setattr(wf, "_orchestrator_for", lambda _uid: fake)
     monkeypatch.setattr(wf, "_resolve_user_id", lambda _a: USER)
     app = FastAPI()
     app.include_router(wf.router)

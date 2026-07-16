@@ -14,6 +14,8 @@ if TYPE_CHECKING:
     from sqlalchemy import Engine
     from sqlalchemy.orm import sessionmaker
 
+    from app.ports.ai_provider import AIProvider
+
 from app.adapters.agent_role_resolver import SqlAgentRoleResolver
 from app.adapters.audit import JsonlAuditLogger
 from app.adapters.chat_history import SqlAlchemyChatHistory
@@ -133,8 +135,8 @@ def _knowledge_store() -> KnowledgeStore:
     return InMemoryKnowledgeStore()
 
 
-@lru_cache(maxsize=1)
-def _workflow_orchestrator() -> WorkflowOrchestrator:
+def _assemble_workflow_orchestrator(ai: AIProvider) -> WorkflowOrchestrator:
+    """Rakit architect/engineer/reviewer role adapters di atas satu ``AIProvider``."""
     from app.adapters.workflow_artifacts import FileArtifactStore, RepoFileChecker
     from app.adapters.workflow_fallback import (
         PromptArchitect,
@@ -142,20 +144,35 @@ def _workflow_orchestrator() -> WorkflowOrchestrator:
         PromptReviewer,
     )
 
-    ollama = _ollama()
     return WorkflowOrchestrator(
-        architect=PromptArchitect(ai=ollama, model=settings.agent_role_architect),
-        engineer=PromptEngineer(ai=ollama, model=settings.agent_role_engineer),
-        reviewer=PromptReviewer(ai=ollama, model=settings.agent_role_reviewer),
+        architect=PromptArchitect(ai=ai, model=settings.agent_role_architect),
+        engineer=PromptEngineer(ai=ai, model=settings.agent_role_engineer),
+        reviewer=PromptReviewer(ai=ai, model=settings.agent_role_reviewer),
         artifacts=FileArtifactStore(BASE_DIR / "data"),
         file_checker=RepoFileChecker(settings.project_dir),
         audit=_audit_logger(),
     )
 
 
+@lru_cache(maxsize=1)
+def _workflow_orchestrator() -> WorkflowOrchestrator:
+    return _assemble_workflow_orchestrator(_ollama())
+
+
 def build_workflow_orchestrator() -> WorkflowOrchestrator:
     """Compose the architect→engineer→reviewer orchestrator (prompt fallback)."""
     return _workflow_orchestrator()
+
+
+def build_workflow_orchestrator_for_user(user_id: str) -> WorkflowOrchestrator:
+    """Per-request orchestrator dengan AI provider hasil resolusi preferensi user.
+
+    Tidak di-``lru_cache`` — provider bisa berbeda tiap request (personal key
+    lewat contextvar), beda dengan ``build_workflow_orchestrator()`` yang selalu
+    pakai Ollama server-side.
+    """
+    provider = _provider_resolver().for_user(user_id)
+    return _assemble_workflow_orchestrator(provider)
 
 
 @lru_cache(maxsize=1)

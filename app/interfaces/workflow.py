@@ -18,7 +18,7 @@ from fastapi import APIRouter, Body, Header, HTTPException, status
 from pydantic import BaseModel
 
 from app.adapters.sessions import UserSessionRepository
-from app.composition import _session_factory, build_workflow_orchestrator
+from app.composition import _session_factory, build_workflow_orchestrator_for_user
 from app.domain.workflow import HallucinatedPathError, WorkflowError
 from app.orchestrator.workflow import WorkflowOrchestrator
 
@@ -45,8 +45,8 @@ def _resolve_user_id(authorization: str | None) -> str:
     return info.user_id
 
 
-def _orchestrator() -> WorkflowOrchestrator:
-    return build_workflow_orchestrator()
+def _orchestrator_for(user_id: str) -> WorkflowOrchestrator:
+    return build_workflow_orchestrator_for_user(user_id)
 
 
 class PlanRequest(BaseModel):
@@ -62,11 +62,11 @@ def make_plan(
     req: Annotated[PlanRequest, Body(...)],
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
-    _resolve_user_id(authorization)
+    uid = _resolve_user_id(authorization)
     goal = req.goal.strip()
     if not goal:
         raise HTTPException(status_code=400, detail="goal is empty")
-    plan = _orchestrator().plan(goal, trace_id=str(uuid4()))
+    plan = _orchestrator_for(uid).plan(goal, trace_id=str(uuid4()))
     return plan.__dict__
 
 
@@ -75,9 +75,9 @@ def implement(
     req: Annotated[PlanIdRequest, Body(...)],
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
-    _resolve_user_id(authorization)
+    uid = _resolve_user_id(authorization)
     try:
-        result = _orchestrator().implement_and_review(req.plan_id)
+        result = _orchestrator_for(uid).implement_and_review(req.plan_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except HallucinatedPathError as exc:
@@ -98,9 +98,9 @@ def review_last(
     req: Annotated[PlanIdRequest, Body(...)],
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
-    _resolve_user_id(authorization)
+    uid = _resolve_user_id(authorization)
     try:
-        verdict = _orchestrator().review_latest(req.plan_id)
+        verdict = _orchestrator_for(uid).review_latest(req.plan_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except WorkflowError as exc:
