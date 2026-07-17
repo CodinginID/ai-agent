@@ -51,3 +51,35 @@ def test_personal_key_changes_cache() -> None:
     assert p1 is not p2
 
     personal_anthropic_key_var.reset(token)
+
+
+def test_personal_key_provider_is_not_cached() -> None:
+    resolver = DbAIProviderResolver(
+        _FakeRepo({"u1": ("anthropic", "claude-opus-4-8")}), load_settings()
+    )
+
+    token = personal_anthropic_key_var.set("key-1")
+    try:
+        p1 = resolver.for_user("u1")
+        assert isinstance(p1, AnthropicAdapter)
+        assert p1.api_key == "key-1"
+        assert resolver._cache == {}
+
+        p2 = resolver.for_user("u1")
+        assert isinstance(p2, AnthropicAdapter)
+        assert p1 is not p2
+        assert resolver._cache == {}
+    finally:
+        personal_anthropic_key_var.reset(token)
+
+
+def test_server_key_provider_is_still_cached() -> None:
+    resolver = DbAIProviderResolver(
+        _FakeRepo({"u1": ("anthropic", "claude-opus-4-8")}), load_settings()
+    )
+
+    p1 = resolver.for_user("u1")
+    p2 = resolver.for_user("u1")
+
+    assert p1 is p2
+    assert resolver._cache == {("anthropic", "claude-opus-4-8"): p1}
