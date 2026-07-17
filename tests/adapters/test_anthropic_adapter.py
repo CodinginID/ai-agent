@@ -38,3 +38,8 @@ def test_chat_wraps_sdk_error_as_domain_error() -> None:
     )
     with pytest.raises(AIProviderError):
         adapter.chat("hi")
+
+
+def test_repr_tidak_memuat_api_key() -> None:
+    adapter = AnthropicAdapter(api_key="super-secret-key")
+    assert "super-secret-key" not in repr(adapter)

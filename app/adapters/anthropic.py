@@ -19,7 +19,7 @@ _DEFAULT_MODEL = "claude-opus-4-8"
 
 @dataclass
 class AnthropicAdapter:
-    api_key: str
+    api_key: str = field(repr=False)
     model: str = _DEFAULT_MODEL
     max_tokens: int = 16000
     _client: anthropic.Anthropic = field(init=False, repr=False)
