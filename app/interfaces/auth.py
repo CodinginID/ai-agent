@@ -376,11 +376,6 @@ def _tui_login_page(code: str) -> str:
   <a class="btn" href="/auth/google/login?tui_code={urllib.parse.quote(code)}">
     Login dengan Google
   </a>
-  <div style="margin-top: 15px;">
-    <a href="/auth/tui-local-login?code={urllib.parse.quote(code)}" style="color: #3b82f6; font-size: 0.85rem; text-decoration: none; font-weight: bold;">
-      Gunakan Login Lokal (Bypass)
-    </a>
-  </div>
   <p class="dim" style="margin-top:20px">Kode ini berlaku 10 menit.</p>
 </div>""")
 
@@ -411,7 +406,13 @@ async def tui_start() -> JSONResponse:
 
 @router.get("/tui-local-login", response_class=HTMLResponse)
 async def tui_local_login(code: str | None = None) -> HTMLResponse:
-    """Halaman login lokal / bypass pairing tanpa membutuhkan Google OAuth."""
+    """Halaman login lokal / bypass pairing tanpa membutuhkan Google OAuth.
+
+    Hanya aktif kalau Google OAuth belum dikonfigurasi — kalau sudah, endpoint
+    ini disembunyikan (404) supaya tidak jadi jalur bypass credential check.
+    """
+    if settings.google_client_id and settings.google_client_secret:
+        return HTMLResponse(_error_page("Halaman tidak ditemukan."), status_code=404)
     _purge_expired()
     if not code or code not in _pair_codes:
         return HTMLResponse(
@@ -455,6 +456,10 @@ async def tui_local_login(code: str | None = None) -> HTMLResponse:
 
 @router.post("/tui-local-login/submit")
 async def tui_local_login_submit(request: Request) -> HTMLResponse:
+    """Terima submit form login lokal. Sama seperti GET-nya, hanya aktif kalau
+    Google OAuth belum dikonfigurasi."""
+    if settings.google_client_id and settings.google_client_secret:
+        return HTMLResponse(_error_page("Halaman tidak ditemukan."), status_code=404)
     body_bytes = await request.body()
     params = urllib.parse.parse_qs(body_bytes.decode("utf-8"))
 
