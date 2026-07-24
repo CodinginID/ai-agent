@@ -92,5 +92,13 @@
   "orb_state_idle": "Ready",
   "orb_state_listening": "Listening…",
   "orb_state_thinking": "Thinking…",
-  "orb_state_speaking": "Speaking"
+  "orb_state_speaking": "Speaking",
+  "setting_saving": "Saving…",
+  "setting_vad_silence": "Silence before it stops listening",
+  "setting_vad_hint": "{{sec}} seconds — lower means faster processing",
+  "setting_orb_accent": "Orb color",
+  "setting_reduce_motion": "Reduce motion (slow devices / battery saver)",
+  "setting_wake_word": "“Hey Octopus” wake word",
+  "setting_wake_word_desc": "Hands-free activation, background listening (next phase)",
+  "badge_soon": "soon"
 }

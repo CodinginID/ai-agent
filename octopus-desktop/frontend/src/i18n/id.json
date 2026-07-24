@@ -92,5 +92,13 @@
   "orb_state_idle": "Siap",
   "orb_state_listening": "Mendengarkan…",
   "orb_state_thinking": "Berpikir…",
-  "orb_state_speaking": "Menjawab"
+  "orb_state_speaking": "Menjawab",
+  "setting_saving": "Menyimpan…",
+  "setting_vad_silence": "Jeda hening sebelum berhenti dengar",
+  "setting_vad_hint": "{{sec}} detik — makin kecil makin cepat memproses",
+  "setting_orb_accent": "Warna orb",
+  "setting_reduce_motion": "Kurangi animasi (untuk perangkat lambat / hemat baterai)",
+  "setting_wake_word": "Wake word “Hey Octopus”",
+  "setting_wake_word_desc": "Aktif tanpa klik, dengar di latar (fase berikutnya)",
+  "badge_soon": "segera"
 }

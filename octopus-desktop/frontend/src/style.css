@@ -2405,3 +2405,75 @@ kbd {
     }
     .settings-rail h3 { display: none; }
 }
+
+/* Settings: aksi bawah, swatch warna orb, badge */
+.settings-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 24px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line-soft);
+}
+
+.settings-actions button.danger {
+    margin-left: auto;
+    border-color: rgba(255, 92, 108, 0.35);
+    background: rgba(255, 92, 108, 0.08);
+    color: var(--danger);
+}
+
+.settings-actions button.danger:hover {
+    border-color: var(--danger);
+    background: rgba(255, 92, 108, 0.16);
+}
+
+.set-tab-icon {
+    width: 16px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.badge-soon {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--warning);
+    border: 1px solid rgba(255, 180, 84, 0.3);
+    background: rgba(255, 180, 84, 0.08);
+    padding: 2px 6px;
+    border-radius: 5px;
+    margin-left: 8px;
+}
+
+.setting-disabled { opacity: 0.7; }
+
+.field-hint {
+    display: block;
+    font-size: 11.5px;
+    font-weight: 400;
+    letter-spacing: normal;
+    text-transform: none;
+    color: var(--text-faint);
+    margin-top: 6px;
+}
+
+.swatches {
+    display: flex;
+    gap: 10px;
+    margin-top: 8px;
+}
+
+.settings-body .swatches .swatch {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border-radius: 50%;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: border-color 0.2s, transform 0.2s;
+}
+
+.settings-body .swatches .swatch:hover { transform: scale(1.1); }
+
+.settings-body .swatches .swatch.active { border-color: var(--text-main); }

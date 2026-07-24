@@ -157,49 +157,35 @@ export function SettingsView({ onClose, onLogout }: { onClose: () => void; onLog
     }
   };
 
-  return (
-    <div className="settings-view card">
-      <h2>{t("settings_title")}</h2>
-      <p className="settings-hint" dangerouslySetInnerHTML={{ __html: t("settings_hint") }} />
+  const TABS: Array<{ id: typeof activeTab; label: string; icon: string }> = [
+    { id: "system", label: t("tab_system"), icon: "◱" },
+    { id: "voice", label: t("tab_voice"), icon: "🎙" },
+    { id: "provider", label: t("tab_provider"), icon: "✦" },
+    { id: "appearance", label: t("tab_appearance"), icon: "◉" },
+    { id: "agents", label: `${t("tab_agents")} (${agents.filter((a) => a.enabled).length}/${agents.length})`, icon: "⛬" },
+    { id: "workers", label: t("tab_workers"), icon: "⚙" },
+  ];
 
-      <div className="settings-tabs" onClick={(e) => e.stopPropagation()}>
-        <button
-          className={`settings-tab-btn ${activeTab === "system" ? "active" : ""}`}
-          onClick={() => setActiveTab("system")}
-        >
-          {t("tab_system")}
-        </button>
-        <button
-          className={`settings-tab-btn ${activeTab === "voice" ? "active" : ""}`}
-          onClick={() => setActiveTab("voice")}
-        >
-          {t("tab_voice")}
-        </button>
-        <button
-          className={`settings-tab-btn ${activeTab === "appearance" ? "active" : ""}`}
-          onClick={() => setActiveTab("appearance")}
-        >
-          {t("tab_appearance")}
-        </button>
-        <button
-          className={`settings-tab-btn ${activeTab === "provider" ? "active" : ""}`}
-          onClick={() => setActiveTab("provider")}
-        >
-          {t("tab_provider")}
-        </button>
-        <button
-          className={`settings-tab-btn ${activeTab === "agents" ? "active" : ""}`}
-          onClick={() => setActiveTab("agents")}
-        >
-          {t("tab_agents")} ({agents.filter(a => a.enabled).length}/{agents.length})
-        </button>
-        <button
-          className={`settings-tab-btn ${activeTab === "workers" ? "active" : ""}`}
-          onClick={() => setActiveTab("workers")}
-        >
-          {t("tab_workers")}
-        </button>
-      </div>
+  const ORB_SWATCHES = ["#38e1ff", "#5b8cff", "#9b7bff", "#3ddc97"];
+  const vadMs = Number(cfg.vad_silence_ms) > 0 ? Number(cfg.vad_silence_ms) : 1200;
+
+  return (
+    <div className="settings-view" onClick={(e) => e.stopPropagation()}>
+      <nav className="settings-rail">
+        <h3>{t("settings_title")}</h3>
+        {TABS.map((tab) => (
+          <button
+            key={tab.id}
+            className={`set-tab ${activeTab === tab.id ? "active" : ""}`}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            <span className="set-tab-icon">{tab.icon}</span> {tab.label}
+          </button>
+        ))}
+      </nav>
+
+      <div className="settings-body">
+      <h2>{TABS.find((tab) => tab.id === activeTab)?.label}</h2>
 
       {activeTab === "system" && (
         <div className="tab-content">
@@ -208,12 +194,11 @@ export function SettingsView({ onClose, onLogout }: { onClose: () => void; onLog
             <input value={String(cfg.gateway_url ?? "")} onChange={(e) => set("gateway_url", e.target.value)} />
           </label>
           <label>
-            <input type="checkbox" checked={Boolean(cfg.jarvis_mode)} onChange={(e) => set("jarvis_mode", e.target.checked)} />
-            {t("setting_jarvis_mode")}
-          </label>
-          <label>
-            <input type="checkbox" checked={Boolean(cfg.tts_enabled)} onChange={(e) => set("tts_enabled", e.target.checked)} />
-            {t("setting_tts_enabled")}
+            {t("language_label")}
+            <select value={lang.code} onChange={handleLanguageChange}>
+              <option value="id">{t("language_indonesian")}</option>
+              <option value="en">{t("language_english")}</option>
+            </select>
           </label>
           <label>
             {t("setting_whisper_bin")}
@@ -231,6 +216,65 @@ export function SettingsView({ onClose, onLogout }: { onClose: () => void; onLog
               {progress.name}
             </progress>
           )}
+        </div>
+      )}
+
+      {activeTab === "voice" && (
+        <div className="tab-content">
+          <label>
+            <input type="checkbox" checked={Boolean(cfg.jarvis_mode)} onChange={(e) => set("jarvis_mode", e.target.checked)} />
+            {t("setting_jarvis_mode")}
+          </label>
+          <label>
+            <input type="checkbox" checked={Boolean(cfg.tts_enabled)} onChange={(e) => set("tts_enabled", e.target.checked)} />
+            {t("setting_tts_enabled")}
+          </label>
+          <label>
+            {t("setting_vad_silence")}
+            <input
+              type="range"
+              min={500}
+              max={3000}
+              step={100}
+              value={vadMs}
+              onChange={(e) => set("vad_silence_ms", Number(e.target.value))}
+            />
+            <span className="field-hint">{t("setting_vad_hint", { sec: (vadMs / 1000).toFixed(1) })}</span>
+          </label>
+          <label className="setting-disabled">
+            <input type="checkbox" disabled />
+            {t("setting_wake_word")} <span className="badge-soon">{t("badge_soon")}</span>
+            <span className="field-hint">{t("setting_wake_word_desc")}</span>
+          </label>
+        </div>
+      )}
+
+      {activeTab === "appearance" && (
+        <div className="tab-content">
+          <label>
+            {t("setting_orb_accent")}
+            <span className="swatches">
+              {ORB_SWATCHES.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  className={`swatch ${String(cfg.orb_accent ?? "#38e1ff") === c ? "active" : ""}`}
+                  style={{ backgroundColor: c }}
+                  title={c}
+                  aria-label={c}
+                  onClick={() => set("orb_accent", c)}
+                />
+              ))}
+            </span>
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={Boolean(cfg.reduce_motion)}
+              onChange={(e) => set("reduce_motion", e.target.checked)}
+            />
+            {t("setting_reduce_motion")}
+          </label>
         </div>
       )}
 
@@ -387,9 +431,12 @@ export function SettingsView({ onClose, onLogout }: { onClose: () => void; onLog
       )}
 
       <div className="settings-actions">
-        <button onClick={save} disabled={saving}>{saving ? "Menyimpan..." : "Simpan"}</button>
-        <button onClick={onClose} disabled={saving}>Batal</button>
-        <button className="danger" onClick={onLogout}>Logout</button>
+        <button className="primary" onClick={save} disabled={saving}>
+          {saving ? t("setting_saving") : t("setting_save")}
+        </button>
+        <button onClick={onClose} disabled={saving}>{t("setting_cancel")}</button>
+        <button className="danger" onClick={onLogout}>{t("setting_logout")}</button>
+      </div>
       </div>
     </div>
   );
