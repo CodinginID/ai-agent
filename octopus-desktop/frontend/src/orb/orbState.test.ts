@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { computeOrbUniforms, deriveAiState } from "./orbState";
+import { computeOrbUniforms, deriveAiState, ORB_COLORS } from "./orbState";
+
+describe("ORB_COLORS (palet gelap orb-centric)", () => {
+  it("idle cyan, listening hijau, thinking & speaking amber", () => {
+    expect(ORB_COLORS.idle).toBe("#38e1ff");
+    expect(ORB_COLORS.listening).toBe("#3ddc97");
+    expect(ORB_COLORS.thinking).toBe("#ffb454");
+    expect(ORB_COLORS.speaking).toBe("#ffb454");
+  });
+});
 
 describe("computeOrbUniforms", () => {
   it("idle: breathing berosilasi, distortion tetap kecil", () => {
@@ -29,12 +38,15 @@ describe("computeOrbUniforms", () => {
 
 describe("deriveAiState", () => {
   it("speaking menang atas pending", () => {
-    expect(deriveAiState(true, true)).toBe("speaking");
+    expect(deriveAiState(true, true, false)).toBe("speaking");
   });
   it("pending tanpa speaking -> thinking", () => {
-    expect(deriveAiState(true, false)).toBe("thinking");
+    expect(deriveAiState(true, false, false)).toBe("thinking");
   });
   it("tidak pending & tidak speaking -> idle", () => {
-    expect(deriveAiState(false, false)).toBe("idle");
+    expect(deriveAiState(false, false, false)).toBe("idle");
+  });
+  it("listening menang atas semua", () => {
+    expect(deriveAiState(true, true, true)).toBe("listening");
   });
 });

@@ -27,10 +27,19 @@ type Settings struct {
 	AIProvider       string `json:"ai_provider"`
 	AIModel          string `json:"ai_model"`
 	VadSilenceMs     int    `json:"vad_silence_ms"`
+	OrbAccent        string `json:"orb_accent"`
+	ReduceMotion     bool   `json:"reduce_motion"`
+	Language         string `json:"language"`
 }
 
 func defaults() Settings {
-	return Settings{GatewayURL: "http://localhost:8080", JarvisMode: true, TTSEnabled: true, VadSilenceMs: 1200}
+	return Settings{
+		GatewayURL:   "http://localhost:8080",
+		JarvisMode:   true,
+		TTSEnabled:   true,
+		VadSilenceMs: 1200,
+		OrbAccent:    "#38e1ff",
+	}
 }
 
 func Load(dir string) (Settings, error) {

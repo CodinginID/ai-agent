@@ -9,5 +9,6 @@
   "author": {
     "name": "Muh Ali Bakhtiar",
     "email": "muhalibakhtiar@gmail.com"
-  }
+  },
+  "build:appicon": "build/appicon.png"
 }

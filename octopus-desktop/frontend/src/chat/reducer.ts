@@ -79,7 +79,29 @@ function updateAssistant(msg: AssistantMessage, ev: IncomingEvent): AssistantMes
   }
 }
 
+const AVATAR_TYPES = new Set(["worker:started", "worker:progress", "worker:completed", "worker:error"]);
+
+// Dispatch avatar events to globalCustomEvent so AvatarSystem can listen.
+function maybeEmitAvatarEvent(ev: IncomingEvent): void {
+  if (!AVATAR_TYPES.has(ev.type)) return;
+  const d = ev.data;
+  const avatarEv: { type: string; workerId: string; workerName: string; workerType: string; progress?: number; error?: string } =
+    {
+      type: ev.type,
+      workerId: String(d.workerId ?? ev.msgId),
+      workerName: String(d.workerName ?? d.agentName ?? ""),
+      workerType: String(d.workerType ?? d.type ?? ""),
+      progress: d.progress != null ? Number(d.progress) : undefined,
+      error: d.error ? String(d.error) : undefined,
+    };
+  if (typeof window !== "undefined") {
+    const ce = new CustomEvent("avatar:event", { detail: avatarEv });
+    window.dispatchEvent(ce);
+  }
+}
+
 export function applyEvent(messages: Message[], ev: IncomingEvent): Message[] {
+  maybeEmitAvatarEvent(ev);
   const idx = messages.findIndex((m) => m.msgId === ev.msgId && m.role === "assistant");
   if (idx === -1) {
     const fresh: AssistantMessage = { msgId: ev.msgId, role: "assistant", parts: [], done: false, finalText: "" };

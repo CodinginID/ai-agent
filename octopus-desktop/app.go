@@ -17,6 +17,26 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
+// relayEvents iterate channel event, emit tiap event ke channel utama,
+// emit avatar event ke channel terpisah bila event menandakan worker lifecycle,
+// lalu emit stream_error bila err != nil.
+func relayEvents(msgID string, out <-chan gateway.Event, err error,
+	emit func(map[string]any), emitAvatar func(map[string]any)) {
+	for ev := range out {
+		emit(map[string]any{"msgId": msgID, "type": ev.Type, "data": ev.Data})
+
+		if avatarEventTypes[ev.Type] {
+			emitAvatar(map[string]any{"msgId": msgID, "type": ev.Type, "data": ev.Data})
+		}
+	}
+	if err != nil {
+		emit(map[string]any{
+			"msgId": msgID, "type": "stream_error",
+			"data": map[string]any{"message": err.Error()},
+		})
+	}
+}
+
 // App menyimpan state runtime Wails dan dependency yang di-inject lewat NewApp.
 type App struct {
 	ctx       context.Context
@@ -52,23 +72,22 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 }
 
-// relayEvents meneruskan event stream ke emitter dengan msgId, lalu
-// menutup dengan stream_error bila stream berakhir tidak normal.
-func relayEvents(msgID string, out <-chan gateway.Event, streamErr error, emit func(map[string]any)) {
-	for ev := range out {
-		emit(map[string]any{"msgId": msgID, "type": ev.Type, "data": ev.Data})
-	}
-	if streamErr != nil {
-		emit(map[string]any{
-			"msgId": msgID,
-			"type":  "stream_error",
-			"data":  map[string]any{"message": streamErr.Error()},
-		})
-	}
+// avatarEventTypes adalah set event type dari backend yang menandakan worker lifecycle.
+// Saat terima event ini, backend juga emit "avatar:event" supaya AvatarSystem bisa update state.
+var avatarEventTypes = map[string]bool{
+	"worker:started": true,
+	"worker:progress": true,
+	"worker:completed": true,
+	"worker:error": true,
 }
 
 func (a *App) emit(payload map[string]any) {
 	runtime.EventsEmit(a.ctx, "chat:event", payload)
+}
+
+// emitAvatar emit ke channel "avatar:event" untuk AvatarSystem (frontend).
+func (a *App) emitAvatar(payload map[string]any) {
+	runtime.EventsEmit(a.ctx, "avatar:event", payload)
 }
 
 // gw membaca client di bawah mutex karena PollLogin dan SaveSettings bisa
@@ -82,19 +101,12 @@ func (a *App) gw() *gateway.Client {
 // runStream mengirim tiap event ke frontend saat event itu tiba (bukan
 // menunggu stream selesai), lalu setelah channel ditutup baca err dari
 // done-channel untuk emit stream_error bila perlu.
+// Emit juga avatar events untuk worker lifecycle.
 func (a *App) runStream(msgID string, run func(chan<- gateway.Event) error) {
 	out := make(chan gateway.Event, 32)
 	done := make(chan error, 1)
 	go func() { done <- run(out) }()
-	for ev := range out {
-		a.emit(map[string]any{"msgId": msgID, "type": ev.Type, "data": ev.Data})
-	}
-	if err := <-done; err != nil {
-		a.emit(map[string]any{
-			"msgId": msgID, "type": "stream_error",
-			"data": map[string]any{"message": err.Error()},
-		})
-	}
+	relayEvents(msgID, out, <-done, a.emit, a.emitAvatar)
 }
 
 func (a *App) SendChat(msgID, text string) {

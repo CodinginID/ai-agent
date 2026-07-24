@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { approvePlan, onChatEvent, rejectPlan, sendChat } from "./bindings";
+import { forwardRef, useEffect, useRef, useState } from "react";
+import { approvePlan, onAvatarEvent, onChatEvent, rejectPlan, sendChat } from "./bindings";
 import { applyEvent } from "./reducer";
 import type { AssistantMessage, Message, Part } from "./types";
 import { ActionCard } from "./cards/ActionCard";
@@ -10,6 +10,7 @@ import { StatusLine } from "./cards/StatusLine";
 import { TableCard } from "./cards/TableCard";
 import { TextCard } from "./cards/TextCard";
 import { UserBubble } from "./UserBubble";
+import { AvatarSystem } from "../avatar/AvatarSystem";
 import { usePointerTilt } from "../hooks/usePointerTilt";
 
 const METRIC_ACTIONS = new Set(["memory", "disk", "server_status", "docker_stats"]);
@@ -18,24 +19,43 @@ const TABLE_ACTIONS = new Set(["docker_ps", "docker_images", "docker_compose_ps"
 let counter = 0;
 const newMsgId = () => `m-${Date.now()}-${counter++}`;
 
-export function ChatView({
+interface ChatViewProps {
+  onFinal?: (text: string) => void;
+  onPendingChange?: (pending: boolean) => void;
+  inputExtra?: React.ReactNode;
+  registerSubmit?: (fn: (text: string) => void) => void;
+  onRetry?: (text: string) => void;
+}
+
+export const ChatView = forwardRef<HTMLInputElement, ChatViewProps>(({
   onFinal,
   onPendingChange,
   inputExtra,
   registerSubmit,
-}: {
-  onFinal?: (text: string) => void;
-  onPendingChange?: (pending: boolean) => void;
-  inputExtra?: React.ReactNode; // slot untuk tombol mic (Task 11)
-  registerSubmit?: (fn: (text: string) => void) => void;
-}) {
+  onRetry,
+}, inputRef) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const lastFinal = useRef("");
   const sendButtonRef = usePointerTilt<HTMLButtonElement>();
+  const messagesRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll ke bawah setiap kali pesan berubah
+  useEffect(() => {
+    const el = messagesRef.current;
+    if (el) {
+      requestAnimationFrame(() => {
+        el.scrollTop = el.scrollHeight;
+      });
+    }
+  }, [messages.length]);
 
   useEffect(() => {
     return onChatEvent((ev) => setMessages((prev) => applyEvent(prev, ev)));
+  }, []);
+
+  useEffect(() => {
+    return onAvatarEvent(() => {}); // Subscribe to avatar events (AvatarSystem handles them)
   }, []);
 
   useEffect(() => {
@@ -93,6 +113,15 @@ export function ChatView({
     else void rejectPlan(planId);
   };
 
+  const retryLastError = () => {
+    const last = messages[messages.length - 1] as AssistantMessage | undefined;
+    if (!last || !last.done) return;
+    const lastTextPart = last.parts.find((p) => p.kind === "text");
+    if (lastTextPart) {
+      onRetry?.(lastTextPart.text);
+    }
+  };
+
   const renderPart = (msg: AssistantMessage, p: Part, i: number) => {
     switch (p.kind) {
       case "status":
@@ -117,13 +146,26 @@ export function ChatView({
           />
         );
       case "error":
-        return <ErrorCard key={i} message={p.message} retryable={p.retryable} />;
+        return (
+          <ErrorCard
+            key={i}
+            message={p.message}
+            retryable={p.retryable}
+            onRetry={retryLastError}
+          />
+        );
     }
   };
 
   return (
     <div className="chat-view">
-      <div className="chat-messages">
+      <div
+        ref={messagesRef}
+        className="chat-messages"
+        role="log"
+        aria-label="Riwayat pesan chat"
+        aria-live="polite"
+      >
         {messages.map((m) =>
           m.role === "user" ? (
             <UserBubble key={m.msgId} text={m.text} />
@@ -134,18 +176,26 @@ export function ChatView({
           ),
         )}
       </div>
+      <AvatarSystem />
       <div className="chat-input">
         {inputExtra}
         <input
+          ref={inputRef}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && submit(draft)}
           placeholder="Ketik perintah… (atau tahan tombol mic)"
+          aria-label="Tulis pesan"
         />
-        <button ref={sendButtonRef} className="tilt-surface" onClick={() => submit(draft)}>
+        <button
+          ref={sendButtonRef}
+          className="tilt-surface"
+          onClick={() => submit(draft)}
+          aria-label="Kirim pesan"
+        >
           Kirim
         </button>
       </div>
     </div>
   );
-}
+});

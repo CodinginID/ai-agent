@@ -19,6 +19,23 @@ func TestLoadMissingFileReturnsDefaults(t *testing.T) {
 	if s.VadSilenceMs != 1200 {
 		t.Fatalf("default VadSilenceMs harus 1200, got %d", s.VadSilenceMs)
 	}
+	if s.OrbAccent != "#38e1ff" {
+		t.Fatalf("default OrbAccent harus #38e1ff, got %q", s.OrbAccent)
+	}
+}
+
+func TestSaveThenLoadPreservesAppearance(t *testing.T) {
+	dir := t.TempDir()
+	if err := Save(dir, Settings{OrbAccent: "#5b8cff", ReduceMotion: true}); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	out, err := Load(dir)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if out.OrbAccent != "#5b8cff" || !out.ReduceMotion {
+		t.Fatalf("appearance roundtrip: %+v", out)
+	}
 }
 
 func TestSaveThenLoadPreservesVadSilenceMs(t *testing.T) {

@@ -1,9 +1,10 @@
 export type ChatEventPayload = Record<string, unknown>;
+export type AvatarEventPayload = Record<string, unknown>;
 
 export interface IncomingEvent {
   msgId: string;
-  type: string; // thinking|intent_classified|approval_required|action_started|action_result|text_chunk|final|error|observing|reflecting|retrying|stream_error
-  data: ChatEventPayload;
+  type: string; // thinking|intent_classified|approval_required|action_started|action_result|text_chunk|final|error|observing|reflecting|retrying|stream_error|avatar
+  data: ChatEventPayload & { __avatar?: AvatarEventPayload };
 }
 
 export type Part =

@@ -17,8 +17,12 @@ beforeEach(() => {
     },
   };
   (window as any).runtime = {
-    EventsOn: vi.fn((_name: string, cb: (payload: unknown) => void) => {
-      chatEventCb = cb as (ev: IncomingEvent) => void;
+    EventsOn: vi.fn((name: string, cb: (payload: unknown) => void) => {
+      // ChatView juga subscribe "avatar:event" — simpan hanya callback chat
+      // supaya event test tidak nyasar ke handler avatar.
+      if (name === "chat:event") {
+        chatEventCb = cb as (ev: IncomingEvent) => void;
+      }
       return () => {};
     }),
   };

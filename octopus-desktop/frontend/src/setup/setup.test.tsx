@@ -17,7 +17,7 @@ describe("LoginView", () => {
   it("menampilkan kode setelah start dan memanggil onPaired saat paired", async () => {
     const onPaired = vi.fn();
     render(<LoginView onPaired={onPaired} pollIntervalMs={1} />);
-    fireEvent.click(screen.getByRole("button", { name: /login/i }));
+    fireEvent.click(screen.getByRole("button", { name: /connect/i }));
     await waitFor(() => expect(screen.getByText("ABCD")).toBeTruthy());
     await waitFor(() => expect(onPaired).toHaveBeenCalled(), { timeout: 2000 });
   });

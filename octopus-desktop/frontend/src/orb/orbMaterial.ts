@@ -1,56 +1,80 @@
-import { shaderMaterial } from "@react-three/drei";
-import { extend } from "@react-three/fiber";
 import * as THREE from "three";
 
-const OrbMaterialImpl = shaderMaterial(
-  {
-    uTime: 0,
-    uDistortion: 0.08,
-    uColorA: new THREE.Color("#3b82f6"),
-    uColorB: new THREE.Color("#10b981"),
-    uColorC: new THREE.Color("#f59e0b"),
-    uColorMix: 0,
-  },
-  `
-    uniform float uTime;
-    uniform float uDistortion;
-    varying vec3 vNormal;
-    varying vec3 vPosition;
+// Orbit particle shader - light office theme
+// Uses lighter, more visible colors for white/light backgrounds
+export const ORBIT_VERTEX_SHADER = `
+  attribute float aId;
 
-    float noise(vec3 p) {
-      return sin(p.x * 3.0 + uTime) * sin(p.y * 3.0 + uTime) * sin(p.z * 3.0 + uTime);
-    }
+  uniform float uTime;
+  uniform float uAmplitude;
 
-    void main() {
-      vNormal = normalize(normalMatrix * normal);
-      vec3 displaced = position + normal * noise(position) * uDistortion;
-      vPosition = displaced;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(displaced, 1.0);
-    }
-  `,
-  `
-    uniform vec3 uColorA;
-    uniform vec3 uColorB;
-    uniform vec3 uColorC;
-    uniform float uColorMix;
-    varying vec3 vNormal;
-    varying vec3 vPosition;
+  varying vec3 vWorldPos;
+  varying float vSpeed;
+  varying float vRadius;
+  varying float vPhase;
 
-    void main() {
-      float fresnel = pow(1.0 - abs(dot(normalize(vNormal), vec3(0.0, 0.0, 1.0))), 2.0);
-      vec3 base = mix(uColorA, uColorB, 0.5 + 0.5 * sin(vPosition.y * 2.0));
-      vec3 withGlow = mix(base, uColorC, uColorMix);
-      gl_FragColor = vec4(withGlow * (0.4 + fresnel * 1.2), 0.85);
-    }
-  `,
-);
+  void main() {
+    vSpeed = 0.3 + mod(aId * 0.618033988749895, 1.5);
+    vRadius = 0.7 + mod(aId * 0.381966011250105, 0.8);
+    vPhase = mod(aId * 2.399963229728653, 6.283185307179586);
 
-extend({ orbMaterial: OrbMaterialImpl });
+    float angle = vPhase + uTime * vSpeed;
+    float incl = sin(aId * 0.7) * 1.4;
+    float r = vRadius;
 
-declare module "@react-three/fiber" {
-  interface ThreeElements {
-    orbMaterial: any;
+    vec3 offset = vec3(
+      r * cos(angle) * cos(incl),
+      r * sin(angle) * sin(incl) + sin(uTime * 0.5) * uAmplitude * 0.3,
+      r * cos(angle) * sin(incl)
+    );
+
+    vWorldPos = position + offset;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(vWorldPos, 1.0);
+    gl_PointSize = max(1.0, (3.0 + uAmplitude * 2.0) * (3.5 / -modelViewMatrix[3].z));
   }
-}
+`;
 
-export { OrbMaterialImpl };
+export const ORBIT_FRAGMENT_SHADER = `
+  uniform vec3 uColorA;
+  uniform vec3 uColorB;
+  uniform vec3 uColorC;
+  uniform float uColorMix;
+
+  varying vec3 vWorldPos;
+  varying float vSpeed;
+  varying float vRadius;
+  varying float vPhase;
+
+  void main() {
+    vec2 coord = gl_PointCoord - 0.5;
+    float d = length(coord);
+    if (d > 0.5) discard;
+
+    float glow = 1.0 - smoothstep(0.0, 0.5, d);
+    glow = pow(glow, 1.8);
+
+    vec3 base = mix(uColorA, uColorB, 0.5 + 0.5 * sin(vPhase + length(vWorldPos) * 0.5));
+    vec3 final = mix(base, uColorC, uColorMix);
+
+    float alpha = glow * 0.9;
+    gl_FragColor = vec4(final * (0.6 + glow * 0.7), alpha);
+  }
+`;
+
+export function createOrbitMaterial(): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uColorA: { value: new THREE.Color("#5b9bd5") },
+      uColorB: { value: new THREE.Color("#6bc99a") },
+      uColorC: { value: new THREE.Color("#f6ad55") },
+      uColorMix: { value: 0 },
+      uAmplitude: { value: 0 },
+    },
+    vertexShader: ORBIT_VERTEX_SHADER,
+    fragmentShader: ORBIT_FRAGMENT_SHADER,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+}

@@ -19,7 +19,7 @@ func TestRelayEventsForwardsAllThenStreamError(t *testing.T) {
 	var got []map[string]any
 	emit := func(payload map[string]any) { got = append(got, payload) }
 
-	relayEvents("msg-1", out, errors.New("putus"), emit)
+	relayEvents("msg-1", out, errors.New("putus"), emit, func(map[string]any) {})
 
 	if len(got) != 3 {
 		t.Fatalf("harus 2 event + 1 stream_error, got %d: %+v", len(got), got)
@@ -68,7 +68,7 @@ func TestRelayEventsNoErrorNoStreamError(t *testing.T) {
 	out <- gateway.Event{Type: "final", Data: map[string]any{"text": "ok"}}
 	close(out)
 	var got []map[string]any
-	relayEvents("m", out, nil, func(p map[string]any) { got = append(got, p) })
+	relayEvents("m", out, nil, func(p map[string]any) { got = append(got, p) }, func(map[string]any) {})
 	if len(got) != 1 {
 		t.Fatalf("tidak boleh ada stream_error: %+v", got)
 	}

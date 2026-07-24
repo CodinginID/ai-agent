@@ -39,7 +39,9 @@ interface Agent {
 const workerKey = (type: string, field: "color" | "visible" | "shape") => `worker_${type}_${field}`;
 
 export function SettingsView({ onClose, onLogout }: { onClose: () => void; onLogout: () => void }) {
-  const [activeTab, setActiveTab] = useState<"system" | "provider" | "agents" | "workers">("system");
+  const [activeTab, setActiveTab] = useState<
+    "system" | "voice" | "appearance" | "provider" | "agents" | "workers"
+  >("system");
   const [saving, setSaving] = useState(false);
   const [cfg, setCfg] = useState<Cfg>({});
   const [progress, setProgress] = useState<{ name: string; done: number; total: number } | null>(null);
@@ -170,7 +172,19 @@ export function SettingsView({ onClose, onLogout }: { onClose: () => void; onLog
           className={`settings-tab-btn ${activeTab === "system" ? "active" : ""}`}
           onClick={() => setActiveTab("system")}
         >
-          System
+          Umum
+        </button>
+        <button
+          className={`settings-tab-btn ${activeTab === "voice" ? "active" : ""}`}
+          onClick={() => setActiveTab("voice")}
+        >
+          Suara
+        </button>
+        <button
+          className={`settings-tab-btn ${activeTab === "appearance" ? "active" : ""}`}
+          onClick={() => setActiveTab("appearance")}
+        >
+          Tampilan
         </button>
         <button
           className={`settings-tab-btn ${activeTab === "provider" ? "active" : ""}`}
@@ -205,17 +219,6 @@ export function SettingsView({ onClose, onLogout }: { onClose: () => void; onLog
           <label>
             <input type="checkbox" checked={Boolean(cfg.tts_enabled)} onChange={(e) => set("tts_enabled", e.target.checked)} />
             Suara balasan (TTS)
-          </label>
-          <label>
-            Jeda hening sebelum berhenti otomatis (ms)
-            <input
-              type="number"
-              min={500}
-              max={3000}
-              step={100}
-              value={Number(cfg.vad_silence_ms ?? 1200)}
-              onChange={(e) => set("vad_silence_ms", Number(e.target.value))}
-            />
           </label>
           <label>
             Path whisper-cli

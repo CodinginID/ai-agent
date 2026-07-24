@@ -11,17 +11,20 @@ export function VoiceBar({
   onToggleJarvis,
   onListeningChange,
   vadSilenceMs = DEFAULT_VAD.silenceMs,
+  registerToggle,
 }: {
   onTranscript: (text: string) => void;
   jarvis: boolean;
   onToggleJarvis: () => void;
   onListeningChange?: (isListening: boolean) => void;
   vadSilenceMs?: number;
+  registerToggle?: (fn: () => void) => void;
 }) {
   const [state, setState] = useState<VoiceState>("idle");
   const [info, setInfo] = useState("");
   const rec = useRef<MicRecorder | null>(null);
   const stopping = useRef(false);
+  const toggleRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     onListeningChange?.(state === "listening" || state === "recording");
@@ -72,6 +75,11 @@ export function VoiceBar({
     if (state === "idle") void start();
     else if (state === "recording" || state === "listening") void stop();
   };
+  toggleRef.current = toggle;
+
+  useEffect(() => {
+    registerToggle?.(() => toggleRef.current());
+  }, [registerToggle]);
 
   return (
     <div className="voice-bar">

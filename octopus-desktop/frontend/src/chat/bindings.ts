@@ -1,4 +1,5 @@
 import type { IncomingEvent } from "./types";
+import type { AvatarEvent } from "../avatar/types";
 
 type GoApp = {
   SendChat(msgId: string, text: string): Promise<void>;
@@ -38,4 +39,8 @@ export const rejectPlan = (planId: string) => window.go.main.App.RejectPlan(plan
 
 export function onChatEvent(cb: (ev: IncomingEvent) => void): () => void {
   return window.runtime.EventsOn("chat:event", (payload) => cb(payload as IncomingEvent));
+}
+
+export function onAvatarEvent(cb: (ev: AvatarEvent) => void): () => void {
+  return window.runtime.EventsOn("avatar:event", (payload) => cb(payload as AvatarEvent));
 }

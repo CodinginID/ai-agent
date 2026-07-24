@@ -1,124 +1,103 @@
 import { useEffect, useRef, useState } from "react";
-import { ChatView } from "./chat/ChatView";
 import { VoiceBar } from "./voice/VoiceBar";
 import { speak } from "./voice/tts";
 import { LoginView } from "./setup/LoginView";
 import { SettingsView } from "./setup/SettingsView";
-import { AiOrb } from "./orb/AiOrb";
+import { OrbStage } from "./orb/OrbStage";
+import { ResponseLayer } from "./chat/ResponseLayer";
+import { DataPanel } from "./chat/DataPanel";
+import { InputDock } from "./chat/InputDock";
+import { HistoryDrawer } from "./chat/HistoryDrawer";
+import { useChat } from "./chat/useChat";
 import { deriveAiState } from "./orb/orbState";
 import "./style.css";
 
-// Keyboard shortcut constants
 const ESCAPE_KEY = "Escape";
-const ENTER_KEY = "Enter";
-const SPACE_KEY = " ";
 
 export default function App() {
   const [screen, setScreen] = useState<"loading" | "login" | "chat">("loading");
   const [showSettings, setShowSettings] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const [jarvis, setJarvis] = useState(true);
   const [vadSilenceMs, setVadSilenceMs] = useState(1200);
-  const [pending, setPending] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [amplitude, setAmplitude] = useState(0);
-  const submitRef = useRef<((text: string) => void) | null>(null);
-  const chatInputRef = useRef<HTMLInputElement | null>(null);
-  const voiceBarRef = useRef<HTMLDivElement | null>(null);
+  const [dismissedData, setDismissedData] = useState("");
 
-  const aiState = deriveAiState(pending, isSpeaking, isListening);
+  const chat = useChat();
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const voiceToggle = useRef<() => void>(() => {});
+  const lastSpokenRef = useRef("");
 
-  // Global keyboard shortcuts
+  const aiState = deriveAiState(chat.pending, isSpeaking, isListening);
+
+  const textParts = (chat.current?.parts ?? []).filter((p) => p.kind === "text");
+  const responseText = textParts.map((p) => (p.kind === "text" ? p.text : "")).join("\n");
+  const streaming = !!chat.current && !chat.current.done;
+  const dataParts = chat.current && chat.current.msgId !== dismissedData ? chat.current.parts : [];
+
+  // TTS untuk jawaban final (mode Jarvis)
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Esc untuk tutup modal settings
-      if (e.key === ESCAPE_KEY && showSettings) {
-        setShowSettings(false);
-        e.preventDefault();
-        e.stopPropagation();
-        return;
-      }
-      // Ctrl+K atau Cmd+K untuk fokus ke chat input (jika di chat screen)
-      if ((e.ctrlKey || e.metaKey) && e.key === "k" && screen === "chat") {
-        e.preventDefault();
-        chatInputRef.current?.focus();
-      }
-      // Space toggle Jarvis ketika voice bar focus
-      if (e.key === SPACE_KEY && screen === "chat" && voiceBarRef.current?.contains(document.activeElement)) {
-        e.preventDefault();
-        e.stopPropagation();
-        const nextJarvis = !jarvis;
-        setJarvis(nextJarvis);
-        window.go.main.App.GetSettings().then(s => {
-          window.go.main.App.SaveSettings({ ...s, jarvis_mode: nextJarvis });
-        });
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [showSettings, screen, jarvis, voiceBarRef]);
-
-  useEffect(() => {
-    // Check if wails runtime is available
-    if (!window.go || !window.go.main.App) {
-      console.error("Wails runtime not loaded - this should not happen in production!");
-      setScreen("chat"); // Fallback to chat view for development
-      return;
-    }
-
-    window.go.main.App.IsLoggedIn().then((loggedIn) => {
-      if (loggedIn) {
-        setScreen("chat");
-      } else {
-        setScreen("login");
-      }
-    }).catch((err) => {
-      console.error("Failed to check login status:", err);
-      // Show error message or fallback
-      setScreen("chat");
-    });
-  }, []);
-
-  useEffect(() => {
-    if (screen === "chat") {
-      window.go.main.App.GetSettings().then((s) => {
-        setJarvis(Boolean(s.jarvis_mode));
-        const ms = Number((s as { vad_silence_ms?: number }).vad_silence_ms);
-        if (Number.isFinite(ms) && ms > 0) setVadSilenceMs(ms);
-      });
-    }
-  }, [screen]);
-
-  useEffect(() => {
-    if (screen !== "chat" || showSettings) return;
-    const handleMove = (e: PointerEvent) => {
-      const px = (e.clientX / window.innerWidth - 0.5) * 2;
-      const py = (e.clientY / window.innerHeight - 0.5) * 2;
-      document.documentElement.style.setProperty("--bg-parallax-x", `${(px * 6).toFixed(2)}px`);
-      document.documentElement.style.setProperty("--bg-parallax-y", `${(py * 6).toFixed(2)}px`);
-    };
-    window.addEventListener("pointermove", handleMove);
-    return () => window.removeEventListener("pointermove", handleMove);
-  }, [screen, showSettings]);
-
-  const handleTranscript = (text: string) => {
-    if (jarvis) {
-      submitRef.current?.(text); // auto-send
-    } else {
-      window.dispatchEvent(new CustomEvent("voice:draft", { detail: text }));
-    }
-  };
-
-  const handleFinal = (text: string) => {
-    if (!jarvis) return;
+    const c = chat.current;
+    if (!jarvis || !c?.done || !c.finalText || c.finalText === lastSpokenRef.current) return;
+    lastSpokenRef.current = c.finalText;
     setIsSpeaking(true);
-    void speak(text, (level) => setAmplitude(level))
+    void speak(c.finalText, (lvl) => setAmplitude(lvl))
       .catch(() => {}) // TTS gagal tidak boleh ganggu chat
       .finally(() => {
         setIsSpeaking(false);
         setAmplitude(0);
       });
+  }, [chat.current?.done, chat.current?.finalText, jarvis]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === ESCAPE_KEY) {
+        if (showSettings) return setShowSettings(false);
+        if (showHistory) return setShowHistory(false);
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "k" && screen === "chat") {
+        e.preventDefault();
+        inputRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [showSettings, showHistory, screen]);
+
+  useEffect(() => {
+    if (!window.go || !window.go.main.App) {
+      console.error("Wails runtime not loaded - this should not happen in production!");
+      setScreen("chat");
+      return;
+    }
+    window.go.main.App.IsLoggedIn()
+      .then((loggedIn) => setScreen(loggedIn ? "chat" : "login"))
+      .catch((err) => {
+        console.error("Failed to check login status:", err);
+        setScreen("chat");
+      });
+  }, []);
+
+  useEffect(() => {
+    if (screen !== "chat") return;
+    window.go.main.App.GetSettings().then((s) => {
+      setJarvis(Boolean(s.jarvis_mode));
+      const ms = Number((s as { vad_silence_ms?: number }).vad_silence_ms);
+      if (Number.isFinite(ms) && ms > 0) setVadSilenceMs(ms);
+    });
+  }, [screen]);
+
+  const handleTranscript = (text: string) => {
+    if (jarvis) chat.submit(text);
+    else window.dispatchEvent(new CustomEvent("voice:draft", { detail: text }));
+  };
+
+  const toggleJarvis = () => {
+    const next = !jarvis;
+    setJarvis(next);
+    window.go.main.App.GetSettings().then((s) => window.go.main.App.SaveSettings({ ...s, jarvis_mode: next }));
   };
 
   const handleLogout = async () => {
@@ -127,53 +106,60 @@ export default function App() {
     setScreen("login");
   };
 
-  if (screen === "loading") {
-    return <div className="loading-screen">Memuat...</div>;
-  }
-
-  if (screen === "login") {
-    return <LoginView onPaired={() => setScreen("chat")} />;
-  }
+  if (screen === "loading") return <div className="loading-screen">Memuat…</div>;
+  if (screen === "login") return <LoginView onPaired={() => setScreen("chat")} />;
 
   return (
-    <div className="app-container">
-      <header className="app-header">
-        <h1>Octopus Desktop</h1>
-        <div className="app-header-orb">
-          <AiOrb state={aiState} amplitude={amplitude} paused={showSettings} />
+    <div className="orb-app">
+      <header className="orb-header">
+        <h1>Octopus</h1>
+        <div className="orb-header-actions">
+          <button onClick={() => setShowHistory(true)} aria-label="Riwayat percakapan">🕑</button>
+          <button onClick={() => setShowSettings(true)} aria-label="Pengaturan">⚙️</button>
         </div>
-        <button className="settings-toggle-btn" onClick={() => setShowSettings(true)}>⚙️</button>
       </header>
-      <main className="app-main">
-        <ChatView
-          ref={chatInputRef}
-          onFinal={handleFinal}
-          onPendingChange={setPending}
-          registerSubmit={(fn) => (submitRef.current = fn)}
-          inputExtra={
-            <div ref={voiceBarRef}>
-              <VoiceBar
-                onTranscript={handleTranscript}
-                vadSilenceMs={vadSilenceMs}
-                jarvis={jarvis}
-                onToggleJarvis={() => {
-                  const nextJarvis = !jarvis;
-                  setJarvis(nextJarvis);
-                  window.go.main.App.GetSettings().then(s => {
-                    window.go.main.App.SaveSettings({ ...s, jarvis_mode: nextJarvis });
-                  });
-                }}
-                onListeningChange={setIsListening}
-              />
-            </div>
-          }
+
+      <main className="orb-main">
+        <OrbStage
+          state={aiState}
+          amplitude={amplitude}
+          paused={showSettings}
+          onActivate={() => voiceToggle.current()}
+        >
+          <ResponseLayer text={responseText} streaming={streaming} />
+        </OrbStage>
+
+        <DataPanel
+          parts={dataParts}
+          onClose={() => chat.current && setDismissedData(chat.current.msgId)}
+          onApprove={(id) => chat.current && chat.decide(chat.current, id, "approved")}
+          onReject={(id) => chat.current && chat.decide(chat.current, id, "rejected")}
+          onRetry={() => chat.retryLast((t) => chat.submit(t))}
         />
       </main>
+
+      <InputDock
+        ref={inputRef}
+        onSubmit={chat.submit}
+        voiceSlot={
+          <VoiceBar
+            onTranscript={handleTranscript}
+            vadSilenceMs={vadSilenceMs}
+            jarvis={jarvis}
+            onToggleJarvis={toggleJarvis}
+            onListeningChange={setIsListening}
+            registerToggle={(fn) => (voiceToggle.current = fn)}
+          />
+        }
+      />
+
+      <HistoryDrawer open={showHistory} onClose={() => setShowHistory(false)} messages={chat.messages} />
+
       {showSettings && (
-        <div className="modal-overlay" onClick={(e) => {
-          // Hanya tutup kalau klik area gelap (bukan kontennya)
-          if (e.target === e.currentTarget) setShowSettings(false);
-        }}>
+        <div
+          className="modal-overlay"
+          onClick={(e) => e.target === e.currentTarget && setShowSettings(false)}
+        >
           <div className="modal-container" onClick={(e) => e.stopPropagation()}>
             <SettingsView onClose={() => setShowSettings(false)} onLogout={handleLogout} />
           </div>

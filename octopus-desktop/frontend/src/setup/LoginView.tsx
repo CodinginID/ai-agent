@@ -37,15 +37,10 @@ export function LoginView({
   };
 
   return (
-    <div ref={tiltRef} className="login-view futuristic-card tilt-surface">
-      <div className="corner-bracket top-left"></div>
-      <div className="corner-bracket top-right"></div>
-      <div className="corner-bracket bottom-left"></div>
-      <div className="corner-bracket bottom-right"></div>
-      <div className="glow-effect"></div>
-      <h1>OCTOPUS //</h1>
-      <p className="subtitle">[GATEWAY AUTHENTICATION PORTAL]</p>
-      <button onClick={start} className="cyber-btn">INITIALIZE LOGIN SEQUENCE</button>
+    <div ref={tiltRef} className="login-view card tilt-surface">
+      <h1>Octopus</h1>
+      <p className="subtitle">Connect your gateway</p>
+      <button onClick={start} className="card-btn">Connect</button>
       {code && (
         <div className="pairing-box">
           <p className="pairing-status">AUTHENTICATING VIA BROWSER...</p>
