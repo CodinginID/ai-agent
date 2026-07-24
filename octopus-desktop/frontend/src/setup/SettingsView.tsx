@@ -1,6 +1,34 @@
 import { useEffect, useState } from "react";
 
-type Cfg = Record<string, unknown>;
+type Cfg = {
+  gateway_url?: string;
+  jarvis_mode?: boolean;
+  tts_enabled?: boolean;
+  whisper_bin?: string;
+  piper_bin?: string;
+  ai_provider?: string;
+  ai_model?: string;
+  vad_silence_ms?: number;
+} & Record<string, string | boolean | number>;
+
+interface WorkerDef {
+  type: string;
+  name: string;
+  defaultColor: string;
+  defaultShape: string;
+  defaultVisible: boolean;
+}
+
+const DEFAULT_WORKERS: WorkerDef[] = [
+  { type: "engineer", name: "Engineer", defaultColor: "#4a90d9", defaultShape: "gear", defaultVisible: true },
+  { type: "reviewer", name: "Reviewer", defaultColor: "#6bc99a", defaultShape: "magnifying-glass", defaultVisible: true },
+  { type: "architect", name: "Architect", defaultColor: "#9b59b6", defaultShape: "blueprint", defaultVisible: true },
+  { type: "server", name: "Server", defaultColor: "#f39c12", defaultShape: "server", defaultVisible: true },
+  { type: "docker", name: "Docker", defaultColor: "#1abc9c", defaultShape: "container", defaultVisible: true },
+  { type: "git", name: "Git", defaultColor: "#e74c3c", defaultShape: "server", defaultVisible: true },
+];
+
+const SHAPE_OPTIONS = ["gear", "magnifying-glass", "blueprint", "server", "container"];
 
 interface Agent {
   id: string;
@@ -8,10 +36,12 @@ interface Agent {
   enabled: boolean;
 }
 
+const workerKey = (type: string, field: "color" | "visible" | "shape") => `worker_${type}_${field}`;
+
 export function SettingsView({ onClose, onLogout }: { onClose: () => void; onLogout: () => void }) {
-  const [activeTab, setActiveTab] = useState<"system" | "provider" | "agents">("system");
+  const [activeTab, setActiveTab] = useState<"system" | "provider" | "agents" | "workers">("system");
+  const [saving, setSaving] = useState(false);
   const [cfg, setCfg] = useState<Cfg>({});
-  const [bins, setBins] = useState<Record<string, boolean>>({});
   const [progress, setProgress] = useState<{ name: string; done: number; total: number } | null>(null);
   const [downloading, setDownloading] = useState(false);
 
@@ -27,11 +57,9 @@ export function SettingsView({ onClose, onLogout }: { onClose: () => void; onLog
   useEffect(() => {
     // Get general settings
     window.go.main.App.GetSettings().then((settings) => {
-      setCfg(settings);
+      setCfg(settings as unknown as Cfg);
     });
 
-    // Get binary status
-    window.go.main.App.BinaryStatus().then(setBins);
 
     // Get personal key from keychain
     window.go.main.App.GetPersonalKey().then((key) => {
@@ -85,34 +113,39 @@ export function SettingsView({ onClose, onLogout }: { onClose: () => void; onLog
     }
   };
 
-  const set = (k: string, v: unknown) => setCfg((c) => ({ ...c, [k]: v }));
+  const set = (k: string, v: string | boolean | number) => setCfg((c) => ({ ...c, [k]: v }));
 
   const save = async () => {
-    // 1. Save local general settings
-    const provider = String(cfg.ai_provider || "ollama");
-    const model = String(cfg.ai_model || "");
-    
-    await window.go.main.App.SaveSettings(cfg);
-
-    // 2. Set backend AI provider preferences via SetProvider API
+    setSaving(true);
     try {
-      await window.go.main.App.SetProvider(provider, model);
-    } catch (e) {
-      alert("Gagal sinkronisasi preferensi provider ke server: " + e);
-    }
+      // 1. Save local general settings
+      const provider = String(cfg.ai_provider || "ollama");
+      const model = String(cfg.ai_model || "");
 
-    // 3. Save or delete personal API key based on usePersonalKey check
-    if (provider === "anthropic" && usePersonalKey) {
-      if (personalKey.trim()) {
-        await window.go.main.App.SavePersonalKey(personalKey.trim());
+      await window.go.main.App.SaveSettings(cfg);
+
+      // 2. Set backend AI provider preferences via SetProvider API
+      try {
+        await window.go.main.App.SetProvider(provider, model);
+      } catch (e) {
+        alert("Gagal sinkronisasi preferensi provider ke server: " + e);
+      }
+
+      // 3. Save or delete personal API key based on usePersonalKey check
+      if (provider === "anthropic" && usePersonalKey) {
+        if (personalKey.trim()) {
+          await window.go.main.App.SavePersonalKey(personalKey.trim());
+        } else {
+          await window.go.main.App.DeletePersonalKey();
+        }
       } else {
         await window.go.main.App.DeletePersonalKey();
       }
-    } else {
-      await window.go.main.App.DeletePersonalKey();
-    }
 
-    onClose();
+      onClose();
+    } finally {
+      setSaving(false);
+    }
   };
 
   const download = async () => {
@@ -125,16 +158,14 @@ export function SettingsView({ onClose, onLogout }: { onClose: () => void; onLog
   };
 
   return (
-    <div className="settings-view futuristic-card">
-      <div className="corner-bracket top-left"></div>
-      <div className="corner-bracket top-right"></div>
-      <div className="corner-bracket bottom-left"></div>
-      <div className="corner-bracket bottom-right"></div>
-      <div className="glow-effect"></div>
-      
-      <h2>PENGATURAN SYSTEM //</h2>
+    <div className="settings-view card">
 
-      <div className="settings-tabs">
+      <h2>Pengaturan</h2>
+      <p className="settings-hint">
+        Klik tombol di kanan atas untuk kembali ke chat. Atau tekan <kbd>Esc</kbd>
+      </p>
+
+      <div className="settings-tabs" onClick={(e) => e.stopPropagation()}>
         <button
           className={`settings-tab-btn ${activeTab === "system" ? "active" : ""}`}
           onClick={() => setActiveTab("system")}
@@ -153,10 +184,16 @@ export function SettingsView({ onClose, onLogout }: { onClose: () => void; onLog
         >
           Agents ({agents.filter(a => a.enabled).length}/{agents.length})
         </button>
+        <button
+          className={`settings-tab-btn ${activeTab === "workers" ? "active" : ""}`}
+          onClick={() => setActiveTab("workers")}
+        >
+          Workers
+        </button>
       </div>
 
       {activeTab === "system" && (
-        <div className="tab-content" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+        <div className="tab-content">
           <label>
             Gateway URL
             <input value={String(cfg.gateway_url ?? "")} onChange={(e) => set("gateway_url", e.target.value)} />
@@ -169,9 +206,17 @@ export function SettingsView({ onClose, onLogout }: { onClose: () => void; onLog
             <input type="checkbox" checked={Boolean(cfg.tts_enabled)} onChange={(e) => set("tts_enabled", e.target.checked)} />
             Suara balasan (TTS)
           </label>
-          <div className="bin-status">
-            whisper-cli: {bins.whisper ? "✅" : "❌ (install whisper.cpp / isi path di bawah)"} · piper: {bins.piper ? "✅" : "❌"}
-          </div>
+          <label>
+            Jeda hening sebelum berhenti otomatis (ms)
+            <input
+              type="number"
+              min={500}
+              max={3000}
+              step={100}
+              value={Number(cfg.vad_silence_ms ?? 1200)}
+              onChange={(e) => set("vad_silence_ms", Number(e.target.value))}
+            />
+          </label>
           <label>
             Path whisper-cli
             <input value={String(cfg.whisper_bin ?? "")} onChange={(e) => set("whisper_bin", e.target.value)} />
@@ -192,78 +237,67 @@ export function SettingsView({ onClose, onLogout }: { onClose: () => void; onLog
       )}
 
       {activeTab === "provider" && (
-        <div className="tab-content" style={{ display: "flex", flexDirection: "column", gap: "1.2rem" }}>
-          <label>
-            AI Provider
-            <select
-              value={String(cfg.ai_provider ?? "ollama")}
-              onChange={(e) => set("ai_provider", e.target.value)}
-            >
-              <option value="ollama">Ollama (Lokal VPS)</option>
-              <option value="anthropic">Anthropic (Claude API)</option>
-            </select>
-          </label>
-
-          <label>
-            Model Name
-            <input
-              type="text"
-              placeholder={cfg.ai_provider === "anthropic" ? "claude-3-5-sonnet-20241022" : "qwen2.5-coder"}
-              value={String(cfg.ai_model ?? "")}
-              onChange={(e) => set("ai_model", e.target.value)}
-            />
-          </label>
-
-          {cfg.ai_provider === "anthropic" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.8rem", borderLeft: "2px solid #3b82f6", paddingLeft: "1rem", marginTop: "0.5rem" }}>
-              <label style={{ textTransform: "none", fontSize: "0.75rem" }}>
-                <input
-                  type="checkbox"
-                  checked={usePersonalKey}
-                  onChange={(e) => setUsePersonalKey(e.target.checked)}
-                />
-                Gunakan API Key Pribadi (Local Keychain)
-              </label>
-
-              {usePersonalKey && (
-                <label style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-                  Claude API Key
-                  <div className="password-input-container">
-                    <input
-                      type={showPersonalKey ? "text" : "password"}
-                      placeholder="sk-ant-..."
-                      value={personalKey}
-                      onChange={(e) => setPersonalKey(e.target.value)}
-                      style={{ background: "rgba(5, 8, 16, 0.8)", border: "1px solid var(--border-color)", borderRadius: "0.25rem", padding: "0.75rem 1rem", color: "white" }}
-                    />
-                    <button
-                      type="button"
-                      className="password-toggle-btn"
-                      onClick={() => setShowPersonalKey(!showPersonalKey)}
-                    >
-                      {showPersonalKey ? "[ HIDE ]" : "[ SHOW ]"}
-                    </button>
+        <div className="tab-content">
+          <div className="setting-section">
+            <h3>AI Provider</h3>
+            <p className="setting-description">
+              Pilih agent CLI yang tersedia di mesin. Aplikasi akan memanggil binary langsung tanpa API key.
+            </p>
+            <div className="provider-grid">
+              {[
+                { id: "codex", name: "OpenAI Codex" },
+                { id: "claude", name: "Anthropic Claude" },
+                { id: "glm", name: "GLM (Zhipu)" },
+              ].map((p) => (
+                <div
+                  key={p.id}
+                  className={`provider-option ${cfg.ai_provider === p.id ? "active" : ""}`}
+                  onClick={() => set("ai_provider", p.id)}
+                >
+                  <div className="provider-radio">
+                    {cfg.ai_provider === p.id && <div className="radio-dot" />}
                   </div>
-                  <span style={{ fontSize: "0.65rem", color: "#94a3b8", textTransform: "none", marginTop: "0.25rem" }}>
-                    * Disimpan aman di system keychain (OS) Anda, bukan di database VPS.
-                  </span>
-                </label>
-              )}
+                  <div className="provider-info">
+                    <span className="provider-name">{p.name}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {cfg.ai_provider && (
+            <div className="setting-section">
+              <h3>Konfigurasi {cfg.ai_provider}</h3>
+              <p className="setting-description">
+                Masukkan command yang digunakan untuk mengaktifkan agent ini di terminal.
+              </p>
+              <label>
+                <span>Command</span>
+                <input
+                  value={String(cfg[`${cfg.ai_provider}_cmd`] ?? "")}
+                  onChange={(e) => set(`${cfg.ai_provider}_cmd`, e.target.value)}
+                  placeholder={`contoh: ${cfg.ai_provider}`}
+                  className="provider-cmd-input"
+                />
+              </label>
+              <p className="field-hint">
+                Command ini akan dipanggil sebagai subprocess untuk menjalankan agent CLI.
+              </p>
             </div>
           )}
         </div>
       )}
 
       {activeTab === "agents" && (
-        <div className="tab-content" style={{ display: "flex", flexDirection: "column", gap: "0.8rem" }}>
-          <div style={{ fontSize: "0.75rem", color: "#94a3b8", textTransform: "none", marginBottom: "0.2rem" }}>
+        <div className="tab-content">
+          <div className="tab-hint">
             Hubungkan desktop ke agent yang aktif di local worker tanpa perlu mengunduh lagi.
           </div>
-          
+
           {loadingAgents && agents.length === 0 ? (
-            <div style={{ padding: "2rem", textAlign: "center", color: "#94a3b8" }}>Memuat daftar agent...</div>
+            <div className="tab-empty">Memuat daftar agent...</div>
           ) : agents.length === 0 ? (
-            <div style={{ padding: "2rem", textAlign: "center", color: "#94a3b8" }}>Tidak ada agent terdaftar.</div>
+            <div className="tab-empty">Tidak ada agent terdaftar.</div>
           ) : (
             <div className="agents-list">
               {agents.map((agent) => (
@@ -289,9 +323,74 @@ export function SettingsView({ onClose, onLogout }: { onClose: () => void; onLog
         </div>
       )}
 
+      {activeTab === "workers" && (
+        <div className="tab-content">
+          <div className="tab-hint">
+            Sesuaikan warna dan bentuk avatar untuk setiap tipe worker.
+          </div>
+          <div className="workers-list">
+            {DEFAULT_WORKERS.map((w) => {
+              const color = (cfg[workerKey(w.type, "color")] as string) || w.defaultColor;
+              const visible = (cfg[workerKey(w.type, "visible")] as boolean) ?? w.defaultVisible;
+              const shape = (cfg[workerKey(w.type, "shape")] as string) || w.defaultShape;
+
+              return (
+                <div className="worker-config-card" key={w.type}>
+                  <div className="worker-config-header">
+                    <div className="worker-config-name">
+                      <div className="worker-color-dot" style={{ backgroundColor: color }}></div>
+                      <span>{w.name}</span>
+                    </div>
+                    <label className="switch">
+                      <input
+                        type="checkbox"
+                        checked={visible}
+                        onChange={(e) => set(workerKey(w.type, "visible"), e.target.checked)}
+                      />
+                      <span className="slider"></span>
+                    </label>
+                  </div>
+                  <div className="worker-config-item">
+                    <span>Warna</span>
+                    <div className="color-picker-wrap">
+                      <input
+                        type="color"
+                        value={color}
+                        onChange={(e) => set(workerKey(w.type, "color"), e.target.value)}
+                        className="worker-color-picker"
+                      />
+                      <span className="color-hex">{color}</span>
+                    </div>
+                  </div>
+                  <div className="worker-config-item">
+                    <span>Bentuk</span>
+                    <div className="shape-selector">
+                      {SHAPE_OPTIONS.map((s) => (
+                        <button
+                          key={s}
+                          className={`shape-btn ${shape === s ? "active" : ""}`}
+                          onClick={() => set(workerKey(w.type, "shape"), s)}
+                          title={s}
+                        >
+                          {s === "magnifying-glass" ? "🔍" :
+                           s === "blueprint" ? "📐" :
+                           s === "container" ? "📦" :
+                           s === "server" ? "🖥" :
+                           "⚙"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="settings-actions">
-        <button onClick={save}>Simpan</button>
-        <button onClick={onClose}>Batal</button>
+        <button onClick={save} disabled={saving}>{saving ? "Menyimpan…" : "Simpan"}</button>
+        <button onClick={onClose} disabled={saving}>Batal</button>
         <button className="danger" onClick={onLogout}>Logout</button>
       </div>
     </div>

@@ -26,10 +26,11 @@ type Settings struct {
 	PiperVoicePath   string `json:"piper_voice_path"`
 	AIProvider       string `json:"ai_provider"`
 	AIModel          string `json:"ai_model"`
+	VadSilenceMs     int    `json:"vad_silence_ms"`
 }
 
 func defaults() Settings {
-	return Settings{GatewayURL: "http://localhost:8080", JarvisMode: true, TTSEnabled: true}
+	return Settings{GatewayURL: "http://localhost:8080", JarvisMode: true, TTSEnabled: true, VadSilenceMs: 1200}
 }
 
 func Load(dir string) (Settings, error) {
@@ -83,24 +84,34 @@ func DeleteToken() error {
 	return nil
 }
 
-func SavePersonalKey(key string) error {
-	if err := keyring.Set(keyringService, "personal_anthropic_key", key); err != nil {
-		return fmt.Errorf("keyring set personal key: %w", err)
-	}
-	return nil
-}
+const (
+	keyringAccountPersonal = "personal_anthropic_key"
+)
 
+// PersonalKey mengambil Anthropic API key personal dari keyring.
+// Returns empty string, nil jika belum tersimpan — caller wajib
+// tidak menganggap ini sebagai error.
 func PersonalKey() (string, error) {
-	key, err := keyring.Get(keyringService, "personal_anthropic_key")
+	key, err := keyring.Get(keyringService, keyringAccountPersonal)
+	if errors.Is(err, keyring.ErrNotFound) {
+		return "", nil
+	}
 	if err != nil {
-		return "", fmt.Errorf("keyring get personal key: %w", err)
+		return "", fmt.Errorf("keyring personal key: %w", err)
 	}
 	return key, nil
 }
 
+func SavePersonalKey(key string) error {
+	if err := keyring.Set(keyringService, keyringAccountPersonal, key); err != nil {
+		return fmt.Errorf("keyring save personal: %w", err)
+	}
+	return nil
+}
+
 func DeletePersonalKey() error {
-	if err := keyring.Delete(keyringService, "personal_anthropic_key"); err != nil {
-		return fmt.Errorf("keyring delete personal key: %w", err)
+	if err := keyring.Delete(keyringService, keyringAccountPersonal); err != nil {
+		return fmt.Errorf("keyring delete personal: %w", err)
 	}
 	return nil
 }

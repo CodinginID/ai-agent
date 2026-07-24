@@ -16,6 +16,23 @@ func TestLoadMissingFileReturnsDefaults(t *testing.T) {
 	if !s.JarvisMode || !s.TTSEnabled {
 		t.Fatalf("default JarvisMode/TTSEnabled harus true, got %+v", s)
 	}
+	if s.VadSilenceMs != 1200 {
+		t.Fatalf("default VadSilenceMs harus 1200, got %d", s.VadSilenceMs)
+	}
+}
+
+func TestSaveThenLoadPreservesVadSilenceMs(t *testing.T) {
+	dir := t.TempDir()
+	if err := Save(dir, Settings{GatewayURL: "http://x", VadSilenceMs: 900}); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	out, err := Load(dir)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if out.VadSilenceMs != 900 {
+		t.Fatalf("VadSilenceMs roundtrip: got %d", out.VadSilenceMs)
+	}
 }
 
 func TestSaveThenLoadRoundtrip(t *testing.T) {

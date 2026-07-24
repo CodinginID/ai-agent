@@ -7,7 +7,32 @@ export function computeRmsAmplitude(data: Uint8Array): number {
   return Math.min(1, Math.sqrt(sumSquares / data.length) * 4);
 }
 
+interface ActivePlayback {
+  audio: HTMLAudioElement;
+  cleanup: () => void;
+  resolve: () => void;
+}
+
+let active: ActivePlayback | null = null;
+
+// Menghentikan TTS yang sedang berjalan (barge-in). Aman & idempotent
+// dipanggil saat tidak ada playback. Promise speak() yang bersangkutan
+// resolve normal — bukan reject — agar tidak memunculkan error di chat.
+export function cancelSpeech(): void {
+  const p = active;
+  if (!p) return;
+  active = null;
+  try {
+    p.audio.pause();
+  } catch {
+    // pause tidak kritis; playback dianggap berhenti
+  }
+  p.cleanup();
+  p.resolve();
+}
+
 export async function speak(text: string, onAmplitude?: (level: number) => void): Promise<void> {
+  cancelSpeech(); // hentikan ucapan sebelumnya sebelum mulai yang baru
   const b64 = await window.go.main.App.Speak(text);
   const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
   const url = URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
@@ -32,15 +57,42 @@ export async function speak(text: string, onAmplitude?: (level: number) => void)
     rafId = requestAnimationFrame(tick);
   }
 
-  try {
-    await new Promise<void>((resolve, reject) => {
-      audio.addEventListener("ended", () => resolve(), { once: true });
-      audio.addEventListener("error", () => reject(new Error("Playback gagal")), { once: true });
-      audio.play().catch(reject);
-    });
-  } finally {
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
     if (rafId !== null) cancelAnimationFrame(rafId);
-    if (audioCtx) await audioCtx.close();
+    if (audioCtx) void audioCtx.close();
     URL.revokeObjectURL(url);
-  }
+  };
+
+  await new Promise<void>((resolve, reject) => {
+    active = { audio, cleanup, resolve };
+    const clearActive = () => {
+      if (active?.audio === audio) active = null;
+    };
+    audio.addEventListener(
+      "ended",
+      () => {
+        cleanup();
+        clearActive();
+        resolve();
+      },
+      { once: true },
+    );
+    audio.addEventListener(
+      "error",
+      () => {
+        cleanup();
+        clearActive();
+        reject(new Error("Playback gagal"));
+      },
+      { once: true },
+    );
+    audio.play().catch((err) => {
+      cleanup();
+      clearActive();
+      reject(err);
+    });
+  });
 }

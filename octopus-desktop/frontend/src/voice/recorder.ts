@@ -1,3 +1,5 @@
+import { VadDetector, type VadParams } from "./vad";
+
 export function encodeWAV(samples: Float32Array, sampleRate: number): ArrayBuffer {
   const buf = new ArrayBuffer(44 + samples.length * 2);
   const view = new DataView(buf);
@@ -26,6 +28,13 @@ export function encodeWAV(samples: Float32Array, sampleRate: number): ArrayBuffe
 
 const TARGET_RATE = 16000;
 
+export function computeFrameRms(frame: Float32Array): number {
+  if (frame.length === 0) return 0;
+  let sumSquares = 0;
+  for (let i = 0; i < frame.length; i++) sumSquares += frame[i] * frame[i];
+  return Math.sqrt(sumSquares / frame.length);
+}
+
 function downsample(input: Float32Array, fromRate: number): Float32Array {
   if (fromRate === TARGET_RATE) return input;
   const ratio = fromRate / TARGET_RATE;
@@ -34,20 +43,48 @@ function downsample(input: Float32Array, fromRate: number): Float32Array {
   return out;
 }
 
+export class MicRecorderError extends Error {
+  constructor(public type: "permission-denied" | "unavailable", message: string) {
+    super(message);
+    this.name = "MicRecorderError";
+  }
+}
+
+export interface MicRecorderOptions {
+  vad?: VadParams;
+  onSpeechEnd?: () => void;
+}
+
 export class MicRecorder {
   private ctx: AudioContext | null = null;
   private stream: MediaStream | null = null;
   private chunks: Float32Array[] = [];
   private node: ScriptProcessorNode | null = null;
 
-  async start(): Promise<void> {
-    this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  async start(opts: MicRecorderOptions = {}): Promise<void> {
+    try {
+      this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err: any) {
+      const name = err?.name ?? "";
+      if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+        throw new MicRecorderError("permission-denied", "Izin mikrofon ditolak");
+      }
+      throw new MicRecorderError("unavailable", "Mikrofon tidak tersedia");
+    }
     this.ctx = new AudioContext();
     const src = this.ctx.createMediaStreamSource(this.stream);
     this.node = this.ctx.createScriptProcessor(4096, 1, 1);
     this.chunks = [];
+
+    const vad = opts.vad ? new VadDetector(opts.vad) : null;
+    let ended = false;
     this.node.onaudioprocess = (e) => {
-      this.chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+      const frame = new Float32Array(e.inputBuffer.getChannelData(0));
+      this.chunks.push(frame);
+      if (vad && !ended && vad.feed(computeFrameRms(frame), performance.now())) {
+        ended = true;
+        opts.onSpeechEnd?.();
+      }
     };
     src.connect(this.node);
     this.node.connect(this.ctx.destination);

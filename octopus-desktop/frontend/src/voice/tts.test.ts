@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { computeRmsAmplitude, speak } from "./tts";
+import { cancelSpeech, computeRmsAmplitude, speak } from "./tts";
 
 describe("computeRmsAmplitude", () => {
   it("mengembalikan 0 untuk data hening (semua 128)", () => {
@@ -8,6 +8,13 @@ describe("computeRmsAmplitude", () => {
 
   it("meng-clamp hasil ke maksimum 1", () => {
     expect(computeRmsAmplitude(new Uint8Array(8).fill(255))).toBe(1);
+  });
+});
+
+describe("cancelSpeech", () => {
+  it("tidak melempar bila tidak ada playback aktif", () => {
+    expect(() => cancelSpeech()).not.toThrow();
+    expect(() => cancelSpeech()).not.toThrow();
   });
 });
 

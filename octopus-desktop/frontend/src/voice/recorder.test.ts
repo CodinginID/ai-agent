@@ -1,5 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { encodeWAV } from "./recorder";
+import { computeFrameRms, encodeWAV } from "./recorder";
+
+describe("computeFrameRms", () => {
+  it("mengembalikan 0 untuk frame senyap", () => {
+    expect(computeFrameRms(new Float32Array(1024))).toBe(0);
+  });
+
+  it("frame keras menghasilkan RMS di atas threshold VAD default", () => {
+    const frame = new Float32Array(1024).fill(0.5);
+    expect(computeFrameRms(frame)).toBeGreaterThan(0.02);
+  });
+
+  it("frame kosong tidak NaN", () => {
+    expect(computeFrameRms(new Float32Array(0))).toBe(0);
+  });
+});
 
 describe("encodeWAV", () => {
   it("menghasilkan header RIFF/WAVE dengan ukuran benar", () => {
