@@ -1,13 +1,11 @@
 {
   "app_name": "Octopus",
   "loading": "Loading…",
-
   "login_connect": "Connect your gateway",
   "login_connect_btn": "Connect",
   "login_authenticating": "AUTHENTICATING VIA BROWSER…",
   "login_verification_code": "VERIFICATION CODE:",
   "login_gateway_unreachable": "Gateway not reachable: {{err}}",
-
   "settings_title": "Settings",
   "settings_hint": "Click the button in the top-right to go back to chat. Or press <kbd>Esc</kbd>",
   "tab_system": "General",
@@ -16,7 +14,6 @@
   "tab_provider": "AI Provider",
   "tab_agents": "Agents",
   "tab_workers": "Workers",
-
   "setting_gateway_url": "Gateway URL",
   "setting_jarvis_mode": "Jarvis Mode (auto-send + read answers aloud)",
   "setting_tts_enabled": "Reply voice (TTS)",
@@ -27,7 +24,6 @@
   "setting_save": "Save",
   "setting_cancel": "Cancel",
   "setting_logout": "Logout",
-
   "setting_save_failed": "Failed to sync provider preferences to server: {{err}}",
   "setting_save_personal_key": "Personal API Key (kept in keychain)",
   "setting_use_personal_key": "Use my personal API key",
@@ -36,41 +32,34 @@
   "setting_provider_cmd_hint": "This command will be called as a subprocess to run the CLI agent.",
   "setting_provider_cmd_placeholder": "e.g. {{provider}}",
   "setting_personal_key_save_failed": "Failed to save personal API key: {{err}}",
-
   "agent_tab_hint": "Connect desktop to agents running on the local worker without needing to download anything.",
   "agent_loading": "Loading agent list…",
   "agent_none": "No agents registered.",
   "agent_connected": "CONNECTED",
   "agent_disconnected": "NOT CONNECTED",
   "agent_toggle_failed": "Failed to change agent integration status: {{err}}",
-
   "worker_tab_hint": "Customize color and shape for each worker type.",
   "worker_color": "Color",
   "worker_shape": "Shape",
-
   "language_label": "Language",
   "language_english": "English",
   "language_indonesian": "Bahasa Indonesia",
   "language_english_code": "EN",
   "language_indonesian_code": "ID",
-
   "history_title": "History",
   "history_close": "Close history",
   "history_empty": "No conversations yet.",
   "history_you": "You",
   "history_bot": "Octopus",
-
   "chat_input_placeholder": "Type a command… (or hold the mic button)",
   "chat_input_placeholder_dock": "Type a command… or click the orb to speak",
   "chat_send": "Send",
   "chat_messages_aria": "Chat message history",
   "chat_write_aria": "Write message",
-
   "orb_hint_idle": "Click to speak",
   "orb_hint_listening": "Listening…",
   "orb_hint_thinking": "Thinking…",
   "orb_hint_speaking": "Click to interrupt",
-
   "voice_mic_listening": "Listening…",
   "voice_mic_recording": "Click to stop (auto-stops when silent)",
   "voice_mic_transcribing": "Transcribing…",
@@ -84,24 +73,24 @@
   "voice_info_mic_unavailable": "Microphone not available. Use text input.",
   "voice_info_transcribe_failed": "Transcription failed: {{err}}",
   "voice_jarvis_label": "Jarvis",
-
   "avatar_aria_working": "working",
   "avatar_aria_error": "experiencing an error",
   "avatar_aria_idle": "idle",
   "avatar_title": "{{workerName}} - {{task}}",
-
   "data_panel_title": "Results",
   "data_panel_count": "Results ({{count}})",
   "data_panel_close": "Close results panel",
   "data_panel_approval": "Approval: {{summary}}",
   "data_panel_error": "Error",
-
   "card_output_raw": "raw output",
   "card_requires_approval": "Requires approval",
   "card_approve": "Approve",
   "card_reject": "Reject",
   "card_retry": "Try again",
-
   "chat_retry_aria": "Retry",
-  "chat_send_aria": "Send message"
+  "chat_send_aria": "Send message",
+  "orb_state_idle": "Ready",
+  "orb_state_listening": "Listening…",
+  "orb_state_thinking": "Thinking…",
+  "orb_state_speaking": "Speaking"
 }

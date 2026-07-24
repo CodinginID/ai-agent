@@ -1,13 +1,11 @@
 {
   "app_name": "Octopus",
   "loading": "Memuat…",
-
   "login_connect": "Hubungkan gateway-nya",
   "login_connect_btn": "Hubungkan",
   "login_authenticating": "MENGAUTENTIKASI VIA BROWSER…",
   "login_verification_code": "KODE VERIFIKASI:",
   "login_gateway_unreachable": "Gateway tidak terjangkau: {{err}}",
-
   "settings_title": "Pengaturan",
   "settings_hint": "Klik tombol di kanan atas untuk kembali ke chat. Atau tekan <kbd>Esc</kbd>",
   "tab_system": "Umum",
@@ -16,7 +14,6 @@
   "tab_provider": "AI Provider",
   "tab_agents": "Agents",
   "tab_workers": "Workers",
-
   "setting_gateway_url": "Gateway URL",
   "setting_jarvis_mode": "Mode Jarvis (kirim otomatis + bacakan jawaban)",
   "setting_tts_enabled": "Suara balasan (TTS)",
@@ -27,7 +24,6 @@
   "setting_save": "Simpan",
   "setting_cancel": "Batal",
   "setting_logout": "Logout",
-
   "setting_save_failed": "Gagal sinkronisasi preferensi provider ke server: {{err}}",
   "setting_save_personal_key": "Kunci API Personal (disimpan di keychain)",
   "setting_use_personal_key": "Gunakan kunci API saya sendiri",
@@ -36,41 +32,34 @@
   "setting_provider_cmd_hint": "Command ini akan dipanggil sebagai subprocess untuk menjalankan agent CLI.",
   "setting_provider_cmd_placeholder": "contoh: {{provider}}",
   "setting_personal_key_save_failed": "Gagal menyimpan kunci API personal: {{err}}",
-
   "agent_tab_hint": "Hubungkan desktop ke agent yang aktif di local worker tanpa perlu mengunduh lagi.",
   "agent_loading": "Memuat daftar agent...",
   "agent_none": "Tidak ada agent terdaftar.",
   "agent_connected": "TERHUBUNG",
   "agent_disconnected": "TIDAK TERHUBUNG",
   "agent_toggle_failed": "Gagal merubah status integrasi agent: {{err}}",
-
   "worker_tab_hint": "Sesuaikan warna dan bentuk avatar untuk setiap tipe worker.",
   "worker_color": "Warna",
   "worker_shape": "Bentuk",
-
   "language_label": "Bahasa",
   "language_english": "English",
   "language_indonesian": "Bahasa Indonesia",
   "language_english_code": "EN",
   "language_indonesian_code": "ID",
-
   "history_title": "Riwayat",
   "history_close": "Tutup riwayat",
   "history_empty": "Belum ada percakapan.",
   "history_you": "Anda",
   "history_bot": "Octopus",
-
   "chat_input_placeholder": "Ketik perintah… (atau tahan tombol mic)",
   "chat_input_placeholder_dock": "Ketik perintah… atau klik orb untuk bicara",
   "chat_send": "Kirim",
   "chat_messages_aria": "Riwayat pesan chat",
   "chat_write_aria": "Tulis pesan",
-
   "orb_hint_idle": "Klik untuk bicara",
   "orb_hint_listening": "Mendengarkan…",
   "orb_hint_thinking": "Berpikir…",
   "orb_hint_speaking": "Klik untuk menyela",
-
   "voice_mic_listening": "Mendengarkan…",
   "voice_mic_recording": "Klik untuk berhenti (otomatis berhenti saat diam)",
   "voice_mic_transcribing": "Mentranskripsi…",
@@ -84,24 +73,24 @@
   "voice_info_mic_unavailable": "Mikrofon tidak tersedia. Gunakan input teks.",
   "voice_info_transcribe_failed": "Transkripsi gagal: {{err}}",
   "voice_jarvis_label": "Jarvis",
-
   "avatar_aria_working": "sedang bekerja",
   "avatar_aria_error": "mengalami error",
   "avatar_aria_idle": "idle",
   "avatar_title": "{{workerName}} - {{task}}",
-
   "data_panel_title": "Hasil",
   "data_panel_count": "Hasil ({{count}})",
   "data_panel_close": "Tutup panel hasil",
   "data_panel_approval": "Persetujuan: {{summary}}",
   "data_panel_error": "Error",
-
   "card_output_raw": "output mentah",
   "card_requires_approval": "Butuh persetujuan",
   "card_approve": "Approve",
   "card_reject": "Reject",
   "card_retry": "Coba lagi",
-
   "chat_retry_aria": "Coba lagi",
-  "chat_send_aria": "Kirim pesan"
+  "chat_send_aria": "Kirim pesan",
+  "orb_state_idle": "Siap",
+  "orb_state_listening": "Mendengarkan…",
+  "orb_state_thinking": "Berpikir…",
+  "orb_state_speaking": "Menjawab"
 }

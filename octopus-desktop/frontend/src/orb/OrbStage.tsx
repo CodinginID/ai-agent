@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { AiOrb } from "./AiOrb";
+import { PlasmaOrb } from "./PlasmaOrb";
+import { PLASMA_STATES } from "./plasma";
 import type { OrbState } from "./orbState";
 import { useI18n } from "../i18n/useI18n";
 
@@ -18,8 +19,8 @@ const HINT: Record<OrbState, string> = {
   speaking: "orb_hint_speaking",
 };
 
-// Panggung orb: orb besar di tengah (klik = mulai listen / barge-in) + cincin
-// HUD berputar + lapisan respons ephemeral.
+// Panggung orb: orb plasma besar di tengah (klik = mulai listen / barge-in),
+// hint saat hover, label state mono, lalu lapisan respons ephemeral.
 export function OrbStage({ state, amplitude = 0, paused = false, onActivate, children }: OrbStageProps) {
   const { t } = useI18n();
   return (
@@ -37,10 +38,10 @@ export function OrbStage({ state, amplitude = 0, paused = false, onActivate, chi
           }
         }}
       >
-        <div className="orb-hud-ring" aria-hidden="true" />
-        <AiOrb state={state} amplitude={amplitude} paused={paused} />
+        <PlasmaOrb state={state} amplitude={amplitude} paused={paused} />
+        <span className="orb-hint">{t(HINT[state])}</span>
       </div>
-      <span className="orb-hint">{t(HINT[state])}</span>
+      <div className="state-label">{t(PLASMA_STATES[state].labelKey)}</div>
       {children}
     </div>
   );
