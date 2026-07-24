@@ -1,5 +1,30 @@
 services:
 
+  # ── Postgres + pgvector: durable control-plane DB + RAG vector store ─────────
+  # Opsional via profile `postgres`. Tanpa profil ini bot fallback ke SQLite
+  # (data/control_plane.sqlite3) — cukup untuk single-node, tapi RAG pakai
+  # in-memory store (hilang saat restart). Aktifkan untuk RAG persisten:
+  #   docker compose --profile postgres up -d
+  # lalu set DATABASE_URL di .env ke baris postgres (lihat .env.example).
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: aiagent_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-octopus}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-octopus}
+      POSTGRES_DB: ${POSTGRES_DB:-octopus}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    profiles:
+      - postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-octopus} -d ${POSTGRES_DB:-octopus}"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+
   # ── Redis: shared state untuk worker tunnel + agent context ──────────────────
   # Privat di network internal backend (tidak ekspos ke host). Worker user
   # talk ke backend via WS; backend yang akses Redis.
@@ -64,7 +89,11 @@ services:
   # build: dipakai saat `docker compose up --build` (developer lokal)
   bot:
     image: ghcr.io/codinginid/ai-agent:latest
-    build: .
+    build:
+      context: .
+      args:
+        # Baked into GET /health. Override with APP_VERSION env when building.
+        APP_VERSION: ${APP_VERSION:-dev}
     container_name: aiagent_bot
     env_file: .env
     environment:
@@ -129,7 +158,9 @@ services:
       # supaya placeholder ke-expand. Default 8080 kalau .env tidak set.
       PORT: ${PORT:-8080}
     ports:
-      - "${PORT:-8080}:${PORT:-8080}"
+      # Host 8090 dipakai karena 8080 sudah dipegang code-server (vps-ali tunnel).
+      # cloudflared meneruskan octopus.flowbiz.id → 127.0.0.1:8090 → caddy:8080 → bot:8080.
+      - "${CADDY_HOST_PORT:-8090}:${PORT:-8080}"
       # Uncomment dua baris di bawah kalau DOMAIN diset di .env (mode HTTPS):
       # - "80:80"
       # - "443:443"
@@ -149,6 +180,8 @@ services:
       start_period: 10s
 
 volumes:
+  postgres_data:
+    name: aiagent_postgres_data
   ollama_data:
     name: aiagent_ollama_data
   redis_data:

@@ -71,6 +71,12 @@ class Settings:
     agent_role_engineer: str
     agent_role_architect: str
     agent_role_reviewer: str
+    # Worker-delegation role → agent map (orchestrator/router.py). Distinct from
+    # the prompt-workflow roles above (those drive PromptArchitect/Engineer/Reviewer).
+    delegate_role_engineer: str
+    delegate_role_reviewer: str
+    delegate_role_research: str
+    delegate_role_infra: str
 
     enable_terminal_tools: bool
     terminal_timeout: int
@@ -175,6 +181,10 @@ def load_settings() -> Settings:
         agent_role_engineer=os.getenv("AGENT_ROLE_ENGINEER", "codex").strip().lower(),
         agent_role_architect=os.getenv("AGENT_ROLE_ARCHITECT", "glm").strip().lower(),
         agent_role_reviewer=os.getenv("AGENT_ROLE_REVIEWER", "claude").strip().lower(),
+        delegate_role_engineer=os.getenv("DELEGATE_ROLE_ENGINEER", "claude").strip().lower(),
+        delegate_role_reviewer=os.getenv("DELEGATE_ROLE_REVIEWER", "glm").strip().lower(),
+        delegate_role_research=os.getenv("DELEGATE_ROLE_RESEARCH", "codex").strip().lower(),
+        delegate_role_infra=os.getenv("DELEGATE_ROLE_INFRA", "echo").strip().lower(),
         enable_terminal_tools=_env_bool("ENABLE_TERMINAL_TOOLS"),
         terminal_timeout=int(os.getenv("TERMINAL_TIMEOUT", "20")),
         terminal_workdir=terminal_workdir,

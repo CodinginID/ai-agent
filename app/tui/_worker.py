@@ -110,15 +110,16 @@ async def _spawn_streaming(
         yield {"type": "error", "message": f"{type(exc).__name__}: {exc}"}
 
 
-async def _agent_echo(prompt: str) -> AsyncIterator[dict[str, Any]]:
+async def _agent_echo(prompt: str, model: str = "") -> AsyncIterator[dict[str, Any]]:
     """Mock agent — balas prompt apa adanya, 2 chunks untuk test stream."""
-    yield {"type": "chunk", "text": f"[echo] received: {prompt}\n"}
+    label = f"[echo:{model}]" if model else "[echo]"
+    yield {"type": "chunk", "text": f"{label} received: {prompt}\n"}
     await asyncio.sleep(0.1)
     yield {"type": "chunk", "text": "[echo] done.\n"}
     yield {"type": "done", "exit_code": 0, "summary": f"echoed {len(prompt)} chars"}
 
 
-async def _agent_codex(prompt: str) -> AsyncIterator[dict[str, Any]]:
+async def _agent_codex(prompt: str, model: str = "") -> AsyncIterator[dict[str, Any]]:
     if not settings.enable_codex:
         yield {"type": "error", "message": "Codex belum aktif. Set ENABLE_CODEX=true di .env."}
         return
@@ -136,15 +137,16 @@ async def _agent_codex(prompt: str) -> AsyncIterator[dict[str, Any]]:
         "--ephemeral",
         "--color", "never",
     ]
-    if settings.codex_model:
-        args.extend(["--model", settings.codex_model])
+    chosen_model = model or settings.codex_model
+    if chosen_model:
+        args.extend(["--model", chosen_model])
     args.append(prompt)
 
     async for event in _spawn_streaming(args, timeout_sec=settings.agent_timeout):
         yield event
 
 
-async def _agent_claude(prompt: str) -> AsyncIterator[dict[str, Any]]:
+async def _agent_claude(prompt: str, model: str = "") -> AsyncIterator[dict[str, Any]]:
     if not settings.enable_claude:
         yield {"type": "error", "message": "Claude belum aktif. Set ENABLE_CLAUDE=true di .env."}
         return
@@ -164,15 +166,16 @@ async def _agent_claude(prompt: str) -> AsyncIterator[dict[str, Any]]:
         args.extend(["--tools", settings.claude_tools])
     if settings.claude_allowed_tools and settings.claude_allowed_tools.lower() != "default":
         args.extend(["--allowedTools", settings.claude_allowed_tools])
-    if settings.claude_model:
-        args.extend(["--model", settings.claude_model])
+    chosen_model = model or settings.claude_model
+    if chosen_model:
+        args.extend(["--model", chosen_model])
     args.append(prompt)
 
     async for event in _spawn_streaming(args, timeout_sec=settings.agent_timeout):
         yield event
 
 
-async def _agent_glm(prompt: str) -> AsyncIterator[dict[str, Any]]:
+async def _agent_glm(prompt: str, model: str = "") -> AsyncIterator[dict[str, Any]]:
     if not settings.enable_glm:
         yield {"type": "error", "message": "GLM belum aktif. Set ENABLE_GLM=true di .env."}
         return
@@ -182,8 +185,9 @@ async def _agent_glm(prompt: str) -> AsyncIterator[dict[str, Any]]:
         return
 
     args = [bin_path]
-    if settings.glm_model:
-        args.extend(["--model", settings.glm_model])
+    chosen_model = model or settings.glm_model
+    if chosen_model:
+        args.extend(["--model", chosen_model])
     args.append(prompt)
 
     async for event in _spawn_streaming(args, timeout_sec=settings.agent_timeout):
@@ -203,6 +207,7 @@ async def _execute_agent(
     job_id: str,
     agent: str,
     prompt: str,
+    model: str = "",
 ) -> None:
     """Jalankan agent → stream chunk via WS → akhiri dengan job_done/job_error."""
     runner = _AGENTS.get(agent)
@@ -215,7 +220,7 @@ async def _execute_agent(
         return
 
     try:
-        async for event in runner(prompt):
+        async for event in runner(prompt, model):
             kind = event.get("type", "")
             if kind == "chunk":
                 await ws.send(json.dumps({
@@ -272,8 +277,9 @@ async def _handle_message(ws: websockets.ClientConnection, raw: str) -> None:
         job_id = str(msg.get("job_id", ""))
         agent = str(msg.get("agent", ""))
         prompt = str(msg.get("prompt", ""))
+        model = str(msg.get("model", ""))
         if job_id and agent:
-            task = asyncio.create_task(_execute_agent(ws, job_id, agent, prompt))
+            task = asyncio.create_task(_execute_agent(ws, job_id, agent, prompt, model))
             _background_tasks.add(task)
             task.add_done_callback(_background_tasks.discard)
     else:

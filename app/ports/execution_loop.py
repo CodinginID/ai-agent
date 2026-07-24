@@ -15,5 +15,5 @@ if TYPE_CHECKING:
 
 class ExecutionLoopPort(Protocol):
     def run(
-        self, prompt: str, history: str = "", *, ai: AIProvider | None = None
+        self, prompt: str, history: str = "", user_id: str = "", *, ai: AIProvider | None = None
     ) -> Iterator[Any]: ...

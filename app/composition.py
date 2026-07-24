@@ -28,6 +28,8 @@ from app.adapters.knowledge_store_memory import InMemoryKnowledgeStore
 from app.adapters.ollama import OllamaAdapter
 from app.adapters.rate_limit import RedisRateLimiter
 from app.adapters.redis_client import get_sync_client
+from app.adapters.worker_dispatch import WorkerDispatchAdapter
+from app.agents.pm import PMAgent
 from app.config import BASE_DIR, settings
 from app.domain.use_cases import HandleMessageUseCase
 from app.executor.actions import ActionRegistry
@@ -37,6 +39,7 @@ from app.intents.parser import IntentParser
 from app.memory.context_store import ProjectContextStore
 from app.orchestrator.approval import PendingPlanStore
 from app.orchestrator.plans import PlanGenerator
+from app.orchestrator.task_runner import TaskRunner
 from app.orchestrator.workflow import WorkflowOrchestrator
 from app.ports.embedder import Embedder
 from app.ports.knowledge_store import KnowledgeStore
@@ -87,6 +90,7 @@ def _execution_loop() -> ExecutionLoop:
         ai=_ollama(),
         context_collector=_context_collector(),
         working_dir=settings.project_dir,
+        worker_dispatch=WorkerDispatchAdapter(),
     )
 
 
@@ -181,6 +185,30 @@ def _provider_resolver() -> Any:
     from app.adapters.user_provider_config import UserProviderConfigRepository
     repo = UserProviderConfigRepository(_session_factory())
     return DbAIProviderResolver(repo, settings)
+
+
+def build_task_runner() -> TaskRunner:
+    """Compose the PM→Issue→Worker→Close task runner (orchestrator end-to-end).
+
+    Raises ``GitHubUnavailableError`` when GITHUB_TOKEN/REPO are unset — the
+    caller (endpoint) maps that to a 503 so the failure is explicit, not silent.
+    """
+    from app.adapters.github import GitHubAdapter
+    from app.adapters.task_memory import RagTaskMemory
+    from app.adapters.task_observer import LoggingTaskObserver
+
+    github = GitHubAdapter(token=settings.github_token, repo=settings.github_repo)
+    return TaskRunner(
+        pm=PMAgent(ai_provider=_ollama()),
+        github=github,
+        dispatch=WorkerDispatchAdapter(),
+        observer=LoggingTaskObserver(),
+        memory=RagTaskMemory(
+            embedder=_embedder(),
+            store=_knowledge_store(),
+            recall_k=settings.rag_recall_k,
+        ),
+    )
 
 
 def build_use_case() -> HandleMessageUseCase:

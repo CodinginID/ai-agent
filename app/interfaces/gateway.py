@@ -9,8 +9,11 @@ from app.interfaces.admin import router as admin_router
 from app.interfaces.auth import router as auth_router
 from app.interfaces.chat import router as chat_router
 from app.interfaces.context import router as context_router
+from app.interfaces.dashboard import router as dashboard_router
+from app.interfaces.health import router as health_router
 from app.interfaces.provider import router as provider_router
 from app.interfaces.skills import router as skills_router
+from app.interfaces.tasks import router as tasks_router
 from app.interfaces.worker_ws import router as worker_ws_router
 from app.interfaces.workflow import router as workflow_router
 
@@ -49,33 +52,8 @@ app.include_router(chat_router)
 app.include_router(context_router)
 app.include_router(provider_router)
 app.include_router(skills_router)
+app.include_router(tasks_router)
 app.include_router(workflow_router)
 app.include_router(worker_ws_router)
-
-
-@app.get("/health")
-async def health() -> dict[str, object]:
-    """Public health endpoint — git HEAD, compose services, app status."""
-    import asyncio
-
-    from app.config import settings
-    from app.executor.runner import run_safe
-
-    def _check() -> dict[str, object]:
-        git_head, _ = run_safe(
-            ["git", "rev-parse", "--short", "HEAD"],
-            cwd=settings.project_dir,
-            timeout=5,
-        )
-        _, compose_rc = run_safe(
-            ["docker", "compose", "ps"],
-            cwd=settings.project_dir,
-            timeout=5,
-        )
-        return {
-            "status": "ok",
-            "git_head": git_head.strip(),
-            "compose": "ok" if compose_rc == 0 else "unavailable",
-        }
-
-    return await asyncio.to_thread(_check)
+app.include_router(health_router)
+app.include_router(dashboard_router)

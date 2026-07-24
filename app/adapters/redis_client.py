@@ -114,6 +114,16 @@ def k_job_stream(job_id: str) -> str:
     return f"job:stream:{job_id}"
 
 
+def k_task_stream(user_id: str) -> str:
+    """Durable task-step queue (Redis Stream) per user — GAP-2."""
+    return f"task:stream:{user_id}"
+
+
+def k_task_events() -> str:
+    """Stream of task lifecycle events for the /tasks board — PR-5."""
+    return "task:events"
+
+
 def k_agent_ctx(session_id: str) -> str:
     return f"agent:ctx:{session_id}"
 

@@ -148,6 +148,27 @@ async def _call_core(user_email: str, user_text: str) -> tuple[str, list[str]]:
 
     return final_text, status_log
 
+async def _run_task(user_email: str, request_text: str) -> dict | None:
+    """POST ke Core /tasks/run. Return TaskResult dict atau None kalau gagal."""
+    headers = {
+        "Authorization": f"Bearer {ADMIN_TOKEN}",
+        "Content-Type": "application/json",
+    }
+    payload = {"request": request_text, "as_email": user_email}
+    try:
+        async with httpx.AsyncClient(timeout=300) as client:
+            resp = await client.post(
+                f"{CORE_URL}/tasks/run", headers=headers, json=payload
+            )
+        if resp.status_code == 503:
+            return {"_unavailable": resp.json().get("detail", "task runner unavailable")}
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as exc:
+        logger.warning("run_task failed: %s", exc)
+        return None
+
+
 # ── Handlers ──────────────────────────────────────────────────────────────────
 
 _NOT_PAIRED_MSG = (
@@ -204,6 +225,70 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(_NOT_PAIRED_MSG)
 
 
+async def task_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/task <request> — jalankan orchestrator: PM→Issue→Worker→Close."""
+    assert update.message is not None
+    user = update.effective_user
+    if user is None:
+        return
+
+    request_text = " ".join(context.args or []).strip()
+    if not request_text:
+        await update.message.reply_text(
+            "Pakai format: `/task <deskripsi tugas>`\n\n"
+            "Contoh: `/task tambah endpoint health check dengan test`",
+            parse_mode="Markdown",
+        )
+        return
+
+    user_info = await _resolve_user(user.id)
+    if user_info is None:
+        await update.message.reply_text(_NOT_PAIRED_MSG)
+        return
+    email = user_info.get("email", "")
+    if not email:
+        await update.message.reply_text("❌ Akun belum punya email — coba pair ulang.")
+        return
+
+    status_msg = await update.message.reply_text(
+        "🧩 Merencanakan task & membuat GitHub Issue..."
+    )
+
+    result = await _run_task(email, request_text)
+    if result is None:
+        await status_msg.edit_text("❌ Gagal menjalankan task (Core tidak merespons).")
+        return
+    if result.get("_unavailable"):
+        await status_msg.edit_text(f"⚠️ {result['_unavailable']}")
+        return
+
+    lines: list[str] = []
+    issue_url = result.get("issue_url", "")
+    issue_number = result.get("issue_number")
+    if issue_number:
+        lines.append(f"📋 Issue [#{issue_number}]({issue_url})")
+    summary = result.get("summary", "")
+    if summary:
+        lines.append(f"_{summary}_")
+    lines.append("")
+    for o in result.get("outcomes", []):
+        mark = "✅" if o.get("ok") else "❌"
+        lines.append(f"{mark} {o.get('order')}. {o.get('description')} ({o.get('role')})")
+    lines.append("")
+    if result.get("closed"):
+        lines.append("🎉 Semua step selesai — issue ditutup.")
+    elif not result.get("outcomes"):
+        lines.append(f"📭 {result.get('note', 'tidak ada step untuk dijalankan')}")
+    else:
+        lines.append(f"⏸️ {result.get('note', 'berhenti')} — issue tetap terbuka untuk resume.")
+
+    reply = "\n".join(lines)
+    if len(reply) > MAX_TELEGRAM_CHARS:
+        reply = reply[:MAX_TELEGRAM_CHARS] + "\n…(dipotong)"
+    with contextlib.suppress(Exception):
+        await status_msg.edit_text(reply, parse_mode="Markdown")
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message or not update.message.text:
         return
@@ -251,6 +336,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 def build_app() -> Application:
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("task", task_cmd))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     return app
 
