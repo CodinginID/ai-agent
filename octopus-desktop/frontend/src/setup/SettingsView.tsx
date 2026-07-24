@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
+import { useI18n } from "../i18n/useI18n";
 
 type Cfg = {
   gateway_url?: string;
@@ -9,6 +10,7 @@ type Cfg = {
   ai_provider?: string;
   ai_model?: string;
   vad_silence_ms?: number;
+  language?: string;
 } & Record<string, string | boolean | number>;
 
 interface WorkerDef {
@@ -39,37 +41,31 @@ interface Agent {
 const workerKey = (type: string, field: "color" | "visible" | "shape") => `worker_${type}_${field}`;
 
 export function SettingsView({ onClose, onLogout }: { onClose: () => void; onLogout: () => void }) {
-  const [activeTab, setActiveTab] = useState<
-    "system" | "voice" | "appearance" | "provider" | "agents" | "workers"
-  >("system");
+  const { t, lang, setLang } = useI18n();
+  const [activeTab, setActiveTab] = useState<"system" | "voice" | "appearance" | "provider" | "agents" | "workers">("system");
   const [saving, setSaving] = useState(false);
   const [cfg, setCfg] = useState<Cfg>({});
   const [progress, setProgress] = useState<{ name: string; done: number; total: number } | null>(null);
   const [downloading, setDownloading] = useState(false);
 
-  // AI Provider state
   const [personalKey, setPersonalKey] = useState("");
   const [usePersonalKey, setUsePersonalKey] = useState(false);
-  const [showPersonalKey, setShowPersonalKey] = useState(false);
 
-  // Agents state
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loadingAgents, setLoadingAgents] = useState(false);
 
   useEffect(() => {
-    // Get general settings
     window.go.main.App.GetSettings().then((settings) => {
       setCfg(settings as unknown as Cfg);
+      const savedLang = (settings as { language?: string }).language;
+      if (savedLang === "en" || savedLang === "id") setLang(savedLang as "en" | "id");
     });
 
-
-    // Get personal key from keychain
     window.go.main.App.GetPersonalKey().then((key) => {
       setPersonalKey(key || "");
       setUsePersonalKey(!!key);
     });
 
-    // Get provider info from server to sync (optional, settings has local copy)
     window.go.main.App.GetProvider().then((res) => {
       if (res) {
         setCfg((c) => ({
@@ -78,12 +74,10 @@ export function SettingsView({ onClose, onLogout }: { onClose: () => void; onLog
           ai_model: res.model || c.ai_model,
         }));
       }
-    }).catch(err => console.log("Gagal sync provider dari server:", err));
+    }).catch(() => {});
 
-    // Fetch agents
     fetchAgents();
 
-    // Listen to download progress
     return window.runtime.EventsOn("assets:progress", (p) =>
       setProgress(p as { name: string; done: number; total: number }),
     );
@@ -97,7 +91,7 @@ export function SettingsView({ onClose, onLogout }: { onClose: () => void; onLog
         setAgents(res.agents as Agent[]);
       }
     } catch (e) {
-      console.error("Gagal mengambil daftar agent:", e);
+      console.error("Failed to fetch agents:", e);
     } finally {
       setLoadingAgents(false);
     }
@@ -106,34 +100,38 @@ export function SettingsView({ onClose, onLogout }: { onClose: () => void; onLog
   const handleToggleAgent = async (agentId: string, currentEnabled: boolean) => {
     try {
       await window.go.main.App.ToggleAgent(agentId, !currentEnabled);
-      // Update local state immediately
       setAgents((prev) =>
         prev.map((a) => (a.id === agentId ? { ...a, enabled: !currentEnabled } : a)),
       );
     } catch (e) {
-      alert("Gagal merubah status integrasi agent: " + e);
+      alert(t("agent_toggle_failed", { err: String(e) }));
     }
   };
 
   const set = (k: string, v: string | boolean | number) => setCfg((c) => ({ ...c, [k]: v }));
 
+  const handleLanguageChange = (e: ChangeEvent<HTMLSelectElement>) => {
+    const code = e.target.value as "en" | "id";
+    setLang(code);
+    window.go.main.App.GetSettings().then((s) => {
+      window.go.main.App.SaveSettings({ ...s, language: code });
+    });
+  };
+
   const save = async () => {
     setSaving(true);
     try {
-      // 1. Save local general settings
       const provider = String(cfg.ai_provider || "ollama");
       const model = String(cfg.ai_model || "");
 
       await window.go.main.App.SaveSettings(cfg);
 
-      // 2. Set backend AI provider preferences via SetProvider API
       try {
         await window.go.main.App.SetProvider(provider, model);
       } catch (e) {
-        alert("Gagal sinkronisasi preferensi provider ke server: " + e);
+        alert(t("setting_save_failed", { err: String(e) }));
       }
 
-      // 3. Save or delete personal API key based on usePersonalKey check
       if (provider === "anthropic" && usePersonalKey) {
         if (personalKey.trim()) {
           await window.go.main.App.SavePersonalKey(personalKey.trim());
@@ -161,75 +159,72 @@ export function SettingsView({ onClose, onLogout }: { onClose: () => void; onLog
 
   return (
     <div className="settings-view card">
-
-      <h2>Pengaturan</h2>
-      <p className="settings-hint">
-        Klik tombol di kanan atas untuk kembali ke chat. Atau tekan <kbd>Esc</kbd>
-      </p>
+      <h2>{t("settings_title")}</h2>
+      <p className="settings-hint" dangerouslySetInnerHTML={{ __html: t("settings_hint") }} />
 
       <div className="settings-tabs" onClick={(e) => e.stopPropagation()}>
         <button
           className={`settings-tab-btn ${activeTab === "system" ? "active" : ""}`}
           onClick={() => setActiveTab("system")}
         >
-          Umum
+          {t("tab_system")}
         </button>
         <button
           className={`settings-tab-btn ${activeTab === "voice" ? "active" : ""}`}
           onClick={() => setActiveTab("voice")}
         >
-          Suara
+          {t("tab_voice")}
         </button>
         <button
           className={`settings-tab-btn ${activeTab === "appearance" ? "active" : ""}`}
           onClick={() => setActiveTab("appearance")}
         >
-          Tampilan
+          {t("tab_appearance")}
         </button>
         <button
           className={`settings-tab-btn ${activeTab === "provider" ? "active" : ""}`}
           onClick={() => setActiveTab("provider")}
         >
-          AI Provider
+          {t("tab_provider")}
         </button>
         <button
           className={`settings-tab-btn ${activeTab === "agents" ? "active" : ""}`}
           onClick={() => setActiveTab("agents")}
         >
-          Agents ({agents.filter(a => a.enabled).length}/{agents.length})
+          {t("tab_agents")} ({agents.filter(a => a.enabled).length}/{agents.length})
         </button>
         <button
           className={`settings-tab-btn ${activeTab === "workers" ? "active" : ""}`}
           onClick={() => setActiveTab("workers")}
         >
-          Workers
+          {t("tab_workers")}
         </button>
       </div>
 
       {activeTab === "system" && (
         <div className="tab-content">
           <label>
-            Gateway URL
+            {t("setting_gateway_url")}
             <input value={String(cfg.gateway_url ?? "")} onChange={(e) => set("gateway_url", e.target.value)} />
           </label>
           <label>
             <input type="checkbox" checked={Boolean(cfg.jarvis_mode)} onChange={(e) => set("jarvis_mode", e.target.checked)} />
-            Mode Jarvis (auto-send + bacakan jawaban)
+            {t("setting_jarvis_mode")}
           </label>
           <label>
             <input type="checkbox" checked={Boolean(cfg.tts_enabled)} onChange={(e) => set("tts_enabled", e.target.checked)} />
-            Suara balasan (TTS)
+            {t("setting_tts_enabled")}
           </label>
           <label>
-            Path whisper-cli
+            {t("setting_whisper_bin")}
             <input value={String(cfg.whisper_bin ?? "")} onChange={(e) => set("whisper_bin", e.target.value)} />
           </label>
           <label>
-            Path piper
+            {t("setting_piper_bin")}
             <input value={String(cfg.piper_bin ?? "")} onChange={(e) => set("piper_bin", e.target.value)} />
           </label>
           <button onClick={download} disabled={downloading}>
-            {downloading ? "Mengunduh…" : "Unduh model (Whisper + suara Piper)"}
+            {downloading ? t("setting_downloading") : t("setting_download_model")}
           </button>
           {progress && (
             <progress value={progress.done} max={Math.max(progress.total, 1)}>
@@ -242,9 +237,9 @@ export function SettingsView({ onClose, onLogout }: { onClose: () => void; onLog
       {activeTab === "provider" && (
         <div className="tab-content">
           <div className="setting-section">
-            <h3>AI Provider</h3>
+            <h3>{t("tab_provider")}</h3>
             <p className="setting-description">
-              Pilih agent CLI yang tersedia di mesin. Aplikasi akan memanggil binary langsung tanpa API key.
+              {t("setting_provider_hint")}
             </p>
             <div className="provider-grid">
               {[
@@ -270,21 +265,21 @@ export function SettingsView({ onClose, onLogout }: { onClose: () => void; onLog
 
           {cfg.ai_provider && (
             <div className="setting-section">
-              <h3>Konfigurasi {cfg.ai_provider}</h3>
+              <h3>{t("setting_provider_config_hint")}</h3>
               <p className="setting-description">
-                Masukkan command yang digunakan untuk mengaktifkan agent ini di terminal.
+                {t("setting_provider_config_hint")}
               </p>
               <label>
                 <span>Command</span>
                 <input
                   value={String(cfg[`${cfg.ai_provider}_cmd`] ?? "")}
                   onChange={(e) => set(`${cfg.ai_provider}_cmd`, e.target.value)}
-                  placeholder={`contoh: ${cfg.ai_provider}`}
+                  placeholder={t("setting_provider_cmd_placeholder", { provider: cfg.ai_provider })}
                   className="provider-cmd-input"
                 />
               </label>
               <p className="field-hint">
-                Command ini akan dipanggil sebagai subprocess untuk menjalankan agent CLI.
+                {t("setting_provider_cmd_hint")}
               </p>
             </div>
           )}
@@ -294,13 +289,13 @@ export function SettingsView({ onClose, onLogout }: { onClose: () => void; onLog
       {activeTab === "agents" && (
         <div className="tab-content">
           <div className="tab-hint">
-            Hubungkan desktop ke agent yang aktif di local worker tanpa perlu mengunduh lagi.
+            {t("agent_tab_hint")}
           </div>
 
           {loadingAgents && agents.length === 0 ? (
-            <div className="tab-empty">Memuat daftar agent...</div>
+            <div className="tab-empty">{t("agent_loading")}</div>
           ) : agents.length === 0 ? (
-            <div className="tab-empty">Tidak ada agent terdaftar.</div>
+            <div className="tab-empty">{t("agent_none")}</div>
           ) : (
             <div className="agents-list">
               {agents.map((agent) => (
@@ -308,7 +303,7 @@ export function SettingsView({ onClose, onLogout }: { onClose: () => void; onLog
                   <div className="agent-info">
                     <span className="agent-name-label">{agent.name}</span>
                     <span className={`agent-status-badge ${agent.enabled ? "active" : "inactive"}`}>
-                      {agent.enabled ? "TERHUBUNG" : "TIDAK TERHUBUNG"}
+                      {agent.enabled ? t("agent_connected") : t("agent_disconnected")}
                     </span>
                   </div>
                   <label className="switch">
@@ -329,7 +324,7 @@ export function SettingsView({ onClose, onLogout }: { onClose: () => void; onLog
       {activeTab === "workers" && (
         <div className="tab-content">
           <div className="tab-hint">
-            Sesuaikan warna dan bentuk avatar untuk setiap tipe worker.
+            {t("worker_tab_hint")}
           </div>
           <div className="workers-list">
             {DEFAULT_WORKERS.map((w) => {
@@ -354,7 +349,7 @@ export function SettingsView({ onClose, onLogout }: { onClose: () => void; onLog
                     </label>
                   </div>
                   <div className="worker-config-item">
-                    <span>Warna</span>
+                    <span>{t("worker_color")}</span>
                     <div className="color-picker-wrap">
                       <input
                         type="color"
@@ -366,7 +361,7 @@ export function SettingsView({ onClose, onLogout }: { onClose: () => void; onLog
                     </div>
                   </div>
                   <div className="worker-config-item">
-                    <span>Bentuk</span>
+                    <span>{t("worker_shape")}</span>
                     <div className="shape-selector">
                       {SHAPE_OPTIONS.map((s) => (
                         <button
@@ -392,7 +387,7 @@ export function SettingsView({ onClose, onLogout }: { onClose: () => void; onLog
       )}
 
       <div className="settings-actions">
-        <button onClick={save} disabled={saving}>{saving ? "Menyimpan…" : "Simpan"}</button>
+        <button onClick={save} disabled={saving}>{saving ? "Menyimpan..." : "Simpan"}</button>
         <button onClick={onClose} disabled={saving}>Batal</button>
         <button className="danger" onClick={onLogout}>Logout</button>
       </div>

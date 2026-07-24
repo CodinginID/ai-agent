@@ -3,6 +3,7 @@ import { VoiceBar } from "./voice/VoiceBar";
 import { speak } from "./voice/tts";
 import { LoginView } from "./setup/LoginView";
 import { SettingsView } from "./setup/SettingsView";
+import { useI18n } from "./i18n/useI18n";
 import { OrbStage } from "./orb/OrbStage";
 import { ResponseLayer } from "./chat/ResponseLayer";
 import { DataPanel } from "./chat/DataPanel";
@@ -106,18 +107,39 @@ export default function App() {
     setScreen("login");
   };
 
-  if (screen === "loading") return <div className="loading-screen">Memuat…</div>;
+  const { t } = useI18n();
+  if (screen === "loading") return <div className="loading-screen">{t("loading")}</div>;
   if (screen === "login") return <LoginView onPaired={() => setScreen("chat")} />;
 
   return (
     <div className="orb-app">
-      <header className="orb-header">
-        <h1>Octopus</h1>
-        <div className="orb-header-actions">
-          <button onClick={() => setShowHistory(true)} aria-label="Riwayat percakapan">🕑</button>
-          <button onClick={() => setShowSettings(true)} aria-label="Pengaturan">⚙️</button>
-        </div>
-      </header>
+      <span className="hud-corner tl" aria-hidden="true" />
+      <span className="hud-corner tr" aria-hidden="true" />
+      <span className="hud-corner bl" aria-hidden="true" />
+      <span className="hud-corner br" aria-hidden="true" />
+
+      <div className="brand">
+        <span className="brand-dot" aria-hidden="true" />
+        Octopus
+      </div>
+      <div className="orb-header-actions">
+        <button
+          className="hud-icon-btn"
+          onClick={() => setShowHistory(true)}
+          aria-label={t("history_title")}
+          title={t("history_title")}
+        >
+          ⏱
+        </button>
+        <button
+          className="hud-icon-btn hud-gear"
+          onClick={() => setShowSettings(true)}
+          aria-label={t("settings_title")}
+          title={t("settings_title")}
+        >
+          ⚙
+        </button>
+      </div>
 
       <main className="orb-main">
         <OrbStage

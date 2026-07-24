@@ -12,6 +12,7 @@ import { TextCard } from "./cards/TextCard";
 import { UserBubble } from "./UserBubble";
 import { AvatarSystem } from "../avatar/AvatarSystem";
 import { usePointerTilt } from "../hooks/usePointerTilt";
+import { useI18n } from "../i18n/useI18n";
 
 const METRIC_ACTIONS = new Set(["memory", "disk", "server_status", "docker_stats"]);
 const TABLE_ACTIONS = new Set(["docker_ps", "docker_images", "docker_compose_ps", "processes"]);
@@ -34,6 +35,7 @@ export const ChatView = forwardRef<HTMLInputElement, ChatViewProps>(({
   registerSubmit,
   onRetry,
 }, inputRef) => {
+  const { t } = useI18n();
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const lastFinal = useRef("");
@@ -163,7 +165,7 @@ export const ChatView = forwardRef<HTMLInputElement, ChatViewProps>(({
         ref={messagesRef}
         className="chat-messages"
         role="log"
-        aria-label="Riwayat pesan chat"
+        aria-label={t("chat_messages_aria")}
         aria-live="polite"
       >
         {messages.map((m) =>
@@ -184,16 +186,16 @@ export const ChatView = forwardRef<HTMLInputElement, ChatViewProps>(({
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && submit(draft)}
-          placeholder="Ketik perintah… (atau tahan tombol mic)"
-          aria-label="Tulis pesan"
+          placeholder={t("chat_input_placeholder")}
+          aria-label={t("chat_write_aria")}
         />
         <button
           ref={sendButtonRef}
           className="tilt-surface"
           onClick={() => submit(draft)}
-          aria-label="Kirim pesan"
+          aria-label={t("chat_send_aria")}
         >
-          Kirim
+          {t("chat_send")}
         </button>
       </div>
     </div>

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { MicRecorder, MicRecorderError } from "./recorder";
 import { DEFAULT_VAD } from "./vad";
 import { cancelSpeech } from "./tts";
+import { useI18n } from "../i18n/useI18n";
 
 export type VoiceState = "idle" | "listening" | "recording" | "transcribing";
 
@@ -20,6 +21,7 @@ export function VoiceBar({
   vadSilenceMs?: number;
   registerToggle?: (fn: () => void) => void;
 }) {
+  const { t } = useI18n();
   const [state, setState] = useState<VoiceState>("idle");
   const [info, setInfo] = useState("");
   const rec = useRef<MicRecorder | null>(null);
@@ -42,7 +44,7 @@ export function VoiceBar({
       setState("idle");
     } catch (e) {
       setState("idle");
-      setInfo(`Transkripsi gagal: ${String(e)}`);
+      setInfo(t("voice_info_transcribe_failed", { err: String(e) }));
     } finally {
       stopping.current = false;
     }
@@ -64,9 +66,9 @@ export function VoiceBar({
       setState("idle");
       rec.current = null;
       if (e instanceof MicRecorderError && e.type === "permission-denied") {
-        setInfo("Mikrofon tidak diizinkan — buka pengaturan browser untuk mengaktifkan suara.");
+        setInfo(t("voice_info_mic_denied"));
       } else {
-        setInfo("Mikrofon tidak tersedia. Gunakan input teks.");
+        setInfo(t("voice_info_mic_unavailable"));
       }
     }
   };
@@ -89,21 +91,21 @@ export function VoiceBar({
         onClick={toggle}
         title={
           state === "listening"
-            ? "Mendengarkan…"
+            ? t("voice_mic_listening")
             : state === "recording"
-              ? "Klik untuk berhenti (otomatis berhenti saat diam)"
+              ? t("voice_mic_recording")
               : state === "transcribing"
-                ? "Mentranskripsi…"
-                : "Klik untuk bicara"
+                ? t("voice_mic_transcribing")
+                : t("voice_mic_idle")
         }
         aria-label={
           state === "listening"
-            ? "Mendengarkan"
+            ? t("voice_mic_aria_listening")
             : state === "recording"
-              ? "Merekam, klik untuk berhenti"
+              ? t("voice_mic_aria_recording")
               : state === "transcribing"
-                ? "Mentranskripsi"
-                : "Mulai merekam"
+                ? t("voice_mic_aria_transcribing")
+                : t("voice_mic_aria_idle")
         }
       >
         {state === "listening" ? "🟡" : state === "recording" ? "🔴" : state === "transcribing" ? <span className="spinner">…</span> : "🎤"}
@@ -118,10 +120,10 @@ export function VoiceBar({
         </div>
       )}
       {state === "recording" && (
-        <span className="listening-hint">Mendengarkan… (berhenti otomatis saat diam)</span>
+        <span className="listening-hint">{t("voice_listen_hint")}</span>
       )}
       <label className="jarvis-toggle">
-        <input type="checkbox" checked={jarvis} onChange={onToggleJarvis} /> Jarvis
+        <input type="checkbox" checked={jarvis} onChange={onToggleJarvis} /> {t("voice_jarvis_label")}
       </label>
       {info && <span className="voice-info">{info}</span>}
     </div>

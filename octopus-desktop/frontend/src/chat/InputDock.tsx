@@ -1,4 +1,5 @@
 import { forwardRef, useEffect, useState, type ReactNode } from "react";
+import { useI18n } from "../i18n/useI18n";
 
 export interface InputDockProps {
   onSubmit: (text: string) => void;
@@ -9,6 +10,7 @@ export interface InputDockProps {
 // Mendengarkan "voice:draft" untuk mengisi input dari transkrip non-jarvis.
 export const InputDock = forwardRef<HTMLInputElement, InputDockProps>(
   ({ onSubmit, voiceSlot }, ref) => {
+    const { t } = useI18n();
     const [draft, setDraft] = useState("");
 
     useEffect(() => {
@@ -30,11 +32,11 @@ export const InputDock = forwardRef<HTMLInputElement, InputDockProps>(
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && send()}
-          placeholder="Ketik perintah… atau klik orb untuk bicara"
-          aria-label="Tulis pesan"
+          placeholder={t("chat_input_placeholder_dock")}
+          aria-label={t("chat_write_aria")}
         />
-        <button className="input-dock-send" onClick={send} aria-label="Kirim pesan">
-          Kirim
+        <button className="input-dock-send" onClick={send} aria-label={t("chat_send_aria")}>
+          {t("chat_send")}
         </button>
       </div>
     );

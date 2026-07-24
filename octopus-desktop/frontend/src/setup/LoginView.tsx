@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { usePointerTilt } from "../hooks/usePointerTilt";
+import { useI18n } from "../i18n/useI18n";
 
 export function LoginView({
   onPaired,
@@ -8,6 +9,7 @@ export function LoginView({
   onPaired: () => void;
   pollIntervalMs?: number;
 }) {
+  const { t } = useI18n();
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const timer = useRef<number | null>(null);
@@ -32,19 +34,19 @@ export function LoginView({
         }
       }, pollIntervalMs);
     } catch (e) {
-      setError(`Gateway tidak terjangkau: ${String(e)}`);
+      setError(t("login_gateway_unreachable", { err: String(e) }));
     }
   };
 
   return (
     <div ref={tiltRef} className="login-view card tilt-surface">
-      <h1>Octopus</h1>
-      <p className="subtitle">Connect your gateway</p>
-      <button onClick={start} className="card-btn">Connect</button>
+      <h1>{t("app_name")}</h1>
+      <p className="subtitle">{t("login_connect")}</p>
+      <button onClick={start} className="card-btn">{t("login_connect_btn")}</button>
       {code && (
         <div className="pairing-box">
-          <p className="pairing-status">AUTHENTICATING VIA BROWSER...</p>
-          <p className="pairing-label">VERIFICATION CODE:</p>
+          <p className="pairing-status">{t("login_authenticating")}</p>
+          <p className="pairing-label">{t("login_verification_code")}</p>
           <div className="pairing-code">{code}</div>
         </div>
       )}

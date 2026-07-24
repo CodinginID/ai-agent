@@ -1,6 +1,7 @@
 import { memo } from "react";
 import type { JSX } from "react";
 import type { AvatarWorkerState } from "./types";
+import { useI18n } from "../i18n/useI18n";
 
 interface AvatarProps {
   workerId: string;
@@ -69,6 +70,7 @@ export const Avatar = memo(function Avatar({
   task,
   amplitude = 0,
 }: AvatarProps) {
+  const { t } = useI18n();
   const svg = resolveSvg(workerType);
   const isSpeaking = amplitude > 0.05;
   const scale = 1 + (amplitude * 0.15);
@@ -78,8 +80,8 @@ export const Avatar = memo(function Avatar({
       className={`avatar ${state === "working" ? "avatar--working" : state === "error" ? "avatar--error" : ""} ${isSpeaking ? "avatar--speaking" : ""}`}
       data-worker-id={workerId}
       role="img"
-      aria-label={`${workerName} ${state === "working" ? "sedang bekerja" : state === "error" ? "mengalami error" : "idle"}`}
-      title={`${workerName} - ${task ?? workerName}`}
+      aria-label={`${workerName} ${state === "working" ? t("avatar_aria_working") : state === "error" ? t("avatar_aria_error") : t("avatar_aria_idle")}`}
+      title={t("avatar_title", { workerName, task: task ?? workerName })}
     >
       <div
         className="avatar-circle"
