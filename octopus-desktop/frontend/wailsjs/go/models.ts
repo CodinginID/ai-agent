@@ -10,6 +10,10 @@ export namespace settings {
 	    piper_voice_path: string;
 	    ai_provider: string;
 	    ai_model: string;
+	    vad_silence_ms: number;
+	    orb_accent: string;
+	    reduce_motion: boolean;
+	    language: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -26,6 +30,10 @@ export namespace settings {
 	        this.piper_voice_path = source["piper_voice_path"];
 	        this.ai_provider = source["ai_provider"];
 	        this.ai_model = source["ai_model"];
+	        this.vad_silence_ms = source["vad_silence_ms"];
+	        this.orb_accent = source["orb_accent"];
+	        this.reduce_motion = source["reduce_motion"];
+	        this.language = source["language"];
 	    }
 	}
 
