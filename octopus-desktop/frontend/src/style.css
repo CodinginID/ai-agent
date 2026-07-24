@@ -2243,6 +2243,10 @@ kbd {
 .settings-view {
     display: grid;
     grid-template-columns: 168px 1fr;
+    width: 100%;
+    max-width: none;
+    padding: 0;
+    gap: 0;
     max-height: 84vh;
     background: var(--surface);
     border: 1px solid var(--line);

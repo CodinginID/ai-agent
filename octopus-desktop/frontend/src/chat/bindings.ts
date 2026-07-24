@@ -37,10 +37,14 @@ export const sendChat = (msgId: string, text: string) => window.go.main.App.Send
 export const approvePlan = (msgId: string, planId: string) => window.go.main.App.ApprovePlan(msgId, planId);
 export const rejectPlan = (planId: string) => window.go.main.App.RejectPlan(planId);
 
+// Di luar Wails (vite dev di browser) runtime tidak ada — degradasi jadi no-op
+// supaya UI tetap bisa dirender dan diperiksa visual.
 export function onChatEvent(cb: (ev: IncomingEvent) => void): () => void {
+  if (!window.runtime?.EventsOn) return () => {};
   return window.runtime.EventsOn("chat:event", (payload) => cb(payload as IncomingEvent));
 }
 
 export function onAvatarEvent(cb: (ev: AvatarEvent) => void): () => void {
+  if (!window.runtime?.EventsOn) return () => {};
   return window.runtime.EventsOn("avatar:event", (payload) => cb(payload as AvatarEvent));
 }

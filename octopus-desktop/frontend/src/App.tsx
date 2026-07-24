@@ -82,7 +82,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (screen !== "chat") return;
+    if (screen !== "chat" || !window.go?.main?.App) return;
     window.go.main.App.GetSettings().then((s) => {
       setJarvis(Boolean(s.jarvis_mode));
       const ms = Number((s as { vad_silence_ms?: number }).vad_silence_ms);

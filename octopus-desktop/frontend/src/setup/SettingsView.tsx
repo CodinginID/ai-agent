@@ -55,6 +55,8 @@ export function SettingsView({ onClose, onLogout }: { onClose: () => void; onLog
   const [loadingAgents, setLoadingAgents] = useState(false);
 
   useEffect(() => {
+    // Di luar Wails (vite dev) tidak ada bridge — biarkan form kosong.
+    if (!window.go?.main?.App) return;
     window.go.main.App.GetSettings().then((settings) => {
       setCfg(settings as unknown as Cfg);
       const savedLang = (settings as { language?: string }).language;

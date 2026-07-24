@@ -48,10 +48,9 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
         return SUPPORTED.find((s) => s.code === stored) ?? SUPPORTED[1];
       }
     } catch {
-      // localStorage bisa tak tersedia (webview restriktif) — pakai deteksi navigator
+      // localStorage bisa tak tersedia (webview restriktif) — jatuh ke default
     }
-    const navLang = typeof navigator !== "undefined" ? navigator.language : "";
-    return navLang.startsWith("en") ? SUPPORTED[0] : SUPPORTED[1];
+    return SUPPORTED[1]; // default Indonesia; bisa diganti dari Pengaturan → Umum
   });
 
   const setLang = useCallback((code: LangCode) => {
