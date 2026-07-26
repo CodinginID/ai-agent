@@ -208,28 +208,60 @@ func (a *App) DeletePersonalKey() error {
 	return settings.DeletePersonalKey()
 }
 
-func resolveBin(configured, name string) string {
+// resolveBin mencari executable: path dari settings (bila ada & valid),
+// lalu PATH, lalu extraDirs. Aplikasi GUI macOS tidak mewarisi PATH shell,
+// jadi lokasi Homebrew dkk. wajib dicek eksplisit lewat extraDirs.
+func resolveBin(configured, name string, extraDirs ...string) string {
 	if configured != "" {
-		return configured
+		if info, err := os.Stat(configured); err == nil && !info.IsDir() {
+			return configured
+		}
 	}
-	p, err := exec.LookPath(name)
-	if err == nil {
+	if p, err := exec.LookPath(name); err == nil {
 		return p
 	}
+	for _, dir := range extraDirs {
+		p := filepath.Join(dir, name)
+		if info, err := os.Stat(p); err == nil && !info.IsDir() {
+			return p
+		}
+	}
 	return ""
+}
+
+// binSearchDirs: bin/piper hasil DownloadAssets, lalu prefix Homebrew (arm64
+// & intel) dan /usr/local/bin untuk instalasi manual.
+func (a *App) binSearchDirs() []string {
+	return []string{
+		filepath.Join(a.configDir, "bin", "piper"),
+		"/opt/homebrew/bin",
+		"/usr/local/bin",
+	}
 }
 
 func (a *App) stt() speech.SpeechToText {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	bin := resolveBin(a.cfg.WhisperBin, "whisper-cli")
+	bin := resolveBin(a.cfg.WhisperBin, "whisper-cli", a.binSearchDirs()...)
 	return &speech.WhisperCLI{Bin: bin, ModelPath: a.cfg.WhisperModelPath}
 }
 
+// tts memilih engine: piper bila ada (kualitas lebih baik), kalau tidak
+// fallback ke `say` bawaan macOS supaya TTS tetap jalan tanpa instalasi.
 func (a *App) tts() voice.TextToSpeech {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	bin := resolveBin(a.cfg.PiperBin, "piper")
+	bin := resolveBin(a.cfg.PiperBin, "piper", a.binSearchDirs()...)
+	if bin != "" && a.cfg.PiperVoicePath != "" {
+		return &voice.PiperCLI{Bin: bin, VoicePath: a.cfg.PiperVoicePath}
+	}
+	if say := resolveBin("", "say", "/usr/bin"); say != "" {
+		v := ""
+		if a.cfg.Language == "" || a.cfg.Language == "id" {
+			v = "Damayanti" // suara id_ID; SayCLI fallback ke default bila belum terpasang
+		}
+		return &voice.SayCLI{Bin: say, Voice: v}
+	}
 	return &voice.PiperCLI{Bin: bin, VoicePath: a.cfg.PiperVoicePath}
 }
 
@@ -275,27 +307,62 @@ func (a *App) DownloadAssets() error {
 		}
 		a.mu.Unlock()
 	}
+	if err := a.installPiperBinary(); err != nil {
+		return err
+	}
+
 	a.mu.Lock()
 	cfgCopy := a.cfg
 	a.mu.Unlock()
 	return settings.Save(a.configDir, cfgCopy)
 }
 
-// BinaryStatus cek ketersediaan whisper-cli & piper di PATH/settings.
-func (a *App) BinaryStatus() map[string]bool {
+// installPiperBinary unduh & ekstrak prebuilt piper resmi ke configDir/bin
+// bila belum ada piper yang bisa dipakai. No-op bila sudah ada atau platform
+// tidak punya prebuilt (whisper-cli tetap harus dari brew — tidak ada rilis
+// binary macOS resmi dari whisper.cpp).
+func (a *App) installPiperBinary() error {
+	a.mu.Lock()
+	configured := a.cfg.PiperBin
+	a.mu.Unlock()
+	if resolveBin(configured, "piper", a.binSearchDirs()...) != "" {
+		return nil
+	}
+	item, ok := modelassets.PiperBinaryItem()
+	if !ok {
+		return nil
+	}
+	binDir := filepath.Join(a.configDir, "bin")
+	archive, err := modelassets.Download(a.ctx, item, binDir, func(done, total int64) {
+		runtime.EventsEmit(a.ctx, "assets:progress", map[string]any{
+			"name":  item.Name,
+			"done":  done,
+			"total": total,
+		})
+	})
+	if err != nil {
+		return err
+	}
+	defer os.Remove(archive)
+	if err := modelassets.ExtractTarGz(archive, binDir); err != nil {
+		return err
+	}
+	a.mu.Lock()
+	a.cfg.PiperBin = filepath.Join(binDir, "piper", "piper")
+	a.mu.Unlock()
+	return nil
+}
+
+// BinaryStatus mengembalikan path whisper-cli & piper yang ter-resolve
+// (string kosong = tidak ditemukan) supaya UI bisa menampilkan lokasi.
+func (a *App) BinaryStatus() map[string]string {
 	a.mu.Lock()
 	cfg := a.cfg
 	a.mu.Unlock()
-	find := func(configured, name string) bool {
-		if configured != "" {
-			_, err := os.Stat(configured)
-			return err == nil
-		}
-		_, err := exec.LookPath(name)
-		return err == nil
-	}
-	return map[string]bool{
-		"whisper": find(cfg.WhisperBin, "whisper-cli"),
-		"piper":   find(cfg.PiperBin, "piper"),
+	dirs := a.binSearchDirs()
+	return map[string]string{
+		"whisper": resolveBin(cfg.WhisperBin, "whisper-cli", dirs...),
+		"piper":   resolveBin(cfg.PiperBin, "piper", dirs...),
+		"say":     resolveBin("", "say", "/usr/bin"),
 	}
 }

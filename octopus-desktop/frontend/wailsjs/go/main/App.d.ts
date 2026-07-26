@@ -4,7 +4,7 @@ import {settings} from '../models';
 
 export function ApprovePlan(arg1:string,arg2:string):Promise<void>;
 
-export function BinaryStatus():Promise<Record<string, boolean>>;
+export function BinaryStatus():Promise<Record<string, string>>;
 
 export function DeletePersonalKey():Promise<void>;
 

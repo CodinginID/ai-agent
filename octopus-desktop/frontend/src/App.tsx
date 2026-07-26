@@ -20,14 +20,18 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [jarvis, setJarvis] = useState(true);
+  const [ttsEnabled, setTtsEnabled] = useState(true);
+  const [voiceNotice, setVoiceNotice] = useState("");
   const [vadSilenceMs, setVadSilenceMs] = useState(1200);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [amplitude, setAmplitude] = useState(0);
   const [dismissedData, setDismissedData] = useState("");
 
+  const { t } = useI18n();
   const chat = useChat();
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const gearRef = useRef<HTMLButtonElement | null>(null);
   const voiceToggle = useRef<() => void>(() => {});
   const lastSpokenRef = useRef("");
 
@@ -38,24 +42,31 @@ export default function App() {
   const streaming = !!chat.current && !chat.current.done;
   const dataParts = chat.current && chat.current.msgId !== dismissedData ? chat.current.parts : [];
 
-  // TTS untuk jawaban final (mode Jarvis)
+  // TTS untuk jawaban final (mode Jarvis). Kegagalan tidak boleh ganggu
+  // chat, tapi wajib terlihat — tampilkan notice singkat, jangan ditelan.
   useEffect(() => {
     const c = chat.current;
-    if (!jarvis || !c?.done || !c.finalText || c.finalText === lastSpokenRef.current) return;
+    if (!jarvis || !ttsEnabled || !c?.done || !c.finalText || c.finalText === lastSpokenRef.current) return;
     lastSpokenRef.current = c.finalText;
     setIsSpeaking(true);
     void speak(c.finalText, (lvl) => setAmplitude(lvl))
-      .catch(() => {}) // TTS gagal tidak boleh ganggu chat
+      .catch((e) => setVoiceNotice(t("voice_info_tts_failed", { err: String(e) })))
       .finally(() => {
         setIsSpeaking(false);
         setAmplitude(0);
       });
-  }, [chat.current?.done, chat.current?.finalText, jarvis]);
+  }, [chat.current?.done, chat.current?.finalText, jarvis, ttsEnabled]);
+
+  useEffect(() => {
+    if (!voiceNotice) return;
+    const id = window.setTimeout(() => setVoiceNotice(""), 6000);
+    return () => window.clearTimeout(id);
+  }, [voiceNotice]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === ESCAPE_KEY) {
-        if (showSettings) return setShowSettings(false);
+        if (showSettings) return closeSettings();
         if (showHistory) return setShowHistory(false);
       }
       if ((e.ctrlKey || e.metaKey) && e.key === "k" && screen === "chat") {
@@ -85,6 +96,7 @@ export default function App() {
     if (screen !== "chat" || !window.go?.main?.App) return;
     window.go.main.App.GetSettings().then((s) => {
       setJarvis(Boolean(s.jarvis_mode));
+      setTtsEnabled(Boolean((s as { tts_enabled?: boolean }).tts_enabled));
       const ms = Number((s as { vad_silence_ms?: number }).vad_silence_ms);
       if (Number.isFinite(ms) && ms > 0) setVadSilenceMs(ms);
     });
@@ -101,13 +113,17 @@ export default function App() {
     window.go.main.App.GetSettings().then((s) => window.go.main.App.SaveSettings({ ...s, jarvis_mode: next }));
   };
 
+  const closeSettings = () => {
+    setShowSettings(false);
+    gearRef.current?.focus();
+  };
+
   const handleLogout = async () => {
     await window.go.main.App.Logout();
     setShowSettings(false);
     setScreen("login");
   };
 
-  const { t } = useI18n();
   if (screen === "loading") return <div className="loading-screen">{t("loading")}</div>;
   if (screen === "login") return <LoginView onPaired={() => setScreen("chat")} />;
 
@@ -132,6 +148,7 @@ export default function App() {
           ⏱
         </button>
         <button
+          ref={gearRef}
           className="hud-icon-btn hud-gear"
           onClick={() => setShowSettings(true)}
           aria-label={t("settings_title")}
@@ -175,15 +192,21 @@ export default function App() {
         }
       />
 
+      {voiceNotice && (
+        <div className="voice-notice" role="status">
+          {voiceNotice}
+        </div>
+      )}
+
       <HistoryDrawer open={showHistory} onClose={() => setShowHistory(false)} messages={chat.messages} />
 
       {showSettings && (
         <div
           className="modal-overlay"
-          onClick={(e) => e.target === e.currentTarget && setShowSettings(false)}
+          onClick={(e) => e.target === e.currentTarget && closeSettings()}
         >
           <div className="modal-container" onClick={(e) => e.stopPropagation()}>
-            <SettingsView onClose={() => setShowSettings(false)} onLogout={handleLogout} />
+            <SettingsView onClose={closeSettings} onLogout={handleLogout} />
           </div>
         </div>
       )}

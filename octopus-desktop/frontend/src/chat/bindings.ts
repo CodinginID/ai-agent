@@ -8,7 +8,7 @@ type GoApp = {
   Transcribe(wavB64: string): Promise<string>;
   Speak(text: string): Promise<string>;
   DownloadAssets(): Promise<void>;
-  BinaryStatus(): Promise<Record<string, boolean>>;
+  BinaryStatus(): Promise<Record<string, string>>;
   GetSettings(): Promise<Record<string, unknown>>;
   SaveSettings(s: Record<string, unknown>): Promise<void>;
   IsLoggedIn(): Promise<boolean>;

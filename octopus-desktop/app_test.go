@@ -2,6 +2,8 @@ package main
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -61,6 +63,37 @@ func TestConcurrentSettingsAccessNoRace(t *testing.T) {
 		}
 	}()
 	wg.Wait()
+}
+
+func TestResolveBinFindsInExtraDirs(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "piper-tidak-mungkin-di-path")
+	if err := os.WriteFile(bin, []byte("#!/bin/true"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := resolveBin("", "piper-tidak-mungkin-di-path", dir); got != bin {
+		t.Fatalf("harus ketemu di extraDirs: got %q", got)
+	}
+}
+
+func TestResolveBinConfiguredMissingFallsBack(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "piper")
+	if err := os.WriteFile(bin, []byte("#!/bin/true"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got := resolveBin(filepath.Join(dir, "tidak-ada"), "piper", dir)
+	if got != bin {
+		t.Fatalf("path settings yang hilang harus fallback ke extraDirs: got %q", got)
+	}
+}
+
+func TestResolveBinNotFoundReturnsEmpty(t *testing.T) {
+	if got := resolveBin("", "binary-yang-mustahil-ada-99x", t.TempDir()); got != "" {
+		t.Fatalf("harus kosong: got %q", got)
+	}
 }
 
 func TestRelayEventsNoErrorNoStreamError(t *testing.T) {
