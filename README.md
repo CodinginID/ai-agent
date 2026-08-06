@@ -159,6 +159,88 @@ If you want to run your own Octopus backend instead of using the hosted service,
 
 ---
 
+## Monitoring & health
+
+The backend exposes an aggregated health endpoint:
+
+```
+GET /health
+```
+
+Response:
+
+```json
+{
+  "status": "ok",
+  "version": "a1b2c3d",
+  "dependencies": {
+    "redis": "ok",
+    "ollama": "ok",
+    "database": "ok"
+  }
+}
+```
+
+`status` is `ok` only when every dependency reports `ok`. Any failure flips the top-level status to `degraded`.
+
+**How to check status**
+
+- Open `http://localhost:8000/health` in a browser (or `curl http://localhost:8000/health` from a terminal).
+- A polling dashboard at `/dashboard` uses the same endpoint to show a real-time status widget for each dependency.
+- The CLI worker shows connection state in its status bar (`TUI` → bottom bar) so you can see at a glance whether the gateway is reachable.
+
+Probes are best-effort and time-boxed to 3 seconds each, so a slow Redis or Ollama will not block the response — it simply flips that dependency to `"down"`.
+
+---
+
+## Troubleshooting common issues
+
+### Ollama tidak respond
+
+1. Pastikan Ollama sudah berjalan: `ollama serve` atau cek service via `brew services list` / `systemctl status ollama`.
+2. Cek model tersedia: `curl http://localhost:11434/api/tags`. Jika kosong, tarik model: `ollama pull qwen2.5`.
+3. Jika Octopus men-report `"ollama": "down"` di `/health`, itu berarti probe ke port 11434 gagal — periksa firewall lokal atau bahwa Ollama listening di `0.0.0.0`, bukan hanya `127.0.0.1`.
+4. Restart adapter di backend tanpa me-restart service keseluruhan: gunakan `/restart-adapter ollama` dari TUI atau Telegram.
+
+### Redis tidak connect
+
+1. Cek Redis berjalan: `redis-cli ping` harus mengembalikan `PONG`.
+2. Pastikan `REDIS_URL` di `.env` (atau environment) mengarah ke alamat yang benar. Default: `redis://localhost:6379`.
+3. Jika backend berjalan di Docker dan Redis di host, gunakan `host.docker.internal:6379` sebagai hostname.
+4. Error yang sering muncul — `ConnectionRefusedError` atau `TimeoutError` — berarti backend tidak bisa menjangkau Redis sama sekali, bukan masalah auth.
+
+### SQLite corruption
+
+SQLite digunakan oleh worker CLI untuk menyimpan state lokal. Jika kamu melihat error seperti `database disk image is malformed` atau `UNIQUE constraint failed`:
+
+1. **Jangan** langsung hapus file database tanpa backup.
+2. Coba repair: `sqlite3 ~/.config/octopus/worker.db "PRAGMA integrity_check;"`
+3. Jika integrity check gagal, backup dan inisialisasi ulang:
+   ```bash
+   mv ~/.config/octopus/worker.db ~/.config/octopus/worker.db.bak
+   octopus reset
+   ```
+4. Untuk mencegah korupsi di masa depan, pastikan proses Octopus tidak di-force-kill saat menulis — selalu gunakan `/exit` atau `Ctrl-C` untuk menghentikan TUI.
+
+### Worker tidak muncul di `/devices`
+
+- Pastikan `octopus` worker sedang berjalan di mesin target.
+- Cek koneksi ke gateway: `octopus status` — harus menunjukkan `connected`.
+- Jika stuck di `connecting...`, periksa apakah API key valid dan URL gateway benar (cek di dashboard settings).
+
+---
+
+## Links
+
+| Resource | Description |
+|---|---|
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Panduan kontribusi: setup lokal, workflow Git, cara mengajukan PR |
+| [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | Dokumentasi pengembangan: arsitektur detail, testing, deployment |
+| [`CLAUDE.md`](CLAUDE.md) | Aturan arsitektur hexagonal, konvensi penamaan, dan Git workflow |
+| [`LICENSE`](LICENSE) | Lisensi MIT |
+
+---
+
 ## License
 
 [MIT](LICENSE)

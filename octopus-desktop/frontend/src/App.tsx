@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { VoiceBar } from "./voice/VoiceBar";
 import { speak } from "./voice/tts";
 import { LoginView } from "./setup/LoginView";
@@ -15,6 +15,10 @@ import "./style.css";
 
 const ESCAPE_KEY = "Escape";
 
+// Skip-link anchors — harus ada sebelum konten utama agar screen reader langsung bisa jump.
+const SKIP_MAIN_ID = "skip-main-content";
+const SKIP_NAV_ID = "skip-navigation";
+
 export default function App() {
   const [screen, setScreen] = useState<"loading" | "login" | "chat">("loading");
   const [showSettings, setShowSettings] = useState(false);
@@ -27,6 +31,7 @@ export default function App() {
   const [isListening, setIsListening] = useState(false);
   const [amplitude, setAmplitude] = useState(0);
   const [dismissedData, setDismissedData] = useState("");
+  const [isBusy, setIsBusy] = useState(false);
 
   const { t } = useI18n();
   const chat = useChat();
@@ -34,6 +39,7 @@ export default function App() {
   const gearRef = useRef<HTMLButtonElement | null>(null);
   const voiceToggle = useRef<() => void>(() => {});
   const lastSpokenRef = useRef("");
+  const voiceLabelRef = useRef<"idle" | "listening">("idle");
 
   const aiState = deriveAiState(chat.pending, isSpeaking, isListening);
 
@@ -118,6 +124,16 @@ export default function App() {
     gearRef.current?.focus();
   };
 
+  // Update voice button label based on state
+  useEffect(() => {
+    voiceLabelRef.current = isListening ? "listening" : "idle";
+  }, [isListening]);
+
+  const handleVoiceToggle = useCallback(() => {
+    voiceLabelRef.current = isListening ? "idle" : "listening";
+    voiceToggle.current();
+  }, [isListening]);
+
   const handleLogout = async () => {
     await window.go.main.App.Logout();
     setShowSettings(false);
@@ -129,16 +145,25 @@ export default function App() {
 
   return (
     <div className="orb-app">
+      {/* Skip links — fokus langsung ke konten utama atau navigasi tanpa harus tab satu per satu */}
+      <a href={`#${SKIP_MAIN_ID}`} className="skip-link">
+        {t("skip_to_main_content")}
+      </a>
+      <a href={`#${SKIP_NAV_ID}`} className="skip-link">
+        {t("skip_to_navigation")}
+      </a>
+
       <span className="hud-corner tl" aria-hidden="true" />
       <span className="hud-corner tr" aria-hidden="true" />
       <span className="hud-corner bl" aria-hidden="true" />
       <span className="hud-corner br" aria-hidden="true" />
 
-      <div className="brand">
+      {/* Header navigasi — brand + tombol aksi */}
+      <div className="brand" id={SKIP_NAV_ID} aria-label={t("brand_name")}>
         <span className="brand-dot" aria-hidden="true" />
         Octopus
       </div>
-      <div className="orb-header-actions">
+      <nav className="orb-header-actions" role="navigation" aria-label={t("header_nav")}>
         <button
           className="hud-icon-btn"
           onClick={() => setShowHistory(true)}
@@ -156,15 +181,22 @@ export default function App() {
         >
           ⚙
         </button>
-      </div>
+      </nav>
 
-      <main className="orb-main">
+      {/* Main chat area */}
+      <main
+        id={SKIP_MAIN_ID}
+        className="orb-main"
+        role="main"
+        aria-label={t("chat_main")}
+      >
         <OrbStage
           state={aiState}
           amplitude={amplitude}
           paused={showSettings}
           onActivate={() => voiceToggle.current()}
         >
+          {/* aria-live region untuk respon AI — pembaca layar akan membaca update secara dinamis */}
           <ResponseLayer text={responseText} streaming={streaming} />
         </OrbStage>
 
@@ -177,6 +209,7 @@ export default function App() {
         />
       </main>
 
+      {/* Input dock — navigasi keyboard: tab dari voice ke input, enter kirim */}
       <InputDock
         ref={inputRef}
         onSubmit={chat.submit}
@@ -186,17 +219,32 @@ export default function App() {
             vadSilenceMs={vadSilenceMs}
             jarvis={jarvis}
             onToggleJarvis={toggleJarvis}
-            onListeningChange={setIsListening}
+            onListeningChange={(listening) => {
+              setIsListening(listening);
+              if (!listening) {
+                voiceLabelRef.current = "idle";
+              }
+            }}
             registerToggle={(fn) => (voiceToggle.current = fn)}
           />
         }
+        onSubmitLabel={t("chat_send_aria")}
       />
 
+      {/* Voice notice dengan aria-live polite agar screen reader memberitahu tanpa interrupt */}
       {voiceNotice && (
-        <div className="voice-notice" role="status">
+        <div className="voice-notice" role="alert" aria-live="polite">
           {voiceNotice}
         </div>
       )}
+
+      {/* aria-live region untuk dynamic announcements (chat send, voice state changes) */}
+      <div aria-live="polite" aria-atomic="true" className="sr-only" role="status">
+        {isBusy && t("loading")}
+        {!chat.current?.done && chat.current?.parts?.length !== undefined && streaming
+          ? t("response_streaming")
+          : ""}
+      </div>
 
       <HistoryDrawer open={showHistory} onClose={() => setShowHistory(false)} messages={chat.messages} />
 

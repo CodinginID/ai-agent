@@ -4,12 +4,14 @@ import { useI18n } from "../i18n/useI18n";
 export interface InputDockProps {
   onSubmit: (text: string) => void;
   voiceSlot?: ReactNode;
+  onSubmitLabel?: string;
 }
 
 // Dock input bawah: teks (Enter kirim) + slot VoiceBar (mic fallback).
 // Mendengarkan "voice:draft" untuk mengisi input dari transkrip non-jarvis.
+// Tab order: voice -> input -> send.
 export const InputDock = forwardRef<HTMLInputElement, InputDockProps>(
-  ({ onSubmit, voiceSlot }, ref) => {
+  ({ onSubmit, voiceSlot, onSubmitLabel }, ref) => {
     const { t } = useI18n();
     const [draft, setDraft] = useState("");
 
@@ -25,7 +27,7 @@ export const InputDock = forwardRef<HTMLInputElement, InputDockProps>(
     };
 
     return (
-      <div className="input-dock">
+      <div className="input-dock" role="region" aria-label={t("input_area")}>
         {voiceSlot}
         <input
           ref={ref}
@@ -35,7 +37,11 @@ export const InputDock = forwardRef<HTMLInputElement, InputDockProps>(
           placeholder={t("chat_input_placeholder_dock")}
           aria-label={t("chat_write_aria")}
         />
-        <button className="input-dock-send" onClick={send} aria-label={t("chat_send_aria")}>
+        <button
+          className="input-dock-send"
+          onClick={send}
+          aria-label={onSubmitLabel ?? t("chat_send_aria")}
+        >
           {t("chat_send")}
         </button>
       </div>

@@ -4,16 +4,25 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"log/slog"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"time"
 
 	modelassets "github.com/codinginid/octopus-desktop/internal/assets"
 	"github.com/codinginid/octopus-desktop/internal/gateway"
 	"github.com/codinginid/octopus-desktop/internal/speech"
 	"github.com/codinginid/octopus-desktop/internal/settings"
+	"github.com/codinginid/octopus-desktop/internal/storage"
 	"github.com/codinginid/octopus-desktop/internal/voice"
+	"github.com/wailsapp/wails/v2/pkg/menu"
+	"github.com/wailsapp/wails/v2/pkg/options"
+	"github.com/wailsapp/wails/v2/pkg/menu"
+	"github.com/wailsapp/wails/v2/pkg/menu/keys"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -44,7 +53,21 @@ type App struct {
 	cfg       settings.Settings
 	configDir string
 	client    *gateway.Client
+	localDB   *storage.LocalDB
+
+	// currentVersion diisi saat build lewat -ldflags; kosong = dev build.
+	currentVersion string
+	// updateChecked menandai apakah sudah pernah cek update supaya tidak
+	// spam log saat startup.
+	updateChecked bool
+	// updateCheckNext dijadwalkan untuk cek berikutnya (24 jam dari startup).
+	updateCheckNext time.Time
+	// updateInfo menyimpan info update terakhir untuk dialog.
+	updateInfo *gateway.UpdateInfo
 }
+
+// version saat ini dari wails.json (dev). Production build diisi lewat -ldflags.
+const currentVersion = "0.1.0"
 
 // NewApp creates a new App application struct
 func NewApp() *App {
@@ -60,9 +83,25 @@ func NewApp() *App {
 	if cfg.GatewayURL == "" {
 		cfg.GatewayURL = "http://localhost:8080"
 	}
-	a := &App{cfg: cfg, configDir: dir}
+
+	// Inisialisasi cache offline — error diabaikan karena opsional
+	dbPath := filepath.Join(dir, "cache.db")
+	localDB, err := storage.NewLocalDB(dbPath)
+	if err != nil {
+		slog.Warn("gagal buka cache database, mode offline nonaktif", "error", err)
+		localDB = nil
+	} else if err := localDB.Open(); err != nil {
+		slog.Warn("gagal buka tabel cache, mode offline nonaktif", "error", err)
+		_ = localDB.Close()
+		localDB = nil
+	}
+
+	a := &App{cfg: cfg, configDir: dir, localDB: localDB}
 	token, _ := settings.Token()
 	a.client = gateway.New(cfg.GatewayURL, token)
+	if localDB != nil {
+		a.client.SetLocalDB(localDB)
+	}
 	return a
 }
 
@@ -70,6 +109,11 @@ func NewApp() *App {
 // so we can call the runtime methods
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	a.currentVersion = currentVersion
+	// Jalankan cek update pertama, lalu jadwalkan ulang tiap 24 jam.
+	go a.checkForUpdates()
+	a.updateCheckNext = time.Now().Add(24 * time.Hour)
+	go a.periodicUpdateCheck()
 }
 
 // avatarEventTypes adalah set event type dari backend yang menandakan worker lifecycle.
@@ -365,4 +409,146 @@ func (a *App) BinaryStatus() map[string]string {
 		"piper":   resolveBin(cfg.PiperBin, "piper", dirs...),
 		"say":     resolveBin("", "say", "/usr/bin"),
 	}
+}
+
+// checkForUpdates jalankan sekali pada startup: fetch GitHub releases,
+// bandingkan versi, tampilkan dialog bila ada update. Error di-log saja —
+// tidak boleh memblokir startup aplikasi.
+func (a *App) checkForUpdates() {
+	a.mu.Lock()
+	if a.updateChecked {
+		a.mu.Unlock()
+		return
+	}
+	a.updateChecked = true
+	a.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)
+	defer cancel()
+
+	ver := currentVersion
+	c := a.gw()
+	info, err := c.CheckForUpdates(ctx, ver)
+	if err != nil {
+		slog.Warn("cek update gagal", "error", err)
+		return
+	}
+	a.mu.Lock()
+	a.updateInfo = &info
+	a.mu.Unlock()
+
+	hasUpdate := info.LatestVersion != "" && info.LatestVersion != ver
+	if !hasUpdate {
+		return
+	}
+	a.showUpdateDialog(info)
+}
+
+// periodicUpdateCheck sleep 24 jam, lalu jalankan checkForUpdates ulang.
+// Loop berjalan sepanjang app hidup.
+func (a *App) periodicUpdateCheck() {
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+	for range ticker.C {
+		a.checkForUpdates()
+	}
+}
+
+// showUpdateDialog tampilkan dialog Wails yang menawarkan download update.
+// Dialog ini hanya bisa dipanggil dari goroutine UI utama; karena cek update
+// berjalan di goroutine background, panggil runtime.WindowShow dulu supaya
+// dialog muncul di foreground window.
+func (a *App) showUpdateDialog(info gateway.UpdateInfo) {
+	runtime.WindowShow(a.ctx)
+
+	title := "Update tersedia"
+	message := fmt.Sprintf(
+		"Versi %s tersedia (saat ini %s).\n\n%s",
+		info.LatestVersion, info.CurrentVersion, info.ReleaseNotes,
+	)
+
+	dialogOptions := runtime.DialogOptions{
+		Type:       runtime.DialogTypeInformation,
+		Title:      title,
+		Message:    message,
+		Buttons:    []string{"Update", "Skip"},
+		Cancelable: true,
+		Default:    "Skip",
+	}
+
+	chosen, err := runtime.Dialog(a.ctx, dialogOptions)
+	if err != nil {
+		slog.Warn("dialog update gagal", "error", err)
+		return
+	}
+
+	if chosen == "Update" && info.DownloadURL != "" {
+		go a.downloadUpdate(info.DownloadURL)
+	}
+}
+
+// downloadUpdate unduh binary update ke configDir lalu buka folder hasil download.
+// Download dilakukan di goroutine background supaya UI tidak frozen.
+func (a *App) downloadUpdate(downloadURL string) {
+	slog.Info("unduh update", "url", downloadURL)
+
+	// Parse URL untuk dapat nama file.
+	u, err := url.Parse(downloadURL)
+	if err != nil {
+		slog.Warn("parse URL download gagal", "error", err)
+		runtime.WindowMessage(a.ctx, "Gagal", "URL download tidak valid")
+		return
+	}
+	filename := filepath.Base(u.Path)
+	if filename == "" || filename == "." {
+		filename = "octopus-desktop-update.zip"
+	}
+
+	destDir := filepath.Join(a.configDir, "downloads")
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		slog.Warn("buat folder downloads gagal", "error", err)
+		return
+	}
+
+	destFile := filepath.Join(destDir, filename)
+	req, err := http.NewRequestWithContext(a.ctx, http.MethodGet, downloadURL, nil)
+	if err != nil {
+		slog.Warn("siapkan request download gagal", "error", err)
+		return
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		slog.Warn("download gagal", "error", err)
+		runtime.WindowMessage(a.ctx, "Gagal", fmt.Sprintf("Download update gagal: %v", err))
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		slog.Warn("download HTTP gagal", "status", resp.StatusCode)
+		runtime.WindowMessage(a.ctx, "Gagal", fmt.Sprintf("Download gagal: HTTP %d", resp.StatusCode))
+		return
+	}
+
+	f, err := os.Create(destFile)
+	if err != nil {
+		slog.Warn("buat file download gagal", "error", err)
+		return
+	}
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		f.Close()
+		os.Remove(destFile)
+		slog.Warn("tulis file download gagal", "error", err)
+		runtime.WindowMessage(a.ctx, "Gagal", fmt.Sprintf("Simpan update gagal: %v", err))
+		return
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(destFile)
+		slog.Warn("tutup file download gagal", "error", err)
+		return
+	}
+
+	slog.Info("update berhasil didownload", "path", destFile)
+	// Buka folder downloads untuk user install manual.
+	_ = exec.Command("open", destDir).Start()
 }

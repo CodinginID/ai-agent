@@ -7,10 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/codinginid/octopus-desktop/internal/settings"
+	"github.com/codinginid/octopus-desktop/internal/storage"
 )
 
 var ErrUnauthorized = errors.New("unauthorized")
@@ -19,6 +22,8 @@ type Client struct {
 	baseURL string
 	token   string
 	http    *http.Client
+	// localDB opsional — nil kalau tidak di-set, berarti tidak ada cache offline.
+	localDB *storage.LocalDB
 }
 
 func New(baseURL, token string) *Client {
@@ -140,7 +145,55 @@ func (c *Client) stream(ctx context.Context, path string, body any, out chan<- E
 }
 
 func (c *Client) SendChat(ctx context.Context, text string, out chan<- Event) error {
+	// Jika gateway tidak terjangkau, antri pesan ke lokal DB supaya bisa
+	// disinkronkan nanti saat reconnect.
+	if err := c.http.Do(c.makeTestReq(ctx)); err != nil && c.localDB != nil {
+		if saveErr := c.localDB.QueueMessage(text); saveErr != nil {
+			slog.Warn("gagal antri pesan offline", "error", saveErr)
+		}
+		out <- Event{Type: "stream_error", Data: map[string]any{"message": "gateway tidak terjangkau, pesan diantri"}}
+		close(out)
+		return nil
+	}
 	return c.stream(ctx, "/chat/send", map[string]string{"text": text}, out)
+}
+
+// makeTestReq buatkan request dummy hanya untuk tes koneksi HTTP tanpa
+// mengirim payload ke server. Jika request berhasil, berarti gateway reachable.
+func (c *Client) makeTestReq(ctx context.Context) *http.Request {
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/auth/me", nil)
+	return req
+}
+
+// SetLocalDB pasang cache lokal untuk offline mode.
+func (c *Client) SetLocalDB(db *storage.LocalDB) {
+	c.localDB = db
+}
+
+// SyncPendingMessages kirim semua pesan yang masih pending ke gateway.
+func (c *Client) SyncPendingMessages(ctx context.Context) {
+	if c.localDB == nil {
+		return
+	}
+	pending, err := c.localDB.GetPendingMessages()
+	if err != nil {
+		slog.Warn("gagal ambil pesan pending untuk sinkronisasi", "error", err)
+		return
+	}
+	if len(pending) == 0 {
+		return
+	}
+	slog.Info("sinkronisasi pesan offline", "count", len(pending))
+
+	for _, msg := range pending {
+		if err := c.stream(ctx, "/chat/send", map[string]string{"text": msg.Text}, nil); err != nil {
+			slog.Warn("sinkronisasi pesan gagal", "id", msg.ID, "error", err)
+			continue
+		}
+		if err := c.localDB.MarkSent(msg.ID); err != nil {
+			slog.Warn("tandai pesan terkirim gagal", "id", msg.ID, "error", err)
+		}
+	}
 }
 
 func (c *Client) Approve(ctx context.Context, planID string, out chan<- Event) error {
@@ -225,4 +278,69 @@ func (c *Client) ToggleAgent(ctx context.Context, agentID string, enabled bool) 
 		return fmt.Errorf("PUT /me/agents/%s gagal: HTTP %d", agentID, resp.StatusCode)
 	}
 	return nil
+}
+
+// UpdateInfo berisi detail update dari GitHub release terakhir.
+// Empty strings pada field berarti data belum tersedia (mis. saat parsing gagal).
+type UpdateInfo struct {
+	CurrentVersion string `json:"current_version"`
+	LatestVersion  string `json:"latest_version"`
+	DownloadURL    string `json:"download_url"`
+	ReleaseNotes   string `json:"release_notes"`
+}
+
+// CheckForUpdates mengecek versi terbaru di GitHub releases dan mengembalikan
+// string terbaru bila versi berbeda, atau string kosong bila sudah terbaru.
+// Caller tetap butuh UpdateInfo lengkap (judul, URL download) untuk dialog;
+// metode ini hanya memberi sinyal cepat apakah ada update yang perlu ditawarkan.
+func (c *Client) CheckForUpdates(ctx context.Context, currentVersion string) (UpdateInfo, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		"https://api.github.com/repos/codinginid/ai-agent/releases/latest", nil)
+	if err != nil {
+		return UpdateInfo{}, fmt.Errorf("siapkan request github releases: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("User-Agent", "octopus-desktop")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return UpdateInfo{}, fmt.Errorf("fetch github releases: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return UpdateInfo{}, fmt.Errorf("github releases HTTP %d", resp.StatusCode)
+	}
+
+	var raw struct {
+		TagName    string `json:"tag_name"`
+		Name       string `json:"name"`
+		HTMLURL    string `json:"html_url"`
+		Body       string `json:"body"`
+		Assets     []struct {
+			Name               string `json:"name"`
+			BrowserDownloadURL string `json:"browser_download_url"`
+		} `json:"assets"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return UpdateInfo{}, fmt.Errorf("decode github releases: %w", err)
+	}
+
+	latest := strings.TrimPrefix(raw.TagName, "v")
+	current := strings.TrimPrefix(currentVersion, "v")
+
+	downloadURL := ""
+	for _, a := range raw.Assets {
+		if strings.Contains(a.Name, "octopus-desktop") {
+			downloadURL = a.BrowserDownloadURL
+			break
+		}
+	}
+
+	return UpdateInfo{
+		CurrentVersion: currentVersion,
+		LatestVersion:  raw.TagName,
+		DownloadURL:    downloadURL,
+		ReleaseNotes:   raw.Name + "\n" + raw.Body,
+	}, latest != current
 }

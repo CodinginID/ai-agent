@@ -3,6 +3,7 @@ module github.com/codinginid/octopus-desktop
 go 1.25.0
 
 require (
+	github.com/mattn/go-sqlite3 v1.14.49
 	github.com/wailsapp/wails/v2 v2.13.0
 	github.com/zalando/go-keyring v0.2.8
 )

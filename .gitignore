@@ -235,3 +235,4 @@ logs/
 
 # Claude Code agent worktrees (embedded git repos — jangan di-track)
 .claude/worktrees/
+.gstack/

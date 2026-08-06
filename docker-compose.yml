@@ -90,7 +90,7 @@ services:
   bot:
     image: ghcr.io/codinginid/ai-agent:latest
     build:
-      context: .
+      context: ./backend
       args:
         # Baked into GET /health. Override with APP_VERSION env when building.
         APP_VERSION: ${APP_VERSION:-dev}
