@@ -1,0 +1,15 @@
+{
+  "id": "session-1784264694892",
+  "startedAt": "2026-07-17T05:04:54.892Z",
+  "cwd": "/Users/anonymous/Documents/office/codinginid/ai-agent",
+  "context": {},
+  "metrics": {
+    "edits": 71,
+    "commands": 0,
+    "tasks": 0,
+    "errors": 0
+  },
+  "restoredAt": "2026-07-17T11:33:22.338Z",
+  "endedAt": "2026-07-17T15:08:33.657Z",
+  "duration": 36218766
+}

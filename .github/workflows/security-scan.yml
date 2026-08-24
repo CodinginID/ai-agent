@@ -1,0 +1,33 @@
+name: Security Dependency Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  security-scan:
+    name: "Security Dependency Scan"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install safety
+        run: pip install safety
+
+      - name: Run safety check
+        run: safety check -r requirements.txt
+
+      - name: Run OSV Scanner (optional)
+        uses: google/osv-scanner-action@v1
+        with:
+          scan-args: |-
+            --lockfile=requirements.txt
+        continue-on-error: true

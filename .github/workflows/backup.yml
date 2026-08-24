@@ -1,0 +1,98 @@
+name: Database Backup
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  backup-database:
+    name: Backup PostgreSQL Database
+    runs-on: ubuntu-latest
+
+    env:
+      DB_HOST: ${{ secrets.DB_HOST }}
+      DB_USER: ${{ secrets.DB_USER }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      DB_NAME: ${{ secrets.DB_NAME }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install psycopg2 and pg_dump
+        run: |
+          pip install psycopg2-binary==2.9.9
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Run backup script (local)
+        id: local_backup
+        run: |
+          chmod +x scripts/backup.sh
+          if [ -n "$DB_PASSWORD" ]; then
+            export PGPASSWORD="$DB_PASSWORD"
+          fi
+          export PGHOST="$DB_HOST"
+          export PGUSER="$DB_USER"
+          export PGDATABASE="$DB_NAME"
+          scripts/backup.sh --local-only
+        env:
+          PGPASSWORD: ${{ secrets.DB_PASSWORD }}
+          PGHOST: ${{ secrets.DB_HOST }}
+          PGUSER: ${{ secrets.DB_USER }}
+          PGDATABASE: ${{ secrets.DB_NAME }}
+
+      - name: Upload local backup artifact
+        if: steps.local_backup.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgresql-backup-${{ github.run_number }}
+          path: /backups/backup_*.sql.gz
+          retention-days: 7
+
+      - name: Run backup script (S3 upload + cleanup)
+        id: s3_backup
+        if: steps.local_backup.outcome == 'success'
+        run: |
+          scripts/backup.sh --s3-only
+        env:
+          PGPASSWORD: ${{ secrets.DB_PASSWORD }}
+          PGHOST: ${{ secrets.DB_HOST }}
+          PGUSER: ${{ secrets.DB_USER }}
+          PGDATABASE: ${{ secrets.DB_NAME }}
+
+      - name: Notify Slack on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "FAILURE: PostgreSQL backup failed on `${{ github.repository }}` (run #${{ github.run_number }}).\n\nWorkflow: `${{ github.workflow }}`",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*FAILURE: PostgreSQL backup failed*\n\nRepository: `${{ github.repository }}`\nRun: #${{ github.run_number }}\nTriggered by: `${{ github.event_name }}`"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Notify Discord on failure
+        if: failure()
+        uses: Ilshidur/action-discord@master
+        with:
+          args: "FAILURE: PostgreSQL backup failed on `${{ github.repository }}` (run #${{ github.run_number }}). Check <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|here> for details."
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}

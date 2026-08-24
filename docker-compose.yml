@@ -90,7 +90,7 @@ services:
   bot:
     image: ghcr.io/codinginid/ai-agent:latest
     build:
-      context: .
+      context: ./backend
       args:
         # Baked into GET /health. Override with APP_VERSION env when building.
         APP_VERSION: ${APP_VERSION:-dev}
@@ -104,8 +104,6 @@ services:
     depends_on:
       ollama:
         condition: service_healthy
-      ollama-init:
-        condition: service_completed_successfully
       redis:
         condition: service_healthy
     restart: unless-stopped

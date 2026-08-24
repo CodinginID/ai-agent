@@ -1,0 +1,40 @@
+name: octopus-desktop
+
+on:
+  pull_request:
+    paths:
+      - "octopus-desktop/**"
+      - ".github/workflows/octopus-desktop.yml"
+  push:
+    branches: [main]
+    paths:
+      - "octopus-desktop/**"
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: octopus-desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.0"
+      - run: mkdir -p frontend/dist && touch frontend/dist/.keep
+      - run: go vet ./internal/... .
+      - run: go test ./... -v
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: octopus-desktop/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm test

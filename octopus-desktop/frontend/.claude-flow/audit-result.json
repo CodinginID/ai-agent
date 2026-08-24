@@ -1,0 +1,632 @@
+{
+  "audit_timestamp": "2026-07-23",
+  "project": "octopus-desktop-frontend",
+  "directory": "frontend/src/",
+  "total_files": 37,
+  "total_lines": 4187,
+  "sections": [
+    {
+      "id": "file-inventory",
+      "title": "File Inventory",
+      "entry_points": [
+        {"file": "src/main.tsx", "lines": 14, "role": "App entry point, renders <App/> with StrictMode"},
+        {"file": "src/App.tsx", "lines": 178, "role": "Root component with global state, keyboard shortcuts, parallax bg, screen routing"}
+      ],
+      "layout_and_style": [
+        {"file": "src/App.css", "lines": 58, "role": "Vite template CSS, mostly legacy/unused"},
+        {"file": "src/style.css", "lines": 1660, "role": "Master stylesheet: design tokens, all component styles, animations"}
+      ],
+      "chat_module": [
+        {"file": "src/chat/ChatView.tsx", "lines": 201, "role": "Main chat view: message rendering, event subscriptions, input handling"},
+        {"file": "src/chat/types.ts", "lines": 31, "role": "Message, Part, IncomingEvent type definitions"},
+        {"file": "src/chat/reducer.ts", "lines": 113, "role": "State machine: applies IncomingEvents to message array"},
+        {"file": "src/chat/bindings.ts", "lines": 46, "role": "Wails runtime bridge to Go backend (SendChat, ApprovePlan, etc.)"},
+        {"file": "src/chat/UserBubble.tsx", "lines": 10, "role": "User message bubble with pointer tilt"},
+        {"file": "src/chat/cards/StatusLine.tsx", "lines": 3, "role": "Status line indicator (thinking/observing)"},
+        {"file": "src/chat/cards/TextCard.tsx", "lines": 10, "role": "Text message card with streaming cursor"},
+        {"file": "src/chat/cards/ActionCard.tsx", "lines": 12, "role": "Action execution card with spinner"},
+        {"file": "src/chat/cards/MetricCard.tsx", "lines": 34, "role": "Metric display with progress bars and regex parsing"},
+        {"file": "src/chat/cards/TableCard.tsx", "lines": 45, "role": "Table display with column parser"},
+        {"file": "src/chat/cards/ApprovalCard.tsx", "lines": 32, "role": "Approve/Reject decision card"},
+        {"file": "src/chat/cards/ErrorCard.tsx", "lines": 10, "role": "Error display with retry button"},
+        {"file": "src/chat/cards/cards.test.tsx", "lines": 63, "role": "Card component tests"}
+      ],
+      "tilt_system": [
+        {"file": "src/components/Tilt.tsx", "lines": 11, "role": "Tilt wrapper component using usePointerTilt"},
+        {"file": "src/hooks/usePointerTilt.ts", "lines": 36, "role": "Pointer tilt calculation hook (max 6deg)"},
+        {"file": "src/hooks/usePointerTilt.test.tsx", "lines": 39, "role": "Tilt hook tests"},
+        {"file": "src/components/Tilt.test.tsx", "lines": 15, "role": "Tilt component tests"}
+      ],
+      "theme": [
+        {"file": "src/hooks/useTheme.ts", "lines": 86, "role": "Theme management: auto/light/dark with localStorage persistence"}
+      ],
+      "orb_3d": [
+        {"file": "src/orb/AiOrb.tsx", "lines": 106, "role": "R3F Canvas with orbit particles + core sphere"},
+        {"file": "src/orb/orbState.ts", "lines": 64, "role": "Orb state types, color constants, uniform computation, deriveAiState"},
+        {"file": "src/orb/orbMaterial.ts", "lines": 80, "role": "Three.js ShaderMaterial with vertex/fragment shaders"},
+        {"file": "src/orb/orbState.test.ts", "lines": 43, "role": "Orb state tests"}
+      ],
+      "avatar_system": [
+        {"file": "src/avatar/AvatarSystem.tsx", "lines": 64, "role": "Global amplitude singleton + Avatar list renderer"},
+        {"file": "src/avatar/Avatar.tsx", "lines": 108, "role": "Individual worker avatar with SVG icons, pulse/speak animations"},
+        {"file": "src/avatar/hooks/useAvatarState.ts", "lines": 77, "role": "Worker state management from avatar events"},
+        {"file": "src/avatar/types.ts", "lines": 25, "role": "AvatarEvent, WorkerAvatar, AvatarWorkerState types"},
+        {"file": "src/avatar/index.ts", "lines": 4, "role": "Avatar module barrel exports"}
+      ],
+      "setup_views": [
+        {"file": "src/setup/LoginView.tsx", "lines": 54, "role": "Login/pairing screen with gateway URL and verification code"},
+        {"file": "src/setup/SettingsView.tsx", "lines": 386, "role": "Settings modal: System, AI Provider, Agents, Workers tabs"},
+        {"file": "src/setup/setup.test.tsx", "lines": 24, "role": "Setup view tests"}
+      ],
+      "voice": [
+        {"file": "src/voice/VoiceBar.tsx", "lines": 92, "role": "Voice input UI: mic button, audio wave, jarvis toggle, listening hint"},
+        {"file": "src/voice/recorder.ts", "lines": 91, "role": "Web Audio API recorder: getUserMedia, ScriptProcessorNode, WAV encoding, base64"},
+        {"file": "src/voice/tts.ts", "lines": 46, "role": "TTS playback with amplitude analysis (AudioContext + AnalyserNode)"},
+        {"file": "src/voice/recorder.test.ts", "lines": 24, "role": "Recorder tests"},
+        {"file": "src/voice/tts.test.ts", "lines": 71, "role": "TTS tests"}
+      ],
+      "other": [
+        {"file": "src/chat/ChatView.test.tsx", "lines": 48, "role": "ChatView tests"},
+        {"file": "src/chat/reducer.test.ts", "lines": 72, "role": "Reducer state machine tests"},
+        {"file": "src/vite-env.d.ts", "lines": 1, "role": "Vite type declarations"}
+      ]
+    },
+    {
+      "id": "per-file-audit",
+      "title": "Per-File Audit",
+      "files": [
+        {
+          "file": "src/App.tsx",
+          "role": "Root component with global state management, screen routing, keyboard shortcuts, parallax background",
+          "quality": "Moderate. Mixes concerns: routing, keyboard shortcuts, TTS orchestration, parallax, and settings persistence all in one component. Hardcoded key constants (ESCAPE_KEY, ENTER_KEY, SPACE_KEY) are fine for read-only constants.",
+          "issues": [
+            "TTS speak() call is fire-and-forget with catch(() => {}) — swallowed errors",
+            "jarvis_mode saved via separate GetSettings+SaveSettings pattern (repeated 3x: here, ChatView, VoiceBar)",
+            "No error boundary or loading skeleton beyond simple text",
+            "setScreen('chat') as fallback in 2 places — inconsistent with loading state"
+          ],
+          "improvements": [
+            "Extract settings persistence into a useSettings hook to remove duplication",
+            "Add error boundary for the entire app",
+            "Centralize keyboard shortcut handling into a custom hook"
+          ],
+          "dependencies": ["ChatView", "VoiceBar", "LoginView", "SettingsView", "AiOrb", "orbState", "voice/tts"]
+        },
+        {
+          "file": "src/chat/ChatView.tsx",
+          "role": "Main chat view: message rendering, event subscriptions, input handling, send/retry logic",
+          "quality": "Good. Well-structured with clear separation of concerns. Uses forwardRef correctly.",
+          "issues": [
+            "counter is module-level mutable — not ideal for SSR but acceptable here",
+            "onAvatarEvent callback is a no-op stub — wasted subscription",
+            "renderPart is recreated on every render (could be useCallback)"
+          ],
+          "improvements": [
+            "Remove unused onAvatarEvent subscription (AvatarSystem handles it internally)",
+            "Memoize renderPart or inline the switch",
+            "Consider extracting chat input into its own component"
+          ],
+          "dependencies": ["bindings", "reducer", "types", "all cards", "UserBubble", "AvatarSystem", "usePointerTilt"]
+        },
+        {
+          "file": "src/chat/reducer.ts",
+          "role": "State machine: transforms IncomingEvents into message array mutations",
+          "quality": "Clean. Immutable updates, well-typed discriminated union. Good use of withoutStatus helper.",
+          "issues": [
+            "status types use Set lookup in hot path — fine for small sets",
+            "avatar event dispatch uses window.dispatchEvent which bypasses the onAvatarEvent callback",
+            "updateAssistant function is pure but could be split into per-type handlers for readability"
+          ],
+          "improvements": [
+            "Split into per-event-type handler functions for easier testing",
+            "Consider using a reducer pattern with actions instead of switch/if chains"
+          ],
+          "dependencies": ["types"]
+        },
+        {
+          "file": "src/chat/bindings.ts",
+          "role": "Wails runtime bridge to Go backend",
+          "quality": "Good. Type-safe Go app interface definition with declare global.",
+          "issues": [
+            "window.go.main.App is accessed directly everywhere — no error handling layer",
+            "void keyword suppresses errors silently"
+          ],
+          "improvements": [
+            "Add a small error wrapper function for Go calls",
+            "Consider creating a typed API client object"
+          ],
+          "dependencies": ["types"]
+        },
+        {
+          "file": "src/chat/cards/MetricCard.tsx",
+          "role": "Metric display with progress bars",
+          "quality": "Functional but fragile. Regex-based parsing is hacky.",
+          "issues": [
+            "PCT_RE regex is brittle — depends on backend output format",
+            "No error handling if output doesn't match regex",
+            "The raw output fallback is not styled like other cards"
+          ],
+          "improvements": [
+            "Make regex more robust or switch to structured backend output",
+            "Add error boundary for malformed metric output",
+            "Style the fallback <pre> consistently with card design"
+          ],
+          "dependencies": ["components/Tilt"]
+        },
+        {
+          "file": "src/chat/cards/TableCard.tsx",
+          "role": "Table display with column parser",
+          "quality": "Functional. parseColumns is a standalone pure function.",
+          "issues": [
+            "parseColumns uses double-space split which is fragile for variable-width columns",
+            "No min/max column validation in parsed rows"
+          ],
+          "improvements": [
+            "Consider using a tabular data library or structured backend output",
+            "Add input validation for parsed table data"
+          ],
+          "dependencies": ["components/Tilt"]
+        },
+        {
+          "file": "src/setup/SettingsView.tsx",
+          "role": "Settings modal: System, AI Provider, Agents, Workers tabs",
+          "quality": "Large component (386 lines) with multiple responsibilities.",
+          "issues": [
+            "386 lines — too large, violates single responsibility",
+            "DEFAULT_WORKERS hardcoded with emoji mapping in JSX (lines 363-367)",
+            "No dark mode theme variables — only light theme CSS exists",
+            "set() helper uses bracket notation with dynamic keys — error-prone",
+            "No loading state for settings fetch",
+            "alert() used for error handling instead of proper UI"
+          ],
+          "improvements": [
+            "Split into separate components: SystemTab, ProviderTab, AgentsTab, WorkersTab",
+            "Move DEFAULT_WORKERS and SHAPE_OPTIONS to a constants file",
+            "Replace alert() with toast/notification system",
+            "Extract emoji-to-shape mapping into a dedicated helper",
+            "Add dark mode CSS variables"
+          ],
+          "dependencies": []
+        },
+        {
+          "file": "src/orb/AiOrb.tsx",
+          "role": "R3F Canvas with orbit particles and core sphere",
+          "quality": "Decent but incomplete.",
+          "issues": [
+            "CoreSphere uses hardcoded meshBasicMaterial color #5b9bd5 — should use theme/orb state colors",
+            "OrbitParticles shader uniforms are never updated with state (uColorMix, uAmplitude only set in useFrame for uTime)",
+            "No state-driven visual changes — particles don't react to thinking/listening/speaking",
+            "Lighting is hardcoded",
+            "Camera position hardcoded"
+          ],
+          "improvements": [
+            "Pass orb state to shader uniforms (uColorMix, uAmplitude, rotationSpeed)",
+            "Use ORB_COLORS from orbState for core sphere color",
+            "Animate particle speed/color based on state transitions",
+            "Add state transition animations (e.g., expand on speaking)"
+          ],
+          "dependencies": ["orbState", "orbMaterial"]
+        },
+        {
+          "file": "src/orb/orbMaterial.ts",
+          "role": "Three.js ShaderMaterial with vertex/fragment shaders",
+          "quality": "Good shader code with proper additive blending and point sprites.",
+          "issues": [
+            "Shader uniforms (uColorMix, uAmplitude) defined but never set from React state",
+            "Hardcoded color values in createOrbitMaterial — should accept params",
+            "No fragment shader response to state changes"
+          ],
+          "improvements": [
+            "Make createOrbitMaterial accept color params so state changes update the shader",
+            "Add uAmplitude to fragment shader for glow intensity",
+            "Add state transition uniforms (target colors for lerp)"
+          ],
+          "dependencies": []
+        },
+        {
+          "file": "src/avatar/Avatar.tsx",
+          "role": "Individual worker avatar with SVG icons, pulse/speak animations",
+          "quality": "Well-structured with memo() for performance. Good SVG shape system.",
+          "issues": [
+            "SVG_SHAPES and DEFAULT_SVG are module-level React elements — should use useMemo or just inline",
+            "resolveSvg creates new React elements on every render (memo should help but it's wasteful)",
+            "No size props — assumes fixed 36px avatar circles"
+          ],
+          "improvements": [
+            "Memoize SVG_SHAPES lookup or render SVG inline",
+            "Add size variants (sm/md/lg)",
+            "Add loading/error states for avatar images"
+          ],
+          "dependencies": ["avatar/types"]
+        },
+        {
+          "file": "src/voice/VoiceBar.tsx",
+          "role": "Voice input UI: mic button, audio wave, jarvis toggle, listening hint",
+          "quality": "Clean and focused. Good state management.",
+          "issues": [
+            "MicRecorder uses deprecated ScriptProcessorNode — should use AudioWorkletProcessor",
+            "No debounce on input — rapid key presses could send duplicate messages",
+            "Emojis for state icons (🟡🔴🎤) may not render consistently across OS"
+          ],
+          "improvements": [
+            "Replace ScriptProcessorNode with AudioWorkletProcessor (deprecated API)",
+            "Add debouncing for transcript events",
+            "Use icon components instead of emojis for consistency"
+          ],
+          "dependencies": ["voice/recorder"]
+        },
+        {
+          "file": "src/hooks/useTheme.ts",
+          "role": "Theme management with auto/light/dark support",
+          "quality": "Good implementation with proper cleanup and localStorage sync.",
+          "issues": [
+            "Theme hook exists but is NOT used anywhere in the app — dead code",
+            "No dark mode CSS variables defined in style.css",
+            "data-theme attribute is set but CSS has no [data-theme='dark'] selectors"
+          ],
+          "improvements": [
+            "Define dark mode CSS variables in :root[data-theme='dark']",
+            "Actually use useTheme() in App.tsx to activate it",
+            "Add dark mode toggle to SettingsView Workers tab or System tab"
+          ],
+          "dependencies": []
+        },
+        {
+          "file": "src/avatar/AvatarSystem.tsx",
+          "role": "Global amplitude singleton + Avatar list renderer",
+          "quality": "Functional but has a problematic global mutable state pattern.",
+          "issues": [
+            "globalAmplitude is a module-level mutable variable with direct mutation — not React-friendly",
+            "registerAmplitudeListener returns cleanup but globalAmplitudeListeners set is never cleared on unmount",
+            "setGlobalAmplitude is exported as a side-effectful function — hard to test"
+          ],
+          "improvements": [
+            "Replace with a proper React context or useStore pattern",
+            "Ensure all listeners are cleaned up on unmount",
+            "Add a dispose/cleanup function for the global state"
+          ],
+          "dependencies": ["avatar/Avatar", "avatar/hooks/useAvatarState", "avatar/types"]
+        }
+      ]
+    },
+    {
+      "id": "css-audit",
+      "title": "CSS Audit",
+      "total_lines": 1660,
+      "duplicate_rules": [
+        {
+          "description": "Avatar styles duplicated 3x",
+          "lines": "658-717, 808-819, 821-858",
+          "details": ".avatar, .avatar-circle, .avatar-icon, .avatar-label, .avatar-name, .avatar-task, .avatar-pulse-ring, .avatar-speak-ring, @keyframes fadeIn, @keyframes pulseRing, @keyframes speakPulse, @keyframes speakRing, .avatar.working, .avatar.speaking are all defined multiple times"
+        },
+        {
+          "description": ".tab-content defined twice",
+          "lines": "1274-1279, 1327-1331",
+          "details": "Identical display:flex, flex-direction:column, gap:1rem"
+        },
+        {
+          "description": ".card padding defined twice",
+          "lines": "195-202, 210-213",
+          "details": ".card has box-shadow and padding redefined, causing cascading overrides"
+        }
+      ],
+      "unused_styles": [
+        {
+          "description": "App.css legacy Vite template styles",
+          "lines": "App.css entire file (58 lines)",
+          "details": "#logo, .result, .input-box, .btn, .input are all Vite template remnants not used in the actual app"
+        },
+        {
+          "description": "No [data-theme='dark'] selectors exist",
+          "details": "useTheme.ts sets data-theme attribute but style.css has no dark mode rules"
+        }
+      ],
+      "design_system_analysis": {
+        "colors": {
+          "tokens_defined": ["--bg-primary", "--bg-secondary", "--accent", "--accent-glow", "--accent-hover", "--text-main", "--text-muted", "--card-bg", "--border-color", "--danger", "--danger-hover", "--warning", "--success", "--elevation-1/2/3"],
+          "hardcoded_values": [
+            "#f1f5f9 (background in .card-pre, .card-table th, .pairing-box, progress bar — should use var(--bg-primary))",
+            "#e2e8f0 (slider background in .slider — should use CSS variable)",
+            "#5b9bd5, #6bc99a, #f6ad55 (hardcoded in orbMaterial.ts and AiOrb.tsx — should reference design tokens)",
+            "#f8f9fa (modal overlay background — same as --bg-primary but hardcoded)",
+            "rgba(113, 128, 150, 0.3) (scrollbar — should be a token)",
+            "#10b981 (point light color in AiOrb.tsx — not a design token)",
+            "#2d3748 (used in --text-main but also hardcoded in a few places)"
+          ]
+        },
+        "spacing": {
+          "assessment": "Mostly consistent using rem units. Padding uses 1.15rem, 0.85rem, 1.75rem patterns. Could benefit from a spacing scale (4px/8px/12px/16px/24px).",
+          "issues": ["Inconsistent: some use 0.85rem, others 1rem, some use calc-based values"]
+        },
+        "typography": {
+          "families": ["Inter (UI text)", "JetBrains Mono (code/metrics)"],
+          "sizes": {
+            "headings": "1.1rem (header), 1.75rem (login h1), 1.25rem (settings h2)",
+            "body": "0.95rem (card text), 0.9rem (input)",
+            "labels": "0.75rem-0.85rem with uppercase + letter-spacing",
+            "code": "0.8rem JetBrains Mono"
+          },
+          "issues": ["No CSS custom properties for font sizes — all hardcoded", "Letter spacing varies: 0.01em to 0.08em without a scale"]
+        }
+      },
+      "mobile_responsive": {
+        "assessment": "Not mobile-responsive. Designed as desktop app (fixed 100vh/100vw, no media queries except prefers-reduced-motion).",
+        "details": "This is correct for a desktop app, not a bug. However, window.innerWidth/innerHeight references in App.tsx and ChatView could fail in small browser windows."
+      },
+      "accessibility": {
+        "good": [
+          "aria-label on chat messages container",
+          "aria-live='polite' for chat",
+          "aria-label on all interactive elements",
+          "prefers-reduced-motion support",
+          "focus-visible outlines defined"
+        ],
+        "issues": [
+          "No skip-to-content link",
+          "Chat log doesn't use aria-live='assertive' for new messages",
+          "Modal overlay doesn't trap focus"
+        ]
+      }
+    },
+    {
+      "id": "orb-analysis",
+      "title": "Orb Analysis",
+      "what_exists": {
+        "Shader": {
+          "vertex": "Orbit particle orbit with golden ratio phase offsets, amplitude-responsive Y offset",
+          "fragment": "Point sprite with radial glow, 3-color mix (blue/green/orange), amplitude-based point size"
+        },
+        "Animation": "Particle rotation (0.15rad/s base), X-axis wobble (sin 0.3t * 0.1), time uniform updates",
+        "State": {
+          "states": ["idle", "thinking", "speaking", "listening"],
+          "uniform_params": ["rotationSpeed", "breathScale", "distortion", "colorMix"],
+          "colors": {"idle": "#4a90d9", "thinking": "#f6ad55", "speaking": "#f56565", "listening": "#6bc99a"}
+        }
+      },
+      "what_is_missing": {
+        "shader": [
+          "uColorMix uniform is defined but NEVER set from React state in AiOrb.tsx",
+          "uAmplitude uniform is defined but never updated in the useFrame loop (only uTime is)",
+          "No rotationSpeed uniform — particles rotate at hardcoded 0.15*delta",
+          "No breathScale uniform — breathing animation not connected to shader",
+          "No distortion uniform — no visual deformation based on state",
+          "CoreSphere color is hardcoded #5b9bd5, never changes with state",
+          "No state transition animations (smooth color lerp between states)"
+        ],
+        "visual": [
+          "Particles don't expand/contract based on speaking amplitude",
+          "No visual distinction between thinking (fast spin) vs idle (slow spin) vs listening (gentle pulse)",
+          "Core sphere is a simple meshBasicMaterial — no shader-based pulsing",
+          "No glow/bloom effect for speaking state"
+        ]
+      },
+      "orbMaterial_optimization": {
+        "good": [
+          "Proper additive blending for glow effect",
+          "depthWrite: false prevents z-fighting",
+          "Shader uniforms well-structured",
+          "Point sprite with gl_PointCoord for soft circles"
+        ],
+        "issues": [
+          "createOrbitMaterial() called once at mount — no way to update colors",
+          "Uniforms not passed as parameters — hardcoding limits reusability",
+          "No material disposal tracking for state changes"
+        ],
+        "recommendation": "Refactor to accept initial uniforms, then expose a ref-based update pattern so React can drive shader changes."
+      },
+      "AiOrb_consumes_state_correctly": {
+        "assessment": "PARTIALLY. The Orb receives state as a prop but doesn't use it in the Canvas.",
+        "issues": [
+          "state prop is typed and received but never passed to OrbitParticles or CoreSphere",
+          "useFrame only updates uTime, not uColorMix or uAmplitude on the orbit material",
+          "CoreSphere only uses amplitude for scale pulse, not for color changes",
+          "paused prop correctly controls frameloop"
+        ]
+      }
+    },
+    {
+      "id": "chat-ui-analysis",
+      "title": "Chat UI Analysis",
+      "card_components": [
+        {"name": "StatusLine", "lines": 3, "description": "Single-line status with pulsing dot indicator", "tilt": false, "status": "minimal, no tilt needed"},
+        {"name": "TextCard", "lines": 10, "description": "Text content with streaming cursor, wrapped in Tilt", "tilt": true, "status": "good"},
+        {"name": "ActionCard", "lines": 12, "description": "Action name with spinner, optional pre output, wrapped in Tilt", "tilt": true, "status": "good"},
+        {"name": "MetricCard", "lines": 34, "description": "Progress bars with percentage labels, raw output details toggle, wrapped in Tilt", "tilt": true, "status": "good but fragile regex parsing"},
+        {"name": "TableCard", "lines": 45, "description": "HTML table with scrollable container, wrapped in Tilt", "tilt": true, "status": "good, parseColumns is clean"},
+        {"name": "ApprovalCard", "lines": 32, "description": "Warning-styled card with approve/reject buttons, wrapped in Tilt", "tilt": true, "status": "good"},
+        {"name": "ErrorCard", "lines": 10, "description": "Danger-styled card with optional retry button, wrapped in Tilt", "tilt": true, "status": "minimal but functional"}
+      ],
+      "tilt_effect": {
+        "status": "Implemented via Tilt wrapper component using usePointerTilt hook",
+        "coverage": "All cards + UserBubble + LoginView card use tilt",
+        "accessibility": "Tilt respects prefers-reduced-motion (transform: none !important)"
+      },
+      "typography_hierarchy": {
+        "assessment": "Decent but could be improved",
+        "levels": {
+          "heading": "0.75rem uppercase letter-spacing for card titles (card-title class)",
+          "body": "0.95rem for card text, 0.9rem for input",
+          "code": "0.8rem JetBrains Mono for pre/code",
+          "labels": "0.75-0.85rem uppercase for metric labels, approval status",
+          "meta": "0.75rem for hints, status text"
+        },
+        "issues": [
+          "Card title uses same size (0.75rem) as hints/status — hierarchy is flat",
+          "No size variants (xl/lg/sm/md) for consistent scaling",
+          "Color hierarchy is OK (accent for titles, text-main for body, text-muted for meta) but could be more pronounced"
+        ]
+      }
+    },
+    {
+      "id": "setup-views-analysis",
+      "title": "Setup Views Analysis",
+      "LoginView": {
+        "what_exists": [
+          "Gateway URL input (cfg.gateway_url)",
+          "Connect button with StartLogin flow",
+          "Pairing code display with polling",
+          "Error handling with error state",
+          "Tilt effect on card",
+          "CSS: login-view, pairing-box, pairing-code, pairing-status"
+        ],
+        "what_is_missing": [
+          "No dark mode support (hardcoded light theme colors)",
+          "No loading skeleton/shimmer",
+          "No 'remember this device' option",
+          "No QR code alternative to manual pairing",
+          "No connection status indicator beyond polling",
+          "CSS: no login-specific animations (fade in, glow on code display)"
+        ],
+        "hardcoded_issues": [
+          "'Connect' button text hardcoded (not i18n)",
+          "'AUTHENTICATING VIA BROWSER...' hardcoded",
+          "'VERIFICATION CODE:' hardcoded",
+          "pollIntervalMs default 2000 hardcoded"
+        ]
+      },
+      "SettingsView": {
+        "what_exists": [
+          "4 tabs: System, AI Provider, Agents, Workers",
+          "Gateway URL, Jarvis mode, TTS, Whisper/Piper paths",
+          "Asset download with progress bar",
+          "AI Provider selection (Codex, Claude, GLM)",
+          "Agent toggle list with status badges",
+          "Worker customization (color picker, shape selector, visibility toggle)",
+          "Personal API key management (Anthropic)",
+          "Save/Cancel/Logout actions",
+          "Settings hints and descriptions"
+        ],
+        "dark_mode_toggle": {
+          "status": "NOT IMPLEMENTED",
+          "details": "useTheme.ts exists and works (auto/light/dark with localStorage), BUT: (1) It is never called from App.tsx, (2) style.css has NO [data-theme='dark'] CSS rules, (3) SettingsView has no theme toggle UI, (4) All CSS is light-theme only"
+        },
+        "issues": [
+          "386 lines — largest component, violates SRP",
+          "alert() used for error feedback (not user-friendly)",
+          "DEFAULT_WORKERS hardcoded in JSX with emoji mapping (lines 363-367)",
+          "No loading state when fetching agents",
+          "Setting changes are immediate (set() helper) without undo/rollback",
+          "No validation on inputs (empty gateway URL, invalid paths)"
+        ]
+      }
+    },
+    {
+      "id": "top-10-improvements",
+      "title": "Top 10 Improvement Opportunities (ranked by visual impact)",
+      "opportunities": [
+        {
+          "rank": 1,
+          "title": "Orb state-driven shader updates",
+          "impact": "HIGH — This is the visual centerpiece of the app. Currently the orb does NOT react to state changes (thinking/listening/speaking) despite having state computation in orbState.ts.",
+          "files_to_change": ["src/orb/AiOrb.tsx", "src/orb/orbMaterial.ts"],
+          "description": "Connect OrbState to shader uniforms so particles change color, speed, and distortion based on current state. Add smooth transitions between states. Make the core sphere pulse with speaking amplitude using a proper shader.",
+          "effort": "medium",
+          "parallelizable": true
+        },
+        {
+          "rank": 2,
+          "title": "Dark mode implementation",
+          "impact": "HIGH — useTheme.ts is fully implemented but completely unused. Adding dark mode CSS variables would dramatically change the app's feel.",
+          "files_to_change": ["src/style.css", "src/App.tsx", "src/setup/SettingsView.tsx"],
+          "description": "Add :root[data-theme='dark'] CSS variables for all design tokens. Wire useTheme() into App.tsx. Add a dark mode toggle to SettingsView system tab.",
+          "effort": "medium",
+          "parallelizable": true
+        },
+        {
+          "rank": 3,
+          "title": "CSS design system tokenization",
+          "impact": "HIGH — Removes hardcoded colors, establishes consistent design tokens, makes dark mode easier.",
+          "files_to_change": ["src/style.css"],
+          "description": "Extract all hardcoded color values into CSS custom properties. Create a spacing scale. Add typography scale variables. Replace #f1f5f9 with var(--bg-primary), etc.",
+          "effort": "medium",
+          "parallelizable": true,
+          "blocks": ["dark mode implementation"]
+        },
+        {
+          "rank": 4,
+          "title": "Remove CSS duplication",
+          "impact": "MEDIUM-HIGH — 1660 lines with significant duplication. Cleaning up will make CSS maintainable.",
+          "files_to_change": ["src/style.css"],
+          "description": "Remove duplicate avatar styles (3x), duplicate .tab-content, duplicate .card padding. Consolidate all avatar styles into a single section. Remove App.css entirely (legacy Vite template).",
+          "effort": "low",
+          "parallelizable": true
+        },
+        {
+          "rank": 5,
+          "title": "SettingsView component decomposition",
+          "impact": "MEDIUM-HIGH — 386 lines is too large. Splitting into tabs will improve maintainability and enable parallel agent work.",
+          "files_to_change": ["src/setup/SettingsView.tsx"],
+          "description": "Split into: SettingsView (orchestrator), SystemTab, ProviderTab, AgentsTab, WorkersTab. Move DEFAULT_WORKERS, SHAPE_OPTIONS, emoji mapping to constants. Extract set() helper pattern.",
+          "effort": "medium",
+          "parallelizable": true,
+          "blocks": []
+        },
+        {
+          "rank": 6,
+          "title": "Avatar system: replace global mutable state",
+          "impact": "MEDIUM — Global mutable variables (globalAmplitude) are not React-friendly and cause testing difficulty.",
+          "files_to_change": ["src/avatar/AvatarSystem.tsx", "src/avatar/hooks/useAvatarState.ts"],
+          "description": "Replace globalAmplitude with React Context or Zustand store. Ensure proper cleanup on unmount. Make amplitude updates traceable.",
+          "effort": "medium",
+          "parallelizable": false,
+          "blocks": ["orb shader updates (needs amplitude from proper source)"]
+        },
+        {
+          "rank": 7,
+          "title": "Voice: replace deprecated ScriptProcessorNode",
+          "impact": "MEDIUM — ScriptProcessorNode is deprecated and will be removed from browsers.",
+          "files_to_change": ["src/voice/recorder.ts"],
+          "description": "Replace with AudioWorkletProcessor for modern audio processing. Create a worklet processor file and load it dynamically.",
+          "effort": "medium",
+          "parallelizable": true
+        },
+        {
+          "rank": 8,
+          "title": "SettingsView: replace alert() with proper error UI",
+          "impact": "MEDIUM — alert() is jarring and blocks the main thread. A toast system would be much better.",
+          "files_to_change": ["src/setup/SettingsView.tsx", "src/style.css"],
+          "description": "Create a simple toast/notification component. Replace all alert() calls. Add toast CSS styles and animation.",
+          "effort": "low",
+          "parallelizable": true
+        },
+        {
+          "rank": 9,
+          "title": "Chat cards: improve MetricCard parsing",
+          "impact": "MEDIUM — Current regex parsing is fragile and breaks if backend output format changes.",
+          "files_to_change": ["src/chat/cards/MetricCard.tsx"],
+          "description": "Make the regex more robust or switch to a line-based parser. Add error handling for unexpected output. Style the fallback consistently.",
+          "effort": "low",
+          "parallelizable": true
+        },
+        {
+          "rank": 10,
+          "title": "Accessibility improvements",
+          "impact": "MEDIUM — Better keyboard navigation, focus management, and ARIA attributes.",
+          "files_to_change": ["src/App.tsx", "src/setup/SettingsView.tsx", "src/style.css"],
+          "description": "Add focus trapping in settings modal. Add skip-to-content link. Improve aria-live on chat. Make modal dismissible with Escape (already partially done but could be improved).",
+          "effort": "low",
+          "parallelizable": true
+        }
+      ]
+    },
+    {
+      "id": "dependency-graph",
+      "title": "File Dependency Graph",
+      "dependencies": {
+        "src/main.tsx": ["src/App.tsx", "src/style.css"],
+        "src/App.tsx": ["src/chat/ChatView.tsx", "src/voice/VoiceBar.tsx", "src/voice/tts.ts", "src/setup/LoginView.tsx", "src/setup/SettingsView.tsx", "src/orb/AiOrb.tsx", "src/orb/orbState.ts", "src/style.css"],
+        "src/chat/ChatView.tsx": ["src/chat/bindings.ts", "src/chat/reducer.ts", "src/chat/types.ts", "src/chat/cards/*", "src/chat/UserBubble.tsx", "src/avatar/AvatarSystem.tsx", "src/hooks/usePointerTilt.ts"],
+        "src/chat/cards/*": ["src/components/Tilt.tsx"],
+        "src/chat/reducer.ts": ["src/chat/types.ts"],
+        "src/chat/bindings.ts": ["src/chat/types.ts", "src/avatar/types.ts"],
+        "src/orb/AiOrb.tsx": ["src/orb/orbMaterial.ts", "src/orb/orbState.ts"],
+        "src/avatar/AvatarSystem.tsx": ["src/avatar/hooks/useAvatarState.ts", "src/avatar/Avatar.tsx", "src/avatar/types.ts"],
+        "src/avatar/hooks/useAvatarState.ts": ["src/avatar/types.ts"],
+        "src/avatar/Avatar.tsx": ["src/avatar/types.ts"],
+        "src/setup/SettingsView.tsx": ["src/hooks/usePointerTilt.ts"],
+        "src/voice/VoiceBar.tsx": ["src/voice/recorder.ts"],
+        "src/voice/tts.ts": ["src/voice/recorder.ts"]
+      }
+    }
+  ]
+}
