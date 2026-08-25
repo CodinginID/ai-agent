@@ -71,11 +71,17 @@ def _resolve_caller(authorization: str | None) -> tuple[str, str]:
     return (info.user_id, "user")
 
 
+_ALLOWED_PROVIDERS = {"anthropic", "glm", "mock"}
+
+
 class ChatSendRequest(BaseModel):
     text: str
     # Hanya dipakai kalau caller adalah admin token (admin chat sebagai user X).
     # Kalau session token, field ini diabaikan.
     as_email: str | None = None
+    # BYOK: provider 'otak' pilihan user (anthropic/glm/mock). Bila di-set,
+    # dipersist sbg preferensi user. Key-nya dikirim via header X-Provider-Key.
+    provider: str | None = None
 
 
 def _resolve_admin_target(email: str) -> str:
@@ -132,17 +138,28 @@ def _mirror_to_room(ev: ChatEvent) -> None:
         logger.debug("room mirror gagal", exc_info=True)
 
 
-async def _stream_events(text: str, ctx: MessageContext) -> AsyncIterator[str]:
+async def _stream_events(
+    text: str, ctx: MessageContext, personal_key: str | None = None
+) -> AsyncIterator[str]:
     """Jalankan use case di thread (sync generator) lalu pump ke async stream.
 
     Saat use case yield ``DELEGATE_TO_AGENT``, kita sambung ke worker tunnel
     user-nya (via WS dispatcher) — relay chunks balik sebagai SSE event biasa.
+
+    ``personal_key`` (BYOK, dari header) di-set ke contextvar sehingga resolver
+    provider memakai key milik user untuk request ini. ``asyncio.to_thread`` &
+    ``create_task`` menyalin context, jadi key ikut ke thread producer.
     """
+    from app.adapters.ai_provider_db import personal_anthropic_key_var
     from app.adapters.audit import log_event
     from app.domain.messaging import ChatEventType
     from app.interfaces.worker_ws import (
         NoWorkerAvailableError,
         dispatch_agent_job,
+    )
+
+    key_token = (
+        personal_anthropic_key_var.set(personal_key) if personal_key else None
     )
 
     await log_event(
@@ -243,12 +260,15 @@ async def _stream_events(text: str, ctx: MessageContext) -> AsyncIterator[str]:
         yield "event: done\ndata: {}\n\n"
     finally:
         await task
+        if key_token is not None:
+            personal_anthropic_key_var.reset(key_token)
 
 
 @router.post("/send")
 async def chat_send(
     req: Annotated[ChatSendRequest, Body(...)],
     authorization: str | None = Header(default=None),
+    x_provider_key: str | None = Header(default=None, alias="X-Provider-Key"),
 ) -> StreamingResponse:
     text = req.text.strip()
     if not text:
@@ -268,6 +288,17 @@ async def chat_send(
         user_id = caller_user_id
         conv_id = caller_user_id
 
+    # BYOK: persist pilihan provider user (key TIDAK disimpan — hanya nama provider).
+    if req.provider:
+        provider = req.provider.strip().lower()
+        if provider not in _ALLOWED_PROVIDERS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"provider harus salah satu: {sorted(_ALLOWED_PROVIDERS)}",
+            )
+        from app.adapters.user_provider_config import UserProviderConfigRepository
+        UserProviderConfigRepository(_session_factory()).set(user_id, provider)
+
     ctx = MessageContext(
         user_id=user_id,
         conversation_id=conv_id,
@@ -277,7 +308,7 @@ async def chat_send(
     )
 
     return StreamingResponse(
-        _stream_events(text, ctx),
+        _stream_events(text, ctx, personal_key=x_provider_key),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
