@@ -579,6 +579,38 @@ def test_complex_request_routes_to_execution_loop_when_present() -> None:
     )
 
 
+def test_diagnostic_chat_intent_routes_to_loop_not_chat() -> None:
+    # Regression (shadowing bug): frasa diagnostik ("kenapa ... crash?") sering
+    # di-classify parser sebagai 'chat', tapi harus tetap masuk ExecutionLoop.
+    # Complexity dicek SEBELUM jalur chat.
+    intent = _make_intent("chat", confidence=1.0)
+    intent_parser = MagicMock()
+    intent_parser.parse.return_value = intent
+
+    history = MagicMock()
+    history.recent.return_value = []
+
+    loop = MagicMock()
+    loop.run.return_value = iter([
+        _loop_event("thinking", message="analyzing"),
+        _loop_event("final", text="root cause found"),
+    ])
+
+    ai = MagicMock()
+    uc = _make_use_case(
+        intent_parser=intent_parser,
+        history=history,
+        execution_loop=loop,
+        ai=ai,
+    )
+    events = list(uc.handle("kenapa docker crash terus?", _make_ctx()))
+
+    types = [e.type for e in events]
+    assert ChatEventType.THINKING in types      # masuk loop
+    loop.run.assert_called_once()
+    ai.chat_stream.assert_not_called()          # BUKAN jalur chat
+
+
 def test_complex_request_loop_ai_error_yields_error_event() -> None:
     intent = _make_intent("deploy", confidence=0.8)
     intent_parser = MagicMock()

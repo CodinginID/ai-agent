@@ -239,14 +239,18 @@ class HandleMessageUseCase:
             )
             return
 
-        # ── 3. Chat path ──────────────────────────────────────────────────────
-        if not intent.is_action():
-            yield from self._handle_chat(text, ctx)
-            return
-
-        # ── 4. Complex request → Execution Loop ──────────────────────────────
+        # ── 3. Complex / multi-step request → Execution Loop ─────────────────
+        # Cek kompleksitas SEBELUM jalur chat: frasa diagnostik ("kenapa X
+        # error?", "analisa ...") sering ke-classify sebagai chat/unknown,
+        # padahal butuh loop multi-langkah. Kalau tidak dicek dulu, loop tak
+        # pernah tercapai (bug shadowing dari review awal).
         if self.execution_loop is not None and _is_complex_request(text, intent.intent):
             yield from self._handle_loop(text, ctx)
+            return
+
+        # ── 4. Chat path ──────────────────────────────────────────────────────
+        if not intent.is_action():
+            yield from self._handle_chat(text, ctx)
             return
 
         # ── 5. Simple action path ─────────────────────────────────────────────
