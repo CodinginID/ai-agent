@@ -1,0 +1,89 @@
+:root {
+  --bg: #e8ecf3;
+  --surface: #ffffff;
+  --surface-2: #f1f4f9;
+  --panel: #ffffff;
+  --ink: #182230;
+  --ink-soft: #55627a;
+  --ink-faint: #8390a8;
+  --line: #d6ddeb;
+  --accent: #0d9e88;
+  --accent-ink: #ffffff;
+  --manager: #cf8410;
+  --shadow-panel: 0 1px 2px rgba(20, 30, 50, 0.06), 0 8px 24px rgba(20, 30, 50, 0.08);
+
+  /* status */
+  --st-idle: #8595ad;
+  --st-work: #2bb8a3;
+  --st-approval: #f5a623;
+  --st-review: #4aa3ff;
+  --st-done: #4fc56b;
+  --st-error: #ff6b6b;
+
+  /* canvas tokens */
+  --c-floor: #e1e7f1;
+  --c-floor-line: #d0d9e8;
+  --c-wall: #b9c4d7;
+  --c-zone: #ffffff;
+  --c-zone-line: #dce3ef;
+  --c-zonelabel: #6a7690;
+  --c-shadow: rgba(20, 30, 50, 0.13);
+  --c-server: #dde6f3;
+  --c-name: #1a2434;
+  --c-namebg: rgba(255, 255, 255, 0.84);
+  --c-ping: #0d9e88;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b111c;
+    --surface: #131c2b;
+    --surface-2: #182335;
+    --panel: #0f1826;
+    --ink: #e7edf7;
+    --ink-soft: #93a1ba;
+    --ink-faint: #63708b;
+    --line: #253248;
+    --accent: #38e1c6;
+    --accent-ink: #062019;
+    --manager: #f5b23a;
+    --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 30px rgba(0, 0, 0, 0.35);
+    --c-floor: #131d2c;
+    --c-floor-line: #1e2a3f;
+    --c-wall: #090e16;
+    --c-zone: #182338;
+    --c-zone-line: #263450;
+    --c-zonelabel: #8695af;
+    --c-shadow: rgba(0, 0, 0, 0.38);
+    --c-server: #0f1a2b;
+    --c-name: #e7edf7;
+    --c-namebg: rgba(10, 16, 26, 0.72);
+    --c-ping: #38e1c6;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0b111c;
+  --surface: #131c2b;
+  --surface-2: #182335;
+  --panel: #0f1826;
+  --ink: #e7edf7;
+  --ink-soft: #93a1ba;
+  --ink-faint: #63708b;
+  --line: #253248;
+  --accent: #38e1c6;
+  --accent-ink: #062019;
+  --manager: #f5b23a;
+  --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 30px rgba(0, 0, 0, 0.35);
+  --c-floor: #131d2c;
+  --c-floor-line: #1e2a3f;
+  --c-wall: #090e16;
+  --c-zone: #182338;
+  --c-zone-line: #263450;
+  --c-zonelabel: #8695af;
+  --c-shadow: rgba(0, 0, 0, 0.38);
+  --c-server: #0f1a2b;
+  --c-name: #e7edf7;
+  --c-namebg: rgba(10, 16, 26, 0.72);
+  --c-ping: #38e1c6;
+}
