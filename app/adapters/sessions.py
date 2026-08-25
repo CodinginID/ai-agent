@@ -1,11 +1,14 @@
 """User session repository.
 
-Token opaque (random URL-safe string), disimpan plain di DB karena tidak ada
-risiko offline-attack untuk single-user-per-token. Validasi pakai `expires_at`.
+Token opaque (random URL-safe string) dikembalikan ke klien, tapi yang disimpan
+di DB adalah **hash SHA-256**-nya — kalau DB bocor, token asli tidak ikut bocor.
+Lookup (resolve/revoke) meng-hash token yang masuk lalu mencocokkan. Validasi
+kedaluwarsa pakai `expires_at`.
 """
 
 from __future__ import annotations
 
+import hashlib
 import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -20,6 +23,11 @@ from app.adapters.database.models import UserSessionModel
 
 _TOKEN_BYTES = 32  # ~43 chars URL-safe base64
 DEFAULT_TTL = timedelta(days=30)
+
+
+def _hash_token(token: str) -> str:
+    """SHA-256 hex (64 char) — muat persis di kolom token String(64)."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def _ensure_utc(dt: datetime) -> datetime:
@@ -53,7 +61,7 @@ class UserSessionRepository:
         with self._factory() as session:
             row = UserSessionModel(
                 user_id=user_id,
-                token=token,
+                token=_hash_token(token),  # simpan hash, bukan token asli
                 created_at=now,
                 expires_at=expires_at,
                 last_used_at=now,
@@ -68,9 +76,10 @@ class UserSessionRepository:
         if not token:
             return None
         now = datetime.now(UTC)
+        hashed = _hash_token(token)
         with self._factory() as session:
             row = session.scalar(
-                select(UserSessionModel).where(UserSessionModel.token == token)
+                select(UserSessionModel).where(UserSessionModel.token == hashed)
             )
             if row is None:
                 return None
@@ -80,14 +89,14 @@ class UserSessionRepository:
             session.commit()
             return SessionInfo(
                 user_id=row.user_id,
-                token=row.token,
+                token=token,  # kembalikan token asli yang dikirim caller
                 expires_at=_ensure_utc(row.expires_at),
             )
 
     def revoke(self, token: str) -> bool:
         with self._factory() as session:
             result = session.execute(
-                delete(UserSessionModel).where(UserSessionModel.token == token)
+                delete(UserSessionModel).where(UserSessionModel.token == _hash_token(token))
             )
             session.commit()
             return bool(result.rowcount > 0)
