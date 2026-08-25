@@ -202,18 +202,27 @@ def _parse_local(text: str, project_id: str) -> Intent | None:
 
 
 class IntentParser:
-    def __init__(self, qwen_caller: Callable[[str], str]) -> None:
+    def __init__(self, qwen_caller: Callable[[str], str] | None = None) -> None:
         self._call_qwen = qwen_caller
 
-    def parse(self, text: str, project_id: str = "default") -> Intent:
+    def parse(
+        self,
+        text: str,
+        project_id: str = "default",
+        caller: Callable[[str], str] | None = None,
+    ) -> Intent:
         local = _parse_local(text, project_id)
         if local is not None:
             return local
 
+        # LLM fallback hanya kalau regex lokal tak cocok. ``caller`` di-inject
+        # per-request (provider per-user, BYOK); ``self._call_qwen`` fallback lama.
+        call = caller or self._call_qwen
+        if call is None:
+            return _make("unknown", project_id, 0.0, False, "No LLM provider for intent fallback")
+
         try:
-            raw = self._call_qwen(
-                _JSON_PROMPT.format(user_text=text, project_id=project_id)
-            )
+            raw = call(_JSON_PROMPT.format(user_text=text, project_id=project_id))
             return self._extract(raw, project_id)
         except Exception:
             return _make("unknown", project_id, 0.0, False, "AI call failed")

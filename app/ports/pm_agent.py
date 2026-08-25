@@ -9,7 +9,10 @@ from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from app.agents.pm import TaskPlan
+    from app.ports.ai_provider import AIProvider
 
 
 class PMAgentPort(Protocol):
-    def plan(self, request: str, context: str = "") -> TaskPlan: ...
+    def plan(
+        self, request: str, context: str = "", provider: "AIProvider | None" = None
+    ) -> TaskPlan: ...

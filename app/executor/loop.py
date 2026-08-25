@@ -29,7 +29,9 @@ from typing import Any
 
 from app.executor.context import ContextCollector
 from app.executor.runner import DEFAULT_TIMEOUT, run_safe
+from app.domain.exceptions import AIProviderError
 from app.ports.ai_provider import AIProvider
+from app.ports.ai_provider_resolver import AIProviderResolver
 from app.ports.worker_dispatch import WorkerDispatchPort
 
 logger = logging.getLogger(__name__)
@@ -227,10 +229,18 @@ def _execute_file_read(path: str) -> str:
 class ExecutionLoop:
     """Agentic loop: observe → think → decide → execute → reflect → retry."""
 
-    ai: AIProvider
     context_collector: ContextCollector
     working_dir: Path
+    ai: AIProvider | None = None
     worker_dispatch: WorkerDispatchPort | None = None
+    provider_resolver: AIProviderResolver | None = None
+
+    def _resolve_ai(self, user_id: str) -> AIProvider:
+        if self.provider_resolver is not None and user_id:
+            return self.provider_resolver.for_user(user_id)
+        if self.ai is not None:
+            return self.ai
+        raise AIProviderError("AI provider belum dikonfigurasi untuk execution loop")
 
     def run(
         self,
@@ -266,6 +276,12 @@ class ExecutionLoop:
                 collected_at=datetime.now(),
             )
 
+        try:
+            ai = self._resolve_ai(user_id)
+        except AIProviderError as exc:
+            yield LoopEvent("error", {"message": str(exc)})
+            return
+
         accumulated_context = ""   # grows with each retry iteration
         attempt = 0
 
@@ -286,7 +302,7 @@ class ExecutionLoop:
             )
 
             try:
-                raw_decision = self.ai.chat(think_prompt)
+                raw_decision = ai.chat(think_prompt)
             except Exception as exc:
                 yield LoopEvent("error", {"message": f"AI think failed: {exc}"})
                 return
@@ -396,7 +412,7 @@ class ExecutionLoop:
             )
 
             try:
-                raw_reflection = self.ai.chat(reflect_prompt)
+                raw_reflection = ai.chat(reflect_prompt)
             except Exception as exc:
                 logger.warning("reflection call failed: %s", exc)
                 break  # treat as satisfied, skip retry
@@ -433,7 +449,7 @@ class ExecutionLoop:
             "Do NOT return JSON."
         )
         try:
-            final_text = self.ai.chat(final_prompt)
+            final_text = ai.chat(final_prompt)
         except Exception as exc:
             # Fallback: return raw action output if synthesis fails.
             final_text = result_text

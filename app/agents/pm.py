@@ -63,18 +63,28 @@ class TaskPlan:
 class PMAgent:
     """Planning agent that converts free-text requests into TaskPlan objects."""
 
-    ai_provider: AIProvider
+    ai_provider: AIProvider | None = None
     available_actions: tuple[str, ...] = field(default_factory=lambda: _AVAILABLE_ACTIONS)
 
-    def plan(self, request: str, context: str = "") -> TaskPlan:
+    def plan(
+        self, request: str, context: str = "", provider: AIProvider | None = None
+    ) -> TaskPlan:
         """Given a request, return a TaskPlan with ordered steps.
 
-        Uses the AI provider to break down complex requests. Falls back to a
-        single-step no-op plan when the AI response is malformed.
+        ``provider`` di-inject per-user (BYOK); fallback ke ``self.ai_provider``.
+        Falls back to an empty plan when no provider or the AI response is malformed.
         """
+        ai = provider or self.ai_provider
+        if ai is None:
+            return TaskPlan(
+                title="Error",
+                summary="AI provider belum dikonfigurasi (BYOK).",
+                steps=[],
+                estimated_complexity="simple",
+            )
         prompt = self._build_planning_prompt(request, context)
         try:
-            response = self.ai_provider.chat(prompt)
+            response = ai.chat(prompt)
         except Exception as exc:
             return TaskPlan(
                 title="Error",

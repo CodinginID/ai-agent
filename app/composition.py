@@ -23,7 +23,6 @@ from app.adapters.database.session import (
 )
 from app.adapters.handoff_context import RedisHandoffContextProvider
 from app.adapters.knowledge_store_memory import InMemoryKnowledgeStore
-from app.adapters.ollama import OllamaAdapter
 from app.adapters.rate_limit import RedisRateLimiter
 from app.adapters.redis_client import get_sync_client
 from app.adapters.worker_dispatch import WorkerDispatchAdapter
@@ -54,12 +53,23 @@ def _session_factory() -> sessionmaker[Any]:
 
 
 @lru_cache(maxsize=1)
-def _ollama() -> OllamaAdapter:
-    return OllamaAdapter(
-        url=settings.qwen_url,
-        model=settings.qwen_model,
-        timeout=settings.command_timeout * 3,
-    )
+def _provider_resolver() -> Any:
+    """Resolver AI provider per-user (BYOK) — dipakai use case / loop / task runner."""
+    from app.adapters.ai_provider_db import DbAIProviderResolver
+    from app.adapters.user_provider_config import UserProviderConfigRepository
+    repo = UserProviderConfigRepository(_session_factory())
+    return DbAIProviderResolver(repo, settings)
+
+
+@lru_cache(maxsize=1)
+def _default_provider() -> Any:
+    """Provider default server-side (tanpa user), mis. workflow orchestrator.
+
+    Butuh key sesuai ``AI_PROVIDER_DEFAULT``; kalau kosong, ``build_ai_provider``
+    raise saat dipanggil (BYOK, tidak ada fallback lokal lagi).
+    """
+    from app.adapters.ai_provider_factory import build_ai_provider
+    return build_ai_provider(settings.ai_provider_default, None, settings)
 
 
 def _build_action_registry() -> ActionRegistry:
@@ -85,10 +95,10 @@ def _audit_logger() -> JsonlAuditLogger:
 @lru_cache(maxsize=1)
 def _execution_loop() -> ExecutionLoop:
     return ExecutionLoop(
-        ai=_ollama(),
         context_collector=_context_collector(),
         working_dir=settings.project_dir,
         worker_dispatch=WorkerDispatchAdapter(),
+        provider_resolver=_provider_resolver(),
     )
 
 
@@ -119,9 +129,6 @@ def _embedder() -> Embedder | None:
     if backend == "fastembed":
         from app.adapters.embedder_fastembed import FastEmbedAdapter
         return FastEmbedAdapter()
-    if backend == "ollama":
-        from app.adapters.embedder_ollama import OllamaEmbedder
-        return OllamaEmbedder(url=settings.ollama_host, model=settings.ollama_embed_model)
     raise ValueError(f"Unknown EMBEDDER_BACKEND: {backend!r}")
 
 
@@ -146,11 +153,11 @@ def _workflow_orchestrator() -> WorkflowOrchestrator:
         PromptReviewer,
     )
 
-    ollama = _ollama()
+    ai = _default_provider()
     return WorkflowOrchestrator(
-        architect=PromptArchitect(ai=ollama, model=settings.agent_role_architect),
-        engineer=PromptEngineer(ai=ollama, model=settings.agent_role_engineer),
-        reviewer=PromptReviewer(ai=ollama, model=settings.agent_role_reviewer),
+        architect=PromptArchitect(ai=ai, model=settings.agent_role_architect),
+        engineer=PromptEngineer(ai=ai, model=settings.agent_role_engineer),
+        reviewer=PromptReviewer(ai=ai, model=settings.agent_role_reviewer),
         artifacts=FileArtifactStore(BASE_DIR / "data"),
         file_checker=RepoFileChecker(settings.project_dir),
         audit=_audit_logger(),
@@ -174,7 +181,7 @@ def build_task_runner() -> TaskRunner:
 
     github = GitHubAdapter(token=settings.github_token, repo=settings.github_repo)
     return TaskRunner(
-        pm=PMAgent(ai_provider=_ollama()),
+        pm=PMAgent(),
         github=github,
         dispatch=WorkerDispatchAdapter(),
         observer=LoggingTaskObserver(),
@@ -183,15 +190,14 @@ def build_task_runner() -> TaskRunner:
             store=_knowledge_store(),
             recall_k=settings.rag_recall_k,
         ),
+        provider_resolver=_provider_resolver(),
     )
 
 
 def build_use_case() -> HandleMessageUseCase:
     """Compose use case dengan semua dependensi konkret."""
-    ollama = _ollama()
     return HandleMessageUseCase(
-        ai=ollama,
-        intent_parser=IntentParser(qwen_caller=ollama.chat),
+        intent_parser=IntentParser(),
         plan_generator=PlanGenerator(),
         action_registry=_build_action_registry(),
         pending_plans=_build_pending_plans(),
@@ -203,4 +209,5 @@ def build_use_case() -> HandleMessageUseCase:
         rate_limiter=_rate_limiter(),
         audit=_audit_logger(),
         context_provider=_context_store(),
+        provider_resolver=_provider_resolver(),
     )

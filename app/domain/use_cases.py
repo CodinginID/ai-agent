@@ -13,7 +13,7 @@ render sesuai kemampuan mereka.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -26,6 +26,7 @@ from app.orchestrator.approval import PendingPlanStore
 from app.orchestrator.plans import PlanGenerator
 from app.ports.agents import AgentRoleResolver, HandoffContextProvider
 from app.ports.ai_provider import AIProvider
+from app.ports.ai_provider_resolver import AIProviderResolver
 from app.ports.audit import AuditLogger
 from app.ports.chat_history import ChatHistoryStore
 from app.ports.execution_loop import ExecutionLoopPort
@@ -138,7 +139,6 @@ class HandleMessageUseCase:
     implementasinya tanpa mengubah domain logic.
     """
 
-    ai: AIProvider
     intent_parser: IntentParser
     plan_generator: PlanGenerator
     action_registry: ActionRegistry
@@ -156,6 +156,9 @@ class HandleMessageUseCase:
     audit: AuditLogger | None = field(default=None)
     # Optional — injects per-user project context (tasks/decisions/notes) into chat.
     context_provider: ProjectContextProvider | None = field(default=None)
+    # AI provider: per-user via resolver (BYOK); ``ai`` fallback statis untuk test.
+    ai: AIProvider | None = field(default=None)
+    provider_resolver: AIProviderResolver | None = field(default=None)
 
     def handle(self, text: str, ctx: MessageContext) -> Iterator[ChatEvent]:
         """Public entry — applies rate limit gate, wraps inner in audit envelope."""
@@ -184,7 +187,9 @@ class HandleMessageUseCase:
     def _handle_inner(self, text: str, ctx: MessageContext) -> Iterator[ChatEvent]:
         # ── 1. Classify intent ────────────────────────────────────────────────
         try:
-            intent = self.intent_parser.parse(text, ctx.project_id)
+            intent = self.intent_parser.parse(
+                text, ctx.project_id, caller=self._llm_caller(ctx)
+            )
         except IntentParseError as exc:
             self._audit("error", ctx, stage="intent_parse", detail=str(exc))
             yield ChatEvent.error(f"Gagal classify intent: {exc}")
@@ -262,6 +267,19 @@ class HandleMessageUseCase:
             **fields,
         )
 
+    def _resolve_ai(self, user_id: str) -> AIProvider:
+        if self.provider_resolver is not None:
+            return self.provider_resolver.for_user(user_id)
+        if self.ai is not None:
+            return self.ai
+        raise AIProviderError("AI provider belum dikonfigurasi (atur provider/key dulu)")
+
+    def _llm_caller(self, ctx: MessageContext) -> Callable[[str], str]:
+        """Lazy LLM caller untuk fallback intent — provider di-resolve hanya bila dipakai."""
+        def call(prompt: str) -> str:
+            return self._resolve_ai(ctx.user_id).chat(prompt)
+        return call
+
     def _handle_loop(self, text: str, ctx: MessageContext) -> Iterator[ChatEvent]:
         """Route complex request through ExecutionLoop. Bridge LoopEvents → ChatEvents."""
         assert self.execution_loop is not None  # caller checks before routing here
@@ -311,9 +329,15 @@ class HandleMessageUseCase:
 
         self.history.append(ctx.user_id, "user", text)
 
+        try:
+            ai = self._resolve_ai(ctx.user_id)
+        except AIProviderError as exc:
+            yield ChatEvent.error(f"Provider AI belum siap: {exc}")
+            return
+
         collected: list[str] = []
         try:
-            for chunk in self.ai.chat_stream(prompt):
+            for chunk in ai.chat_stream(prompt):
                 if not chunk:
                     continue
                 collected.append(chunk)
@@ -365,7 +389,8 @@ class HandleMessageUseCase:
             return
 
         try:
-            summary = self.ai.chat(_SUMMARIZE_PROMPT.format(output=result))
+            ai = self._resolve_ai(ctx.user_id)
+            summary = ai.chat(_SUMMARIZE_PROMPT.format(output=result))
         except AIProviderError:
             summary = result
 
