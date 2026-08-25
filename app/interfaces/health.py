@@ -18,7 +18,6 @@ import asyncio
 import logging
 import os
 
-import httpx
 from fastapi import APIRouter
 
 from app.config import settings
@@ -47,12 +46,6 @@ async def _check_redis() -> bool:
     from app.adapters import redis_client
 
     return await redis_client.ping()
-
-
-async def _check_ollama() -> bool:
-    async with httpx.AsyncClient(timeout=_PROBE_TIMEOUT_SEC) as client:
-        resp = await client.get(f"{settings.ollama_host}/api/tags")
-        return resp.status_code == 200
 
 
 async def _check_database() -> bool:
@@ -89,12 +82,11 @@ async def _safe(probe: object, name: str) -> str:
 @router.get("/health")
 async def health() -> dict[str, object]:
     """Aggregated health — version + best-effort dependency probes."""
-    redis_status, ollama_status, db_status = await asyncio.gather(
+    redis_status, db_status = await asyncio.gather(
         _safe(_check_redis, "redis"),
-        _safe(_check_ollama, "ollama"),
         _safe(_check_database, "database"),
     )
-    deps = {"redis": redis_status, "ollama": ollama_status, "database": db_status}
+    deps = {"redis": redis_status, "database": db_status}
     overall = "ok" if all(v == "ok" for v in deps.values()) else "degraded"
     return {
         "status": overall,

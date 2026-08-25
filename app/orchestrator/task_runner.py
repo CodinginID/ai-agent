@@ -26,8 +26,8 @@ import uuid
 from dataclasses import dataclass, field
 
 from app.agents.pm import TaskPlan
-from app.ports.github_issues import GitHubIssuesPort
 from app.ports.ai_provider_resolver import AIProviderResolver
+from app.ports.github_issues import GitHubIssuesPort
 from app.ports.pm_agent import PMAgentPort
 from app.ports.task_events import NullTaskObserver, TaskObserver
 from app.ports.task_memory import NullTaskMemory, TaskMemoryPort

@@ -21,14 +21,10 @@ def client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     async def _ok_redis() -> bool:
         return True
 
-    async def _ok_ollama() -> bool:
-        return True
-
     async def _ok_db() -> bool:
         return True
 
     monkeypatch.setattr(health_iface, "_check_redis", _ok_redis)
-    monkeypatch.setattr(health_iface, "_check_ollama", _ok_ollama)
     monkeypatch.setattr(health_iface, "_check_database", _ok_db)
     monkeypatch.setattr(health_iface, "_version", lambda: "abc1234")
 
@@ -43,7 +39,7 @@ def test_health_ok_when_all_deps_up(client: TestClient) -> None:
     body = resp.json()
     assert body["status"] == "ok"
     assert body["version"] == "abc1234"
-    assert body["dependencies"] == {"redis": "ok", "ollama": "ok", "database": "ok"}
+    assert body["dependencies"] == {"redis": "ok", "database": "ok"}
 
 
 def test_health_degraded_when_a_dep_down(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -54,8 +50,7 @@ def test_health_degraded_when_a_dep_down(monkeypatch: pytest.MonkeyPatch) -> Non
         return False
 
     monkeypatch.setattr(health_iface, "_check_redis", _ok)
-    monkeypatch.setattr(health_iface, "_check_ollama", _down)
-    monkeypatch.setattr(health_iface, "_check_database", _ok)
+    monkeypatch.setattr(health_iface, "_check_database", _down)
     monkeypatch.setattr(health_iface, "_version", lambda: "v1")
 
     app = FastAPI()
@@ -64,7 +59,7 @@ def test_health_degraded_when_a_dep_down(monkeypatch: pytest.MonkeyPatch) -> Non
 
     body = c.get("/health").json()
     assert body["status"] == "degraded"
-    assert body["dependencies"]["ollama"] == "down"
+    assert body["dependencies"]["database"] == "down"
 
 
 def test_health_never_raises_on_probe_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -75,7 +70,6 @@ def test_health_never_raises_on_probe_error(monkeypatch: pytest.MonkeyPatch) -> 
         return True
 
     monkeypatch.setattr(health_iface, "_check_redis", _boom)
-    monkeypatch.setattr(health_iface, "_check_ollama", _ok)
     monkeypatch.setattr(health_iface, "_check_database", _ok)
     monkeypatch.setattr(health_iface, "_version", lambda: "v1")
 

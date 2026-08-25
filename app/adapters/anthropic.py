@@ -9,9 +9,9 @@ Retry policy (internal): 3x retries, 1s / 2s / 4s backoff + jitter.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-import logging
 
 import anthropic
 

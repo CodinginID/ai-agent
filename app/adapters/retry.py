@@ -12,11 +12,9 @@ import functools
 import logging
 import random
 from collections.abc import Awaitable, Callable
-from typing import TypeVar
+from typing import Any
 
 log = logging.getLogger(__name__)
-
-T = TypeVar("T")
 
 
 def _compute_delay(
@@ -35,10 +33,10 @@ def _compute_delay(
     delay = min(base_delay * (2 ** attempt), max_delay)
     if jitter:
         delay = random.uniform(0, delay)
-    return delay
+    return float(delay)
 
 
-def retry_with_backoff(
+def retry_with_backoff[T](
     func: Callable[..., T],
     *,
     max_retries: int = 3,
@@ -54,7 +52,7 @@ def retry_with_backoff(
     """
 
     @functools.wraps(func)
-    def wrapper(*args, **kwargs) -> T:
+    def wrapper(*args: Any, **kwargs: Any) -> T:
         last_exc: Exception | None = None
         for attempt in range(max_retries + 1):
             try:
@@ -82,7 +80,7 @@ def retry_with_backoff(
     return wrapper
 
 
-async def retry_async(
+async def retry_async[T](
     func: Callable[..., Awaitable[T]],
     *,
     max_retries: int = 3,

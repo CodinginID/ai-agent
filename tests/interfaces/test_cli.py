@@ -49,7 +49,7 @@ def test_status_human_output_contains_project_and_model(
     out = capsys.readouterr().out
     assert rc == 0
     assert "Project: default" in out
-    assert "AI:" in out
+    assert "AI provider:" in out
 
 
 def test_status_json_output_is_valid_json(
@@ -61,7 +61,7 @@ def test_status_json_output_is_valid_json(
     payload = json.loads(out)
     assert rc == 0
     assert payload["project_name"] == "default"
-    assert "ollama_url" in payload
+    assert "ai_provider" in payload
 
 
 # ── ask ──────────────────────────────────────────────────────────────────────

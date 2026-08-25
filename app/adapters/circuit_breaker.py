@@ -9,9 +9,9 @@ State machine:
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from app.ports.ai_provider import AIProvider
@@ -125,7 +125,7 @@ class CircuitBreaker:
     # AIProvider adapter
     # ------------------------------------------------------------------
 
-    def __init_subclass__(cls, **kwargs: Any) -> None:  # noqa: ARG005
+    def __init_subclass__(cls, **kwargs: Any) -> None:
         pass  # keep constructor signature flexible
 
     def wrap_provider(self, provider: AIProvider) -> _CircuitBreakerProvider:
@@ -145,10 +145,9 @@ class _CircuitBreakerProvider:
         self._inner = inner
 
     def chat(self, prompt: str) -> str:
-        return self._breaker.call(self._inner.chat, prompt)
+        return cast("str", self._breaker.call(self._inner.chat, prompt))
 
     def chat_stream(self, prompt: str) -> Iterator[str]:
         def _stream() -> Iterator[str]:
-            for chunk in self._breaker.call(self._inner.chat_stream, prompt):
-                yield chunk
+            yield from self._breaker.call(self._inner.chat_stream, prompt)
         return _stream()

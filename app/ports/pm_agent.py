@@ -14,5 +14,5 @@ if TYPE_CHECKING:
 
 class PMAgentPort(Protocol):
     def plan(
-        self, request: str, context: str = "", provider: "AIProvider | None" = None
+        self, request: str, context: str = "", provider: AIProvider | None = None
     ) -> TaskPlan: ...

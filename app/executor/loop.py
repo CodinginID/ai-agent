@@ -27,9 +27,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from app.domain.exceptions import AIProviderError
 from app.executor.context import ContextCollector
 from app.executor.runner import DEFAULT_TIMEOUT, run_safe
-from app.domain.exceptions import AIProviderError
 from app.ports.ai_provider import AIProvider
 from app.ports.ai_provider_resolver import AIProviderResolver
 from app.ports.worker_dispatch import WorkerDispatchPort

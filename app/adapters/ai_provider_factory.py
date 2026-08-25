@@ -35,7 +35,7 @@ def build_ai_provider(
             raise AIProviderError(
                 "Anthropic API key belum diatur — pilih provider & masukkan key kamu dulu (BYOK)."
             )
-        raw = AnthropicAdapter(
+        raw: AIProvider = AnthropicAdapter(
             api_key=api_key,
             model=model or settings.anthropic_model,
             max_tokens=settings.anthropic_max_tokens,

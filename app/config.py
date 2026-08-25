@@ -40,7 +40,6 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 @dataclass(frozen=True)
 class Settings:
-    ollama_host: str
     qwen_url: str
     qwen_model: str
     project_dir: Path
@@ -108,7 +107,6 @@ class Settings:
     rag_enabled: bool
     embedder_backend: str       # "fastembed" | "none"
     rag_recall_k: int
-    ollama_embed_model: str     # deprecated — dihapus di fase removal Ollama
 
     # ── AI provider (cloud LLM, BYOK — otak orchestrator) ─────────────────────
     ai_provider_default: str    # "anthropic" | "glm"
@@ -155,7 +153,6 @@ def load_settings() -> Settings:
     )
 
     return Settings(
-        ollama_host=ollama_host,
         qwen_url=os.getenv("QWEN_URL", f"{ollama_host}/api/generate"),
         qwen_model=os.getenv("QWEN_MODEL", os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")),
         project_dir=project_dir,
@@ -220,7 +217,6 @@ def load_settings() -> Settings:
         rag_enabled=_env_bool("RAG_ENABLED", default=True),
         embedder_backend=os.getenv("EMBEDDER_BACKEND", "fastembed").strip().lower(),
         rag_recall_k=max(1, int(os.getenv("RAG_RECALL_K", "5"))),
-        ollama_embed_model=os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text").strip(),
         ai_provider_default=os.getenv("AI_PROVIDER_DEFAULT", "anthropic").strip().lower(),
         anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", "").strip(),
         anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-opus-4-8").strip(),
