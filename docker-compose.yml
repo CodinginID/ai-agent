@@ -56,14 +56,18 @@ services:
     env_file: .env
     environment:
       REDIS_URL: redis://redis:6379/0
+      PORT: "8080"
       # Untuk full-access agent di Docker, set PROJECT_DIR/AGENT_WORKDIR/TERMINAL_WORKDIR=/workspace di .env.
       # HOST_PROJECT_DIR default "." berarti repo saat ini akan tersedia di /workspace.
     depends_on:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    # Migrasi DB dulu (idempotent) baru start server.
+    command: ["sh", "-c", "alembic upgrade head && python -m app.main"]
     volumes:
       - ${HOST_PROJECT_DIR:-.}:/workspace:rw
+      - bot_data:/app/data
     # Port tidak di-expose ke host — hanya Caddy yang bisa akses bot via internal network.
     # Ini yang memungkinkan zero-downtime deploy: Caddy tetap jalan saat bot direstart.
     healthcheck:
@@ -72,6 +76,17 @@ services:
       timeout: 3s
       retries: 6
       start_period: 20s
+
+  # ── Web: gather-room frontend (nginx serve SPA + reverse-proxy API → bot) ─────
+  web:
+    build: ./web
+    container_name: aiagent_web
+    ports:
+      - "${WEB_HOST_PORT:-8092}:80"
+    depends_on:
+      bot:
+        condition: service_healthy
+    restart: unless-stopped
 
   # ── Telegram Adapter: opsional, aktifkan dengan `--profile telegram` ──────────
   # Standalone bot yang forward pesan ke Core /chat/send.
@@ -135,6 +150,8 @@ services:
       start_period: 10s
 
 volumes:
+  bot_data:
+    name: aiagent_bot_data
   postgres_data:
     name: aiagent_postgres_data
   redis_data:
