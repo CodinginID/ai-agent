@@ -52,6 +52,10 @@ def build_ai_provider(
             base_url=settings.glm_api_base_url,
             max_tokens=settings.anthropic_max_tokens,
         )
+    elif name == "mock":
+        # Mode dev/testing tanpa key — respons deterministik.
+        from app.adapters.mock_llm import MockAIProvider
+        raw = MockAIProvider()
     else:
         raise ValueError(f"Unknown AI provider: {provider!r}")
 
