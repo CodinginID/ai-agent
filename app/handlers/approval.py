@@ -7,7 +7,6 @@ from app.handlers.auth import deny_if_unauthorized
 from app.handlers.chat import call_qwen
 from app.handlers.formatting import format_output
 from app.handlers.registry import action_registry
-from app.intents.schemas import EXECUTABLE_ACTIONS
 from app.orchestrator.approval import PendingPlanStore
 
 if TYPE_CHECKING:
@@ -38,13 +37,14 @@ async def approve_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     action_name = pending.plan.intent
-    if action_name not in EXECUTABLE_ACTIONS:
+    if action_registry.get(action_name) is None:
         await update.message.reply_text(  # type: ignore[union-attr]
             f"Action '{action_name}' disetujui tapi belum ada executor-nya."
         )
         return
 
-    result = action_registry.execute(action_name, pending.action_context)
+    # approved=True: user sudah menyetujui lewat /approve → lolos chokepoint.
+    result = action_registry.execute(action_name, pending.action_context, approved=True)
 
     try:
         summary = call_qwen(

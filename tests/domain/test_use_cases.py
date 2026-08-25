@@ -513,7 +513,7 @@ def test_action_requiring_approval_yields_approval_event_and_saves_plan() -> Non
 
 
 def test_action_intent_unknown_handler_yields_final_with_belum_ada_handler() -> None:
-    # 'deploy' is action-y but NOT in EXECUTABLE_ACTIONS — must hit fallback.
+    # 'deploy' tidak terdaftar di registry → harus hit fallback "belum ada handler".
     intent = _make_intent("deploy", confidence=0.9)
     intent_parser = MagicMock()
     intent_parser.parse.return_value = intent
@@ -521,7 +521,14 @@ def test_action_intent_unknown_handler_yields_final_with_belum_ada_handler() -> 
     plan_generator = MagicMock()
     plan_generator.generate.return_value = _make_plan(intent, requires_approval=False)
 
-    uc = _make_use_case(intent_parser=intent_parser, plan_generator=plan_generator)
+    action_registry = MagicMock()
+    action_registry.get.return_value = None  # tidak terdaftar
+
+    uc = _make_use_case(
+        intent_parser=intent_parser,
+        plan_generator=plan_generator,
+        action_registry=action_registry,
+    )
     events = list(uc.handle("deploy", _make_ctx()))
 
     final = [e for e in events if e.type == ChatEventType.FINAL]

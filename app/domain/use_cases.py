@@ -21,7 +21,7 @@ from app.domain.exceptions import ActionExecutionError, AIProviderError, IntentP
 from app.domain.messaging import ChatEvent, ChatEventType, MessageContext
 from app.executor.actions import ActionRegistry
 from app.intents.parser import IntentParser
-from app.intents.schemas import EXECUTABLE_ACTIONS, Intent
+from app.intents.schemas import Intent
 from app.orchestrator.approval import PendingPlanStore
 from app.orchestrator.plans import PlanGenerator
 from app.ports.agents import AgentRoleResolver, HandoffContextProvider
@@ -369,7 +369,7 @@ class HandleMessageUseCase:
             )
             return
 
-        if intent.intent not in EXECUTABLE_ACTIONS:
+        if self.action_registry.get(intent.intent) is None:
             yield ChatEvent.final(
                 f"Intent '{intent.intent}' dikenali tapi belum ada handler.\n"
                 f"Reason: {intent.reason}"
