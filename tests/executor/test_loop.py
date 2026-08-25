@@ -51,6 +51,31 @@ def _collect_events(loop: ExecutionLoop, prompt: str) -> list[LoopEvent]:
     return list(loop.run(prompt))
 
 
+# ── audit / trace_id (Fase 0) ─────────────────────────────────────────────────
+
+def test_loop_audits_terminal_command_with_trace_id(tmp_path: Path) -> None:
+    ai = MagicMock()
+    ai.chat.side_effect = [
+        json.dumps({"action": "terminal", "command": "ls -la"}),
+        json.dumps({"satisfied": True}),
+        "done summary",
+    ]
+    audit = MagicMock()
+    loop = ExecutionLoop(
+        ai=ai, context_collector=_make_collector(), working_dir=tmp_path, audit=audit,
+    )
+    list(loop.run("cek isi folder", user_id="u1", trace_id="trace-xyz"))
+
+    cmd_calls = [
+        c for c in audit.log.call_args_list
+        if c.args and c.args[0] == "loop_command"
+    ]
+    assert cmd_calls, "command loop harus tercatat di audit"
+    assert cmd_calls[0].args[1] == "trace-xyz"          # trace_id end-to-end
+    assert cmd_calls[0].kwargs.get("user_id") == "u1"
+    assert cmd_calls[0].kwargs.get("command") == "ls -la"
+
+
 # ── _parse_decision tests ────────────────────────────────────────────────────
 
 def test_parse_decision_terminal_action() -> None:

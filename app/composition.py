@@ -99,6 +99,7 @@ def _execution_loop() -> ExecutionLoop:
         working_dir=settings.project_dir,
         worker_dispatch=WorkerDispatchAdapter(),
         provider_resolver=_provider_resolver(),
+        audit=_audit_logger(),
     )
 
 

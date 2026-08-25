@@ -298,7 +298,9 @@ class HandleMessageUseCase:
 
         final_text = ""
         try:
-            for loop_ev in self.execution_loop.run(text, history=history_text, user_id=ctx.user_id):
+            for loop_ev in self.execution_loop.run(
+                text, history=history_text, user_id=ctx.user_id, trace_id=ctx.trace_id
+            ):
                 chat_ev = _loop_event_to_chat_event(loop_ev.type, loop_ev.data)
                 if chat_ev is not None:
                     if chat_ev.type == ChatEventType.FINAL:

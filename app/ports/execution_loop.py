@@ -11,4 +11,6 @@ from typing import Any, Protocol
 
 
 class ExecutionLoopPort(Protocol):
-    def run(self, prompt: str, history: str = "", user_id: str = "") -> Iterator[Any]: ...
+    def run(
+        self, prompt: str, history: str = "", user_id: str = "", trace_id: str = ""
+    ) -> Iterator[Any]: ...

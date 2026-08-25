@@ -32,6 +32,7 @@ from app.executor.context import ContextCollector
 from app.executor.runner import DEFAULT_TIMEOUT, run_safe
 from app.ports.ai_provider import AIProvider
 from app.ports.ai_provider_resolver import AIProviderResolver
+from app.ports.audit import AuditLogger
 from app.ports.worker_dispatch import WorkerDispatchPort
 
 logger = logging.getLogger(__name__)
@@ -234,6 +235,12 @@ class ExecutionLoop:
     ai: AIProvider | None = None
     worker_dispatch: WorkerDispatchPort | None = None
     provider_resolver: AIProviderResolver | None = None
+    audit: AuditLogger | None = None
+
+    def _audit(self, trace_id: str, user_id: str, **fields: Any) -> None:
+        """Catat command yang dijalankan loop — akuntabilitas jalur paling privileged."""
+        if self.audit is not None:
+            self.audit.log("loop_command", trace_id, user_id=user_id, **fields)
 
     def _resolve_ai(self, user_id: str) -> AIProvider:
         if self.provider_resolver is not None and user_id:
@@ -247,6 +254,7 @@ class ExecutionLoop:
         prompt: str,
         history: str = "",
         user_id: str = "",
+        trace_id: str = "",
     ) -> Iterator[LoopEvent]:
         """Run the full loop and yield LoopEvent items.
 
@@ -320,6 +328,7 @@ class ExecutionLoop:
 
             if decision.action == "terminal":
                 yield LoopEvent("action_started", {"action": "terminal", "command": decision.command})
+                self._audit(trace_id, user_id, action="terminal", command=decision.command)
                 output, exit_code = _execute_terminal(decision.command, self.working_dir)
                 result_text = output[:MAX_OUTPUT_CHARS]
                 yield LoopEvent("action_result", {
@@ -331,6 +340,7 @@ class ExecutionLoop:
 
             elif decision.action == "file_read":
                 yield LoopEvent("action_started", {"action": "file_read", "path": decision.path})
+                self._audit(trace_id, user_id, action="file_read", path=decision.path)
                 result_text = _execute_file_read(decision.path)[:MAX_OUTPUT_CHARS]
                 yield LoopEvent("action_result", {
                     "action": "file_read",
@@ -342,6 +352,7 @@ class ExecutionLoop:
                 result_parts: list[str] = []
                 for step_cmd in decision.steps:
                     yield LoopEvent("action_started", {"action": "terminal", "command": step_cmd})
+                    self._audit(trace_id, user_id, action="terminal", command=step_cmd)
                     step_out, step_code = _execute_terminal(step_cmd, self.working_dir)
                     step_text = step_out[:MAX_OUTPUT_CHARS]
                     result_parts.append(f"$ {step_cmd}\n{step_text}")
@@ -360,6 +371,7 @@ class ExecutionLoop:
                     "action": "delegate",
                     "command": f"{role}: {worker_prompt[:80]}",
                 })
+                self._audit(trace_id, user_id, action="delegate", role=role)
                 if self.worker_dispatch is None or not user_id:
                     result_text = (
                         "(delegate unavailable: no worker dispatcher configured "
