@@ -1,5 +1,6 @@
 import { useStore } from "../state/store";
 import { CommandBar } from "./CommandBar";
+import { ProviderButton } from "./ProviderSettings";
 
 export function TopBar(): JSX.Element {
   const count = useStore((s) => s.agents.length);
@@ -28,6 +29,8 @@ export function TopBar(): JSX.Element {
         <span className="h-[7px] w-[7px] rounded-full bg-accent shadow-[0_0_8px_var(--accent)]" />
         {count} agen
       </div>
+
+      <ProviderButton />
 
       <button
         type="button"
