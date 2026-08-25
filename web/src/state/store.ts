@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { sendCommand } from "../net/api";
+import { approvePlan, rejectPlan, sendCommand } from "../net/api";
 import type {
   Agent,
   Approval,
@@ -8,6 +8,7 @@ import type {
   FeedColor,
   Role,
   RoomEvent,
+  ServerApproval,
   Task,
   Theme,
 } from "./types";
@@ -112,6 +113,7 @@ function initialTheme(): Theme {
 interface RoomState {
   agents: Agent[];
   approvals: Approval[];
+  serverApprovals: ServerApproval[];
   events: RoomEvent[];
   board: BoardCard[];
   queue: Task[];
@@ -125,6 +127,8 @@ interface RoomState {
   applyServerEvent: (ev: Record<string, unknown>) => void;
   approve: (id: number) => void;
   reject: (id: number) => void;
+  approveServer: (planId: string) => void;
+  rejectServer: (planId: string) => void;
   setTheme: (t: Theme) => void;
   toggleTheme: () => void;
   startScheduler: () => () => void;
@@ -254,6 +258,7 @@ export const useStore = create<RoomState>((set, get) => {
   return {
     agents: initialAgents(),
     approvals: [],
+    serverApprovals: [],
     events: [
       {
         id: ++eventSeq,
@@ -332,13 +337,24 @@ export const useStore = create<RoomState>((set, get) => {
           return { events: feedInto(s.events, `🛰️ ${text}`, color) };
         }
         if (type === "approval.request") {
-          const desc = escapeHtml(String((ev as { desc?: unknown }).desc ?? ""));
+          const planId = String((ev as { id?: unknown }).id ?? "");
+          const rawDesc = String((ev as { desc?: unknown }).desc ?? "");
+          const exists = s.serverApprovals.some((a) => a.planId === planId);
           return {
+            serverApprovals: exists
+              ? s.serverApprovals
+              : [...s.serverApprovals, { planId, desc: rawDesc }],
             events: feedInto(
               s.events,
-              `⚠️ Backend minta persetujuan: <b>${desc}</b>`,
+              `⚠️ Backend minta persetujuan: <b>${escapeHtml(rawDesc)}</b>`,
               "approval",
             ),
+          };
+        }
+        if (type === "approval.resolved") {
+          const planId = String((ev as { id?: unknown }).id ?? "");
+          return {
+            serverApprovals: s.serverApprovals.filter((a) => a.planId !== planId),
           };
         }
         return {};
@@ -389,6 +405,22 @@ export const useStore = create<RoomState>((set, get) => {
         }
         return { approvals, agents, board, events };
       });
+    },
+
+    approveServer: (planId) => {
+      void approvePlan(planId);
+      set((s) => ({
+        serverApprovals: s.serverApprovals.filter((a) => a.planId !== planId),
+        events: feedInto(s.events, "👍 Kamu menyetujui aksi backend", "done"),
+      }));
+    },
+
+    rejectServer: (planId) => {
+      void rejectPlan(planId);
+      set((s) => ({
+        serverApprovals: s.serverApprovals.filter((a) => a.planId !== planId),
+        events: feedInto(s.events, "🚫 Kamu menolak aksi backend", "error"),
+      }));
     },
 
     startScheduler: () => {

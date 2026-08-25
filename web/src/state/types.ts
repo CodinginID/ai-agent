@@ -62,6 +62,12 @@ export interface Approval {
   age: number;
 }
 
+/** Approval nyata dari backend (via /room/stream) — plan_id string + deskripsi. */
+export interface ServerApproval {
+  planId: string;
+  desc: string;
+}
+
 export type FeedColor =
   | "idle"
   | "work"

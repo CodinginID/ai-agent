@@ -92,10 +92,25 @@ export async function sendCommand(payload: CommandPayload): Promise<boolean> {
   }
 }
 
-export interface ApprovalDecision {
-  approvalId: number;
-  approved: boolean;
+async function _decide(path: string, planId: string): Promise<boolean> {
+  try {
+    const resp = await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ plan_id: planId, as_email: "demo@local" }),
+    });
+    return resp.ok;
+  } catch {
+    return false;
+  }
 }
-export async function decideApproval(_d: ApprovalDecision): Promise<void> {
-  return Promise.resolve();
+
+/** Setujui plan backend yang diparkir → dieksekusi (chokepoint approved=True). */
+export async function approvePlan(planId: string): Promise<boolean> {
+  return _decide("/chat/approve", planId);
+}
+
+/** Tolak plan backend → dibatalkan tanpa eksekusi. */
+export async function rejectPlan(planId: string): Promise<boolean> {
+  return _decide("/chat/reject", planId);
 }
