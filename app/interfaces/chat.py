@@ -312,3 +312,72 @@ async def chat_send(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+class PlanDecisionRequest(BaseModel):
+    plan_id: str
+    as_email: str | None = None
+
+
+def _resolve_user_and_conv(authorization: str | None, as_email: str | None) -> tuple[str, str]:
+    caller_user_id, mode = _resolve_caller(authorization)
+    if mode == "admin":
+        if not as_email:
+            raise HTTPException(status_code=400, detail="admin token requires 'as_email'")
+        return _resolve_admin_target(as_email), as_email
+    return caller_user_id, caller_user_id
+
+
+def _publish_room(event_type: str, **data: object) -> None:
+    try:
+        from app.interfaces.room import publish_room_event
+        publish_room_event(event_type, **data)
+    except Exception:
+        logger.debug("room publish gagal", exc_info=True)
+
+
+@router.post("/approve")
+async def chat_approve(
+    req: Annotated[PlanDecisionRequest, Body(...)],
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    """Setujui plan yang diparkir → eksekusi aksi mutasi lewat chokepoint approval."""
+    from app.domain.exceptions import ActionExecutionError
+    from app.domain.use_cases import _conv_id_to_int
+    from app.handlers.approval import pending_plans
+    from app.handlers.registry import action_registry
+
+    conv_id = _resolve_user_and_conv(authorization, req.as_email)[1]
+    pending = pending_plans.consume(req.plan_id, _conv_id_to_int(conv_id))
+    if pending is None:
+        raise HTTPException(status_code=404, detail="plan tidak ditemukan atau kedaluwarsa")
+
+    action = pending.plan.intent
+    try:
+        # approved=True: lolos chokepoint requires_approval (persetujuan manusia).
+        result = action_registry.execute(action, pending.action_context, approved=True)
+    except ActionExecutionError as exc:
+        _publish_room("approval.resolved", id=req.plan_id, decision="error")
+        _publish_room("activity", level="error", text=f"Eksekusi {action} gagal: {exc}")
+        raise HTTPException(status_code=500, detail=f"eksekusi gagal: {exc}") from exc
+
+    _publish_room("approval.resolved", id=req.plan_id, decision="approved")
+    _publish_room("activity", level="done", text=f"Disetujui & dieksekusi: {action}")
+    return {"ok": True, "action": action, "result": str(result)[:2000]}
+
+
+@router.post("/reject")
+async def chat_reject(
+    req: Annotated[PlanDecisionRequest, Body(...)],
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    """Tolak plan yang diparkir → batalkan tanpa eksekusi."""
+    from app.domain.use_cases import _conv_id_to_int
+    from app.handlers.approval import pending_plans
+
+    conv_id = _resolve_user_and_conv(authorization, req.as_email)[1]
+    ok = pending_plans.cancel(req.plan_id, _conv_id_to_int(conv_id))
+    _publish_room("approval.resolved", id=req.plan_id, decision="rejected")
+    if ok:
+        _publish_room("activity", level="error", text="Plan ditolak & dibatalkan")
+    return {"ok": ok}
