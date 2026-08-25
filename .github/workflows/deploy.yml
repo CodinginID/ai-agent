@@ -125,6 +125,6 @@ jobs:
           }
 
           echo "=== Status ==="
-          check aiagent_ollama
           check aiagent_bot
+          check aiagent_web
           echo "Deploy verified: $(date '+%Y-%m-%d %H:%M:%S')"
