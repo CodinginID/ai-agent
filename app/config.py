@@ -106,9 +106,18 @@ class Settings:
 
     # ── RAG ───────────────────────────────────────────────────────────────────
     rag_enabled: bool
-    embedder_backend: str       # "fastembed" | "ollama" | "none"
+    embedder_backend: str       # "fastembed" | "none"
     rag_recall_k: int
-    ollama_embed_model: str
+    ollama_embed_model: str     # deprecated — dihapus di fase removal Ollama
+
+    # ── AI provider (cloud LLM, BYOK — otak orchestrator) ─────────────────────
+    ai_provider_default: str    # "anthropic" | "glm"
+    anthropic_api_key: str
+    anthropic_model: str
+    anthropic_max_tokens: int
+    glm_api_key: str
+    glm_api_model: str
+    glm_api_base_url: str
 
 
 _DEFAULT_MANUAL_COMMANDS: frozenset[str] = frozenset({
@@ -212,6 +221,13 @@ def load_settings() -> Settings:
         embedder_backend=os.getenv("EMBEDDER_BACKEND", "fastembed").strip().lower(),
         rag_recall_k=max(1, int(os.getenv("RAG_RECALL_K", "5"))),
         ollama_embed_model=os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text").strip(),
+        ai_provider_default=os.getenv("AI_PROVIDER_DEFAULT", "anthropic").strip().lower(),
+        anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", "").strip(),
+        anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-opus-4-8").strip(),
+        anthropic_max_tokens=int(os.getenv("ANTHROPIC_MAX_TOKENS", "16000")),
+        glm_api_key=os.getenv("GLM_API_KEY", "").strip(),
+        glm_api_model=os.getenv("GLM_API_MODEL", "glm-4-plus").strip(),
+        glm_api_base_url=os.getenv("GLM_API_BASE_URL", "https://open.bigmodel.cn/api/paas/v4").rstrip("/"),
     )
 
 
