@@ -35,20 +35,22 @@ def _resolve_safe(raw_path: str, allowed_roots: tuple[Path, ...]) -> Path:
     if ".." in Path(raw_path).parts:
         raise FileAccessDeniedError(f"Path traversal ditolak: {raw_path!r}")
 
-    # Resolve without following symlinks first, then check containment.
-    # Path.resolve() follows symlinks; we use os.path.abspath for the initial
-    # check and only call resolve() to canonicalise the base roots.
     abs_path = Path(raw_path).expanduser()
     if not abs_path.is_absolute():
         # Relative path: anchor to first allowed root (project_dir).
         abs_path = allowed_roots[0] / abs_path
 
-    # Resolve the path without following symlinks to avoid escaping root via symlink.
-    real = Path(os.path.normpath(abs_path))
+    # Resolve symlinks (realpath) SEBELUM cek containment. Kalau tidak, symlink
+    # di dalam root yang menunjuk keluar (mis. ke /etc/passwd) akan lolos
+    # containment lalu diikuti saat read/write — escape. Untuk target tulis yang
+    # belum ada, realpath meresolusi prefix yang ada (termasuk symlink) dan
+    # menyisakan komponen terakhir apa adanya.
+    real = Path(os.path.realpath(abs_path))
 
     for root in allowed_roots:
+        root_real = Path(os.path.realpath(root))
         try:
-            real.relative_to(root)
+            real.relative_to(root_real)
             return real
         except ValueError:
             continue
