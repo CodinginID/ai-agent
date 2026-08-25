@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { approvePlan, rejectPlan, sendCommand } from "../net/api";
+import { approvePlan, rejectPlan, runTask } from "../net/api";
 import type {
   Agent,
   Approval,
@@ -307,8 +307,20 @@ export const useStore = create<RoomState>((set, get) => {
       else if (/(cek|audit|analisa|riset|profil|disk|log)/i.test(txt))
         role = "researcher";
 
-      // Kirim ke backend nyata (best-effort). Event balik lewat /room/stream.
-      void sendCommand({ text: txt });
+      // Kirim ke Manajer IT nyata (TaskRunner): PM pecah tugas → dispatch
+      // per-role ke pasukan. Progres live via /room/stream; hasil akhir → feed.
+      void runTask(txt).then((res) => {
+        if (!res) return;
+        set((s) => ({
+          events: feedInto(
+            s.events,
+            res.ok
+              ? `✅ <b>${MANAGER}</b> selesai (${res.outcomes.length} langkah): ${escapeHtml(res.summary)}`
+              : `⚠️ <b>${MANAGER}</b> berhenti: ${escapeHtml(res.note)}`,
+            res.ok ? "done" : "error",
+          ),
+        }));
+      });
       const safe = escapeHtml(txt);
       set((s) => {
         const agents = s.agents.map((a) => ({ ...a }));

@@ -67,6 +67,68 @@ def publish_room_event(event_type: str, **data: Any) -> None:
     _bus.publish({"type": event_type, **data})
 
 
+# Role worker (TaskRunner) → avatar roster yang mewakili di ruangan.
+_ROLE_AVATAR: dict[str, str] = {
+    "engineer": "nadia",
+    "infra": "dewi",
+    "reviewer": "rangga",
+    "research": "yusuf",
+}
+
+
+class RoomTaskObserver:
+    """TaskObserver → RoomBus: bikin gather-room hidup saat TaskRunner jalan.
+
+    Publish ``activity`` (feed) + ``agent.status`` (avatar) per fase task, lalu
+    delegasi ke ``inner`` (LoggingTaskObserver) supaya papan ``/tasks`` & log
+    tetap terisi. Best-effort — kegagalan publish tak boleh menggagalkan task.
+    """
+
+    def __init__(self, inner: Any) -> None:
+        self._inner = inner
+
+    @staticmethod
+    def _avatar(role: str) -> str:
+        return _ROLE_AVATAR.get(role, "yusuf")
+
+    def task_started(self, task_id: str, user_id: str, request: str) -> None:
+        publish_room_event("agent.status", id="octo", status="working")
+        publish_room_event("activity", level="info", text=f"Octo memecah tugas: {request[:120]}")
+        self._inner.task_started(task_id, user_id, request)
+
+    def issue_opened(self, task_id: str, issue_number: int, issue_url: str) -> None:
+        publish_room_event("activity", level="info", text=f"Tugas dicatat (#{issue_number})")
+        self._inner.issue_opened(task_id, issue_number, issue_url)
+
+    def step_started(self, task_id: str, order: int, role: str, description: str) -> None:
+        avatar = self._avatar(role)
+        publish_room_event("agent.status", id=avatar, status="working")
+        publish_room_event(
+            "activity", level="info",
+            text=f"Langkah {order} → {role}: {description[:100]}",
+        )
+        self._inner.step_started(task_id, order, role, description)
+
+    def step_finished(self, task_id: str, order: int, role: str, ok: bool, detail: str) -> None:
+        avatar = self._avatar(role)
+        publish_room_event("agent.status", id=avatar, status="idle")
+        publish_room_event(
+            "activity",
+            level="done" if ok else "error",
+            text=f"Langkah {order} ({role}) {'selesai' if ok else 'gagal'}",
+        )
+        self._inner.step_finished(task_id, order, role, ok, detail)
+
+    def task_finished(self, task_id: str, *, closed: bool, ok: bool, note: str) -> None:
+        publish_room_event("agent.status", id="octo", status="idle")
+        publish_room_event(
+            "activity",
+            level="done" if ok else "error",
+            text=f"Tugas {'selesai' if ok else 'berhenti'}: {note[:120]}",
+        )
+        self._inner.task_finished(task_id, closed=closed, ok=ok, note=note)
+
+
 def _snapshot() -> dict[str, Any]:
     return {
         "type": "room.snapshot",

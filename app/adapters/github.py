@@ -8,9 +8,13 @@ Requires:
 
 from __future__ import annotations
 
+import itertools
+import logging
 from dataclasses import dataclass
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 
 class GitHubUnavailableError(Exception):
@@ -167,3 +171,33 @@ class GitHubAdapter:
                 timeout=30,
             )
         self._raise_for_status(resp, "update_issue_label")
+
+
+class NullGitHubAdapter:
+    """In-memory issues adapter — task tracking tanpa GitHub (mode portable/mock).
+
+    Implements ``GitHubIssuesPort`` sehingga ``TaskRunner`` tetap jalan saat
+    GITHUB_TOKEN/REPO belum diisi: task tetap didekomposisi & didispatch ke
+    pasukan, hanya jejak issue-nya lokal (tidak ada sumber kebenaran eksternal).
+    """
+
+    def __init__(self) -> None:
+        self._counter = itertools.count(1)
+
+    async def create_issue(
+        self, title: str, body: str = "", labels: list[str] | None = None,
+    ) -> GitHubIssue:
+        number = next(self._counter)
+        logger.info("null-github: create_issue #%d %r", number, title[:60])
+        return GitHubIssue(
+            number=number,
+            title=title,
+            url=f"local://task/{number}",
+            state="open",
+        )
+
+    async def comment_issue(self, issue_number: int, body: str) -> None:
+        logger.debug("null-github: comment #%d %r", issue_number, body[:80])
+
+    async def close_issue(self, issue_number: int, comment: str = "") -> None:
+        logger.info("null-github: close_issue #%d", issue_number)

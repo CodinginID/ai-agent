@@ -49,14 +49,10 @@ async def _handle_job(ws: websockets.WebSocketClientProtocol, msg: dict) -> None
     print(f"[job] {job_id} done", flush=True)
 
 
-async def main() -> None:
-    if not SESSION:
-        raise SystemExit("WORKER_SESSION belum diset")
+async def _session_once() -> None:
     url = f"{WS_URL}?session={SESSION}"
-    print(f"[worker] connecting {WS_URL} device={DEVICE} agents={AGENTS}", flush=True)
     async with websockets.connect(url, max_size=None) as ws:
         hb = asyncio.create_task(_heartbeat(ws))
-        # advertise capabilities segera setelah connect
         await ws.send(json.dumps({
             "type": "capabilities",
             "device_name": DEVICE,
@@ -76,6 +72,21 @@ async def main() -> None:
                     print(f"[worker] <- {kind}: {msg}", flush=True)
         finally:
             hb.cancel()
+
+
+async def main() -> None:
+    if not SESSION:
+        raise SystemExit("WORKER_SESSION belum diset")
+    print(f"[worker] connecting {WS_URL} device={DEVICE} agents={AGENTS}", flush=True)
+    # Auto-reconnect: tahan restart proxy/bot (koneksi WS lewat nginx bisa putus).
+    while True:
+        try:
+            await _session_once()
+        except Exception as exc:
+            print(f"[worker] disconnected: {exc} — reconnect 3s", flush=True)
+        else:
+            print("[worker] connection closed — reconnect 3s", flush=True)
+        await asyncio.sleep(3)
 
 
 if __name__ == "__main__":
