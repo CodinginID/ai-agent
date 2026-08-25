@@ -3,6 +3,15 @@ import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
+  server: {
+    host: true,
+    allowedHosts: true, // izinkan host tunnel (trycloudflare) di dev
+    proxy: {
+      "/chat": { target: "http://localhost:8080", changeOrigin: true },
+      "/room": { target: "http://localhost:8080", changeOrigin: true },
+      "/auth": { target: "http://localhost:8080", changeOrigin: true },
+    },
+  },
   plugins: [
     react(),
     VitePWA({

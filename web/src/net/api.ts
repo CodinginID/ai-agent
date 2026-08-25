@@ -1,11 +1,57 @@
-// STUB — HTTP client for the future backend. No live calls in P1 (mock only).
-// Kept minimal so the wiring is obvious once the backend lands.
+// HTTP client — live backend (Fase 3). Token via ?token= di URL atau localStorage.
+// Frontend & backend disajikan satu origin lewat proxy Vite, jadi path relatif.
 
-export const API_BASE =
-  (import.meta.env.VITE_API_BASE as string | undefined) ?? "/api";
+export const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "";
+
+const TOKEN_KEY = "octopus_token";
+
+/** Ambil token: dari ?token= (disimpan ke localStorage lalu dibersihkan dari URL), atau localStorage. */
+export function getToken(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    const url = new URL(window.location.href);
+    const q = url.searchParams.get("token");
+    if (q) {
+      window.localStorage.setItem(TOKEN_KEY, q);
+      url.searchParams.delete("token");
+      window.history.replaceState({}, "", url.toString());
+      return q;
+    }
+    return window.localStorage.getItem(TOKEN_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function authHeaders(): Record<string, string> {
+  const t = getToken();
+  return t ? { Authorization: `Bearer ${t}` } : {};
+}
 
 export interface CommandPayload {
   text: string;
+}
+
+/** POST perintah ke Manajer (SSE /chat/send). Best-effort: kalau gagal, diam
+ *  (ruangan tetap hidup via mock + /room/stream). Stream di-drain sampai selesai
+ *  supaya backend memproses penuh; event balik muncul lewat /room/stream. */
+export async function sendCommand(payload: CommandPayload): Promise<boolean> {
+  try {
+    const resp = await fetch(`${API_BASE}/chat/send`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ text: payload.text, as_email: "demo@local" }),
+    });
+    if (!resp.ok || !resp.body) return false;
+    const reader = resp.body.getReader();
+    for (;;) {
+      const { done } = await reader.read();
+      if (done) break;
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export interface ApprovalDecision {
@@ -13,14 +59,7 @@ export interface ApprovalDecision {
   approved: boolean;
 }
 
-/** POST a natural-language command to the Manager. STUB: no-op in mock mode. */
-export async function sendCommand(_payload: CommandPayload): Promise<void> {
-  // TODO(phase-4): fetch(`${API_BASE}/command`, { method: "POST", ... })
-  return Promise.resolve();
-}
-
-/** Resolve a pending approval. STUB: no-op in mock mode. */
+/** Approve LIVE via web menyusul (endpoint belum ada) — no-op sekarang. */
 export async function decideApproval(_d: ApprovalDecision): Promise<void> {
-  // TODO(phase-4): fetch(`${API_BASE}/approvals/${_d.approvalId}`, ...)
   return Promise.resolve();
 }

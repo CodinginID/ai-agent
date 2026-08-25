@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { sendCommand } from "../net/api";
 import type {
   Agent,
   Approval,
@@ -121,6 +122,7 @@ interface RoomState {
   // actions
   select: (id: string | null) => void;
   submitCommand: (text: string) => void;
+  applyServerEvent: (ev: Record<string, unknown>) => void;
   approve: (id: number) => void;
   reject: (id: number) => void;
   setTheme: (t: Theme) => void;
@@ -300,6 +302,8 @@ export const useStore = create<RoomState>((set, get) => {
       else if (/(cek|audit|analisa|riset|profil|disk|log)/i.test(txt))
         role = "researcher";
 
+      // Kirim ke backend nyata (best-effort). Event balik lewat /room/stream.
+      void sendCommand({ text: txt });
       const safe = escapeHtml(txt);
       set((s) => {
         const agents = s.agents.map((a) => ({ ...a }));
@@ -314,6 +318,30 @@ export const useStore = create<RoomState>((set, get) => {
         const task: Task = { id: ++taskSeq, desc: safe, role, risky, review };
         events = assign(task, agents, board, events, approvals, queue);
         return { agents, board, queue, events };
+      });
+    },
+
+    applyServerEvent: (ev) => {
+      const type = String((ev as { type?: unknown }).type ?? "");
+      set((s) => {
+        if (type === "activity") {
+          const level = String((ev as { level?: unknown }).level ?? "info");
+          const color: FeedColor =
+            level === "error" ? "error" : level === "done" ? "done" : "work";
+          const text = escapeHtml(String((ev as { text?: unknown }).text ?? ""));
+          return { events: feedInto(s.events, `🛰️ ${text}`, color) };
+        }
+        if (type === "approval.request") {
+          const desc = escapeHtml(String((ev as { desc?: unknown }).desc ?? ""));
+          return {
+            events: feedInto(
+              s.events,
+              `⚠️ Backend minta persetujuan: <b>${desc}</b>`,
+              "approval",
+            ),
+          };
+        }
+        return {};
       });
     },
 
