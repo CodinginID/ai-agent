@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from pgvector.sqlalchemy import Vector  # type: ignore[import-untyped]
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     JSON,
     BigInteger,
@@ -372,3 +372,26 @@ class AuditEventModel(Base):
     event_type: Mapped[str] = mapped_column(String(80))
     event_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class UserProviderConfigModel(Base):
+    """Pilihan provider 'otak' orchestrator per-user (satu baris per user).
+
+    Hanya menyimpan nama provider + model — kredensial (API key) tetap di sisi
+    user (personal key) atau env server, tidak pernah di tabel ini.
+    """
+
+    __tablename__ = "user_provider_configs"
+    __table_args__ = (
+        UniqueConstraint("user_id", name="uq_user_provider_configs_user"),
+    )
+
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    provider: Mapped[str] = mapped_column(String(40), default="anthropic")  # anthropic, glm
+    model: Mapped[str | None] = mapped_column(String(120))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )

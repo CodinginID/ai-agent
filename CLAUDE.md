@@ -6,9 +6,9 @@ File ini dibaca otomatis oleh Claude Code setiap sesi. Ikuti semua aturan di sin
 
 ## Konteks Proyek
 
-Telegram bot untuk memantau dan mengontrol server via bahasa natural. AI model (Qwen via Ollama) berjalan lokal di VPS — tidak ada data yang keluar ke cloud.
+Telegram bot untuk memantau dan mengontrol server via bahasa natural. Otak orchestrator memakai **cloud LLM per-user (BYOK)** — Claude/GLM/dst dengan API key milik user; embedding memory tetap lokal (fastembed). **Catatan privasi:** deskripsi tugas & konteks server dikirim ke provider cloud yang dipilih user (bukan lagi 100% lokal seperti versi Ollama).
 
-**Stack:** Python 3.13 · python-telegram-bot · Ollama · Docker · GitHub Actions
+**Stack:** Python 3.13 · python-telegram-bot · Cloud LLM (Anthropic/GLM, BYOK) · fastembed · Docker · GitHub Actions
 
 ---
 

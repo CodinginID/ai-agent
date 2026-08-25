@@ -201,3 +201,22 @@ def test_purge_expired_returns_zero_when_nothing_expired(factory) -> None:
     repo = _repo(factory)
     repo.create("user-8")
     assert repo.purge_expired() == 0
+
+
+# ── token hashing at-rest (Fase 0) ────────────────────────────────────────────
+
+def test_token_stored_hashed_not_plaintext(factory) -> None:
+    from sqlalchemy import select
+
+    from app.adapters.database.models import UserSessionModel
+    from app.adapters.sessions import _hash_token
+
+    info = _repo(factory).create("user-hash")
+    with factory() as s:
+        row = s.scalar(
+            select(UserSessionModel).where(UserSessionModel.user_id == "user-hash")
+        )
+    assert row is not None
+    assert row.token != info.token               # bukan plaintext
+    assert row.token == _hash_token(info.token)  # melainkan hash-nya
+    assert len(row.token) == 64

@@ -7,7 +7,6 @@ import importlib
 import pytest
 
 from app.adapters.embedder_fastembed import FastEmbedAdapter
-from app.adapters.embedder_ollama import OllamaEmbedder
 from app.adapters.knowledge_store_memory import InMemoryKnowledgeStore
 
 
@@ -55,13 +54,6 @@ def test_embedder_returns_none_when_backend_none(monkeypatch: pytest.MonkeyPatch
     _reload_settings(monkeypatch, EMBEDDER_BACKEND="none")
     from app.composition import _embedder
     assert _embedder() is None
-
-
-def test_embedder_ollama_when_backend_ollama(monkeypatch: pytest.MonkeyPatch) -> None:
-    _reload_settings(monkeypatch, EMBEDDER_BACKEND="ollama")
-    from app.composition import _embedder
-    e = _embedder()
-    assert isinstance(e, OllamaEmbedder)
 
 
 def test_embedder_raises_on_unknown_backend(monkeypatch: pytest.MonkeyPatch) -> None:

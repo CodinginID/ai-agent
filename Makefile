@@ -1,4 +1,4 @@
-.PHONY: up down restart deploy logs logs-ollama logs-init status build shell pull-model clean \
+.PHONY: up down restart deploy logs logs-caddy status build shell clean \
         lint type-check test check install-dev db-upgrade db-downgrade release \
         dev
 
@@ -47,31 +47,24 @@ up:
 down:
 	$(COMPOSE) down
 
-## Restart hanya bot (tanpa restart Ollama)
+## Restart hanya bot
 restart:
 	$(COMPOSE) restart bot
 
-## Zero-downtime deploy: rebuild bot, infra tetap jalan, Caddy tidak direstart
+## Deploy: rebuild bot & web, redis tetap jalan
 deploy:
-	$(COMPOSE) up -d --no-recreate redis ollama
+	$(COMPOSE) up -d --no-recreate redis
 	$(COMPOSE) up -d --build --no-deps bot
+	$(COMPOSE) up -d --build web
 	@docker ps --format '{{.Names}}' | grep -q "^aiagent_caddy$$" || $(COMPOSE) up -d caddy
 
 ## Ikuti log bot secara realtime
 logs:
 	$(COMPOSE) logs -f bot
 
-## Ikuti log Ollama secara realtime
-logs-ollama:
-	$(COMPOSE) logs -f ollama
-
 ## Ikuti log Caddy (reverse proxy) secara realtime
 logs-caddy:
 	$(COMPOSE) logs -f caddy
-
-## Lihat log model init / model pull
-logs-init:
-	$(COMPOSE) logs -f ollama-init
 
 ## Lihat status semua container
 status:
@@ -85,11 +78,7 @@ build:
 shell:
 	$(COMPOSE) exec bot sh
 
-## Pull / update model AI (jalankan setelah ganti OLLAMA_MODEL di .env)
-pull-model:
-	$(COMPOSE) exec ollama ollama pull $$(grep OLLAMA_MODEL .env | cut -d= -f2 | tr -d ' ')
-
-## Hapus semua container + volume (HATI-HATI: model AI ikut terhapus)
+## Hapus semua container + volume (HATI-HATI: data ikut terhapus)
 clean:
 	$(COMPOSE) down -v
 

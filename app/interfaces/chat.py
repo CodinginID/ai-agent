@@ -71,11 +71,17 @@ def _resolve_caller(authorization: str | None) -> tuple[str, str]:
     return (info.user_id, "user")
 
 
+_ALLOWED_PROVIDERS = {"anthropic", "glm", "mock"}
+
+
 class ChatSendRequest(BaseModel):
     text: str
     # Hanya dipakai kalau caller adalah admin token (admin chat sebagai user X).
     # Kalau session token, field ini diabaikan.
     as_email: str | None = None
+    # BYOK: provider 'otak' pilihan user (anthropic/glm/mock). Bila di-set,
+    # dipersist sbg preferensi user. Key-nya dikirim via header X-Provider-Key.
+    provider: str | None = None
 
 
 def _resolve_admin_target(email: str) -> str:
@@ -93,17 +99,67 @@ def _format_sse(event: ChatEvent) -> str:
     return f"event: {event.type.value}\ndata: {json.dumps(event.payload, ensure_ascii=False)}\n\n"
 
 
-async def _stream_events(text: str, ctx: MessageContext) -> AsyncIterator[str]:
+def _mirror_to_room(ev: ChatEvent) -> None:
+    """Cermin ChatEvent ke RoomBus supaya gather-room hidup saat perintah jalan.
+
+    Best-effort — kegagalan mirror tidak boleh mengganggu stream chat. Import
+    lazy untuk menghindari circular import (room mengimpor chat._resolve_caller).
+    """
+    try:
+        from app.domain.messaging import ChatEventType
+        from app.interfaces.room import publish_room_event
+
+        t = ev.type
+        if t == ChatEventType.INTENT_CLASSIFIED:
+            publish_room_event("agent.status", id="octo", status="working")
+            publish_room_event(
+                "activity", level="info",
+                text=f"Octo menerima perintah (intent: {ev.payload.get('intent', '')})",
+            )
+        elif t == ChatEventType.THINKING:
+            publish_room_event("agent.status", id="octo", status="working")
+        elif t == ChatEventType.ACTION_STARTED:
+            publish_room_event("activity", level="info", text=f"Menjalankan: {ev.payload.get('action', '')}")
+        elif t == ChatEventType.ACTION_RESULT:
+            publish_room_event("activity", level="info", text=f"Hasil: {ev.payload.get('action', '')}")
+        elif t == ChatEventType.APPROVAL_REQUIRED:
+            publish_room_event(
+                "approval.request",
+                id=str(ev.payload.get("plan_id", "")),
+                desc=str(ev.payload.get("summary", "")),
+            )
+            publish_room_event("agent.status", id="octo", status="awaiting_approval")
+        elif t == ChatEventType.FINAL:
+            publish_room_event("agent.status", id="octo", status="idle")
+            publish_room_event("activity", level="done", text="Selesai")
+        elif t == ChatEventType.ERROR:
+            publish_room_event("activity", level="error", text=str(ev.payload.get("message", ""))[:200])
+    except Exception:
+        logger.debug("room mirror gagal", exc_info=True)
+
+
+async def _stream_events(
+    text: str, ctx: MessageContext, personal_key: str | None = None
+) -> AsyncIterator[str]:
     """Jalankan use case di thread (sync generator) lalu pump ke async stream.
 
     Saat use case yield ``DELEGATE_TO_AGENT``, kita sambung ke worker tunnel
     user-nya (via WS dispatcher) — relay chunks balik sebagai SSE event biasa.
+
+    ``personal_key`` (BYOK, dari header) di-set ke contextvar sehingga resolver
+    provider memakai key milik user untuk request ini. ``asyncio.to_thread`` &
+    ``create_task`` menyalin context, jadi key ikut ke thread producer.
     """
+    from app.adapters.ai_provider_db import personal_anthropic_key_var
     from app.adapters.audit import log_event
     from app.domain.messaging import ChatEventType
     from app.interfaces.worker_ws import (
         NoWorkerAvailableError,
         dispatch_agent_job,
+    )
+
+    key_token = (
+        personal_anthropic_key_var.set(personal_key) if personal_key else None
     )
 
     await log_event(
@@ -137,6 +193,7 @@ async def _stream_events(text: str, ctx: MessageContext) -> AsyncIterator[str]:
             if ev is None:
                 break
             yield _format_sse(ev)
+            _mirror_to_room(ev)
             # Saat dapat DELEGATE_TO_AGENT, jangan break — terus drain queue
             # SAMBIL juga dispatch ke worker dan stream chunk-nya. Use case
             # sudah selesai (return setelah yield delegate), jadi queue akan
@@ -203,12 +260,15 @@ async def _stream_events(text: str, ctx: MessageContext) -> AsyncIterator[str]:
         yield "event: done\ndata: {}\n\n"
     finally:
         await task
+        if key_token is not None:
+            personal_anthropic_key_var.reset(key_token)
 
 
 @router.post("/send")
 async def chat_send(
     req: Annotated[ChatSendRequest, Body(...)],
     authorization: str | None = Header(default=None),
+    x_provider_key: str | None = Header(default=None, alias="X-Provider-Key"),
 ) -> StreamingResponse:
     text = req.text.strip()
     if not text:
@@ -228,6 +288,17 @@ async def chat_send(
         user_id = caller_user_id
         conv_id = caller_user_id
 
+    # BYOK: persist pilihan provider user (key TIDAK disimpan — hanya nama provider).
+    if req.provider:
+        provider = req.provider.strip().lower()
+        if provider not in _ALLOWED_PROVIDERS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"provider harus salah satu: {sorted(_ALLOWED_PROVIDERS)}",
+            )
+        from app.adapters.user_provider_config import UserProviderConfigRepository
+        UserProviderConfigRepository(_session_factory()).set(user_id, provider)
+
     ctx = MessageContext(
         user_id=user_id,
         conversation_id=conv_id,
@@ -237,7 +308,76 @@ async def chat_send(
     )
 
     return StreamingResponse(
-        _stream_events(text, ctx),
+        _stream_events(text, ctx, personal_key=x_provider_key),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+class PlanDecisionRequest(BaseModel):
+    plan_id: str
+    as_email: str | None = None
+
+
+def _resolve_user_and_conv(authorization: str | None, as_email: str | None) -> tuple[str, str]:
+    caller_user_id, mode = _resolve_caller(authorization)
+    if mode == "admin":
+        if not as_email:
+            raise HTTPException(status_code=400, detail="admin token requires 'as_email'")
+        return _resolve_admin_target(as_email), as_email
+    return caller_user_id, caller_user_id
+
+
+def _publish_room(event_type: str, **data: object) -> None:
+    try:
+        from app.interfaces.room import publish_room_event
+        publish_room_event(event_type, **data)
+    except Exception:
+        logger.debug("room publish gagal", exc_info=True)
+
+
+@router.post("/approve")
+async def chat_approve(
+    req: Annotated[PlanDecisionRequest, Body(...)],
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    """Setujui plan yang diparkir → eksekusi aksi mutasi lewat chokepoint approval."""
+    from app.domain.exceptions import ActionExecutionError
+    from app.domain.use_cases import _conv_id_to_int
+    from app.handlers.approval import pending_plans
+    from app.handlers.registry import action_registry
+
+    conv_id = _resolve_user_and_conv(authorization, req.as_email)[1]
+    pending = pending_plans.consume(req.plan_id, _conv_id_to_int(conv_id))
+    if pending is None:
+        raise HTTPException(status_code=404, detail="plan tidak ditemukan atau kedaluwarsa")
+
+    action = pending.plan.intent
+    try:
+        # approved=True: lolos chokepoint requires_approval (persetujuan manusia).
+        result = action_registry.execute(action, pending.action_context, approved=True)
+    except ActionExecutionError as exc:
+        _publish_room("approval.resolved", id=req.plan_id, decision="error")
+        _publish_room("activity", level="error", text=f"Eksekusi {action} gagal: {exc}")
+        raise HTTPException(status_code=500, detail=f"eksekusi gagal: {exc}") from exc
+
+    _publish_room("approval.resolved", id=req.plan_id, decision="approved")
+    _publish_room("activity", level="done", text=f"Disetujui & dieksekusi: {action}")
+    return {"ok": True, "action": action, "result": str(result)[:2000]}
+
+
+@router.post("/reject")
+async def chat_reject(
+    req: Annotated[PlanDecisionRequest, Body(...)],
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    """Tolak plan yang diparkir → batalkan tanpa eksekusi."""
+    from app.domain.use_cases import _conv_id_to_int
+    from app.handlers.approval import pending_plans
+
+    conv_id = _resolve_user_and_conv(authorization, req.as_email)[1]
+    ok = pending_plans.cancel(req.plan_id, _conv_id_to_int(conv_id))
+    _publish_room("approval.resolved", id=req.plan_id, decision="rejected")
+    if ok:
+        _publish_room("activity", level="error", text="Plan ditolak & dibatalkan")
+    return {"ok": ok}

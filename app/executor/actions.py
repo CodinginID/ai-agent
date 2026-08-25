@@ -34,10 +34,19 @@ class ActionRegistry:
     def get(self, name: str) -> ActionMeta | None:
         return self._actions.get(name)
 
-    def execute(self, name: str, context: dict[str, Any] | None = None) -> str:
+    def execute(
+        self, name: str, context: dict[str, Any] | None = None, *, approved: bool = False
+    ) -> str:
         meta = self.get(name)
         if meta is None:
             raise ActionExecutionError(f"Action '{name}' tidak terdaftar di registry")
+        # Chokepoint approval: aksi ber-``requires_approval`` hanya boleh jalan
+        # setelah persetujuan manusia eksplisit (``approved=True`` dari jalur
+        # /approve). Ini enforcement tunggal untuk semua caller.
+        if meta.requires_approval and not approved:
+            raise ActionExecutionError(
+                f"Action '{name}' butuh persetujuan (approval) sebelum dieksekusi"
+            )
         try:
             return meta.handler(context)
         except ActionExecutionError:

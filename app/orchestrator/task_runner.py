@@ -26,6 +26,7 @@ import uuid
 from dataclasses import dataclass, field
 
 from app.agents.pm import TaskPlan
+from app.ports.ai_provider_resolver import AIProviderResolver
 from app.ports.github_issues import GitHubIssuesPort
 from app.ports.pm_agent import PMAgentPort
 from app.ports.task_events import NullTaskObserver, TaskObserver
@@ -107,13 +108,23 @@ class TaskRunner:
     labels: list[str] = field(default_factory=lambda: ["octopus-task"])
     observer: TaskObserver = field(default_factory=NullTaskObserver)
     memory: TaskMemoryPort = field(default_factory=NullTaskMemory)
+    provider_resolver: AIProviderResolver | None = None
 
     async def run(self, user_id: str, request: str, context: str = "") -> TaskResult:
         task_id = uuid.uuid4().hex[:12]
         self.observer.task_started(task_id, user_id, request)
         # Task-level RAG: enrich planning context with similar past tasks.
         planning_context = await self.memory.recall_for_planning(user_id, request, context)
-        plan = self.pm.plan(request, planning_context)
+        provider = (
+            self.provider_resolver.for_user(user_id)
+            if self.provider_resolver is not None and user_id
+            else None
+        )
+        plan = (
+            self.pm.plan(request, planning_context, provider=provider)
+            if provider is not None
+            else self.pm.plan(request, planning_context)
+        )
 
         # No actionable steps → don't open an issue; nothing to track.
         if not plan.steps:

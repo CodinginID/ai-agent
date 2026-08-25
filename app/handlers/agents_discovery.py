@@ -6,21 +6,6 @@ from app.domain.agents import AgentCapability, AgentRoleAssignment, resolve_agen
 from app.handlers.agents import normalized_codex_sandbox
 
 
-def qwen_capability() -> AgentCapability:
-    return AgentCapability(
-        agent_id="qwen",
-        display_name="Qwen/Ollama",
-        provider="ollama",
-        role_hint="orchestrator",
-        enabled=True,
-        available=bool(settings.qwen_url and settings.qwen_model),
-        path=settings.qwen_url,
-        model=settings.qwen_model,
-        access_mode="controller-only",
-        description="Orchestrator, intent parser, planner, and result analyzer",
-    )
-
-
 def discover_agent_capabilities() -> tuple[AgentCapability, ...]:
     cli_agents = (
         CliAgentDefinition(
@@ -61,7 +46,7 @@ def discover_agent_capabilities() -> tuple[AgentCapability, ...]:
         ),
     )
     discovered = CliAgentDiscoveryAdapter(cli_agents).discover()
-    return (qwen_capability(), *discovered)
+    return tuple(discovered)
 
 
 def agent_role_assignments(

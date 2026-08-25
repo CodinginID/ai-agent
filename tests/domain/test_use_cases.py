@@ -513,7 +513,7 @@ def test_action_requiring_approval_yields_approval_event_and_saves_plan() -> Non
 
 
 def test_action_intent_unknown_handler_yields_final_with_belum_ada_handler() -> None:
-    # 'deploy' is action-y but NOT in EXECUTABLE_ACTIONS — must hit fallback.
+    # 'deploy' tidak terdaftar di registry → harus hit fallback "belum ada handler".
     intent = _make_intent("deploy", confidence=0.9)
     intent_parser = MagicMock()
     intent_parser.parse.return_value = intent
@@ -521,7 +521,14 @@ def test_action_intent_unknown_handler_yields_final_with_belum_ada_handler() -> 
     plan_generator = MagicMock()
     plan_generator.generate.return_value = _make_plan(intent, requires_approval=False)
 
-    uc = _make_use_case(intent_parser=intent_parser, plan_generator=plan_generator)
+    action_registry = MagicMock()
+    action_registry.get.return_value = None  # tidak terdaftar
+
+    uc = _make_use_case(
+        intent_parser=intent_parser,
+        plan_generator=plan_generator,
+        action_registry=action_registry,
+    )
     events = list(uc.handle("deploy", _make_ctx()))
 
     final = [e for e in events if e.type == ChatEventType.FINAL]
@@ -577,6 +584,38 @@ def test_complex_request_routes_to_execution_loop_when_present() -> None:
         call.args[1] == "assistant" and call.args[2] == "done"
         for call in history.append.call_args_list
     )
+
+
+def test_diagnostic_chat_intent_routes_to_loop_not_chat() -> None:
+    # Regression (shadowing bug): frasa diagnostik ("kenapa ... crash?") sering
+    # di-classify parser sebagai 'chat', tapi harus tetap masuk ExecutionLoop.
+    # Complexity dicek SEBELUM jalur chat.
+    intent = _make_intent("chat", confidence=1.0)
+    intent_parser = MagicMock()
+    intent_parser.parse.return_value = intent
+
+    history = MagicMock()
+    history.recent.return_value = []
+
+    loop = MagicMock()
+    loop.run.return_value = iter([
+        _loop_event("thinking", message="analyzing"),
+        _loop_event("final", text="root cause found"),
+    ])
+
+    ai = MagicMock()
+    uc = _make_use_case(
+        intent_parser=intent_parser,
+        history=history,
+        execution_loop=loop,
+        ai=ai,
+    )
+    events = list(uc.handle("kenapa docker crash terus?", _make_ctx()))
+
+    types = [e.type for e in events]
+    assert ChatEventType.THINKING in types      # masuk loop
+    loop.run.assert_called_once()
+    ai.chat_stream.assert_not_called()          # BUKAN jalur chat
 
 
 def test_complex_request_loop_ai_error_yields_error_event() -> None:

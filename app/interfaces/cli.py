@@ -79,14 +79,13 @@ def _cmd_status() -> CLIResult:
         "project_id": ctx.project_id,
         "project_name": ctx.project_name,
         "project_root": str(ctx.project_root),
-        "ollama_url": settings.qwen_url,
-        "ollama_model": settings.qwen_model,
+        "ai_provider": settings.ai_provider_default,
         "rag_enabled": settings.rag_enabled,
     }
     human = (
         f"Project: {ctx.project_name} ({ctx.project_id})\n"
         f"Root: {ctx.project_root}\n"
-        f"AI: {settings.qwen_model} @ {settings.qwen_url}\n"
+        f"AI provider: {settings.ai_provider_default} (BYOK)\n"
         f"RAG: {'on' if settings.rag_enabled else 'off'}"
     )
     return CLIResult(exit_code=0, human=human, data=data)
