@@ -294,6 +294,15 @@ async def google_callback(
         logger.warning("Google userinfo missing email: %s", user_info)
         return HTMLResponse(_error_page("Email tidak ditemukan di akun Google."), status_code=400)
 
+    # Allowlist gate — akses ditolak kalau email tidak terdaftar (bila allowlist
+    # diisi). Fail-closed sederhana; dicek sebelum upsert supaya tak buat user.
+    if not _email_allowed(email):
+        logger.warning("Login ditolak — email tidak di allowlist: %s", email)
+        return HTMLResponse(
+            _error_page("Email kamu tidak diizinkan mengakses sistem ini."),
+            status_code=403,
+        )
+
     # Upsert user in DB + (kalau TUI flow) buat session
     tui_pair_succeeded = False
     try:
@@ -535,14 +544,21 @@ async def telegram_pair_init(
 # 1. Menyelesaikan pairing setelah user klik deep link
 # 2. Resolve Telegram user_id → Core user sebelum tiap pesan
 
+def _email_allowed(email: str) -> bool:
+    """Allowlist email — kosong = terbuka (dev); diisi = hanya email terdaftar."""
+    allowed = settings.allowed_emails
+    return not allowed or email.strip().lower() in allowed
+
+
 def _require_admin_token(authorization: str | None) -> None:
-    """Raise 401 kalau bukan admin token."""
+    """Raise kalau bukan admin token. FAIL-CLOSED: admin_token kosong =
+    admin dinonaktifkan (503), bukan skip check (dulu fail-open → terbuka)."""
     if not settings.admin_token:
-        return  # admin_token kosong = dev mode, skip check
+        raise HTTPException(status_code=503, detail="admin disabled: ADMIN_TOKEN belum diset")
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="admin token required")
     token = authorization.split(" ", 1)[1].strip()
-    if token != settings.admin_token:
+    if not secrets.compare_digest(token, settings.admin_token):
         raise HTTPException(status_code=401, detail="invalid admin token")
 
 

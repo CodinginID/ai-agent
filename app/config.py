@@ -97,6 +97,8 @@ class Settings:
     google_client_id: str
     google_client_secret: str
     admin_token: str
+    # Allowlist email registrasi/login (kosong = terbuka; diisi = hanya email ini).
+    allowed_emails: frozenset[str]
     redis_url: str
     worker_concurrency: int
     instance_id: str
@@ -203,6 +205,11 @@ def load_settings() -> Settings:
         google_client_id=os.getenv("GOOGLE_CLIENT_ID", "").strip(),
         google_client_secret=os.getenv("GOOGLE_CLIENT_SECRET", "").strip(),
         admin_token=os.getenv("ADMIN_TOKEN", "").strip(),
+        allowed_emails=frozenset(
+            e.strip().lower()
+            for e in os.getenv("ALLOWED_EMAILS", "").replace(";", ",").split(",")
+            if e.strip()
+        ),
         redis_url=os.getenv("REDIS_URL", "redis://localhost:6379/0").strip(),
         worker_concurrency=max(1, int(os.getenv("WORKER_CONCURRENCY", "1"))),
         # INSTANCE_ID: identifier unik untuk backend instance (multi-instance).
