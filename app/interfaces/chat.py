@@ -93,6 +93,45 @@ def _format_sse(event: ChatEvent) -> str:
     return f"event: {event.type.value}\ndata: {json.dumps(event.payload, ensure_ascii=False)}\n\n"
 
 
+def _mirror_to_room(ev: ChatEvent) -> None:
+    """Cermin ChatEvent ke RoomBus supaya gather-room hidup saat perintah jalan.
+
+    Best-effort — kegagalan mirror tidak boleh mengganggu stream chat. Import
+    lazy untuk menghindari circular import (room mengimpor chat._resolve_caller).
+    """
+    try:
+        from app.domain.messaging import ChatEventType
+        from app.interfaces.room import publish_room_event
+
+        t = ev.type
+        if t == ChatEventType.INTENT_CLASSIFIED:
+            publish_room_event("agent.status", id="octo", status="working")
+            publish_room_event(
+                "activity", level="info",
+                text=f"Octo menerima perintah (intent: {ev.payload.get('intent', '')})",
+            )
+        elif t == ChatEventType.THINKING:
+            publish_room_event("agent.status", id="octo", status="working")
+        elif t == ChatEventType.ACTION_STARTED:
+            publish_room_event("activity", level="info", text=f"Menjalankan: {ev.payload.get('action', '')}")
+        elif t == ChatEventType.ACTION_RESULT:
+            publish_room_event("activity", level="info", text=f"Hasil: {ev.payload.get('action', '')}")
+        elif t == ChatEventType.APPROVAL_REQUIRED:
+            publish_room_event(
+                "approval.request",
+                id=str(ev.payload.get("plan_id", "")),
+                desc=str(ev.payload.get("summary", "")),
+            )
+            publish_room_event("agent.status", id="octo", status="awaiting_approval")
+        elif t == ChatEventType.FINAL:
+            publish_room_event("agent.status", id="octo", status="idle")
+            publish_room_event("activity", level="done", text="Selesai")
+        elif t == ChatEventType.ERROR:
+            publish_room_event("activity", level="error", text=str(ev.payload.get("message", ""))[:200])
+    except Exception:
+        logger.debug("room mirror gagal", exc_info=True)
+
+
 async def _stream_events(text: str, ctx: MessageContext) -> AsyncIterator[str]:
     """Jalankan use case di thread (sync generator) lalu pump ke async stream.
 
@@ -137,6 +176,7 @@ async def _stream_events(text: str, ctx: MessageContext) -> AsyncIterator[str]:
             if ev is None:
                 break
             yield _format_sse(ev)
+            _mirror_to_room(ev)
             # Saat dapat DELEGATE_TO_AGENT, jangan break — terus drain queue
             # SAMBIL juga dispatch ke worker dan stream chunk-nya. Use case
             # sudah selesai (return setelah yield delegate), jadi queue akan

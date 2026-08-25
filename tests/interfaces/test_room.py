@@ -61,3 +61,22 @@ def test_publish_room_event_reaches_subscriber() -> None:
     ev = asyncio.run(go())
     assert ev["type"] == "agent.status"
     assert ev["status"] == "working"
+
+
+def test_chat_mirror_publishes_room_activity() -> None:
+    import app.interfaces.chat as chat_mod
+    from app.domain.messaging import ChatEvent
+
+    async def go() -> list[dict]:
+        q = _bus.subscribe()
+        try:
+            chat_mod._mirror_to_room(ChatEvent.final("done"))
+            # FINAL publish 2 event: agent.status(idle) + activity(done)
+            return [await asyncio.wait_for(q.get(), timeout=1.0) for _ in range(2)]
+        finally:
+            _bus.unsubscribe(q)
+
+    evs = asyncio.run(go())
+    types = {e["type"] for e in evs}
+    assert "agent.status" in types
+    assert "activity" in types
