@@ -1,23 +1,18 @@
 import { useState } from "react";
-import {
-  getApiKey,
-  getProvider,
-  isRealMode,
-  setApiKey,
-  setProvider,
-} from "../net/api";
+import { getApiKey, getProvider, setApiKey, setProvider } from "../net/api";
 
 /** Tombol + modal untuk mengaktifkan mode IT-Manager asli (BYOK). */
 export function ProviderButton(): JSX.Element {
   const [open, setOpen] = useState(false);
   const [provider, setProviderState] = useState(getProvider());
   const [key, setKeyState] = useState(getApiKey());
-  const [active, setActive] = useState(isRealMode());
+  const [active, setActive] = useState(getProvider() !== "mock");
 
   const save = (): void => {
     setProvider(provider);
     setApiKey(provider === "mock" ? "" : key.trim());
-    setActive(provider !== "mock" && key.trim().length > 0);
+    // Non-mock aktif walau tanpa key → pakai CLI yang terpasang di VPS.
+    setActive(provider !== "mock");
     setOpen(false);
   };
 
@@ -49,9 +44,11 @@ export function ProviderButton(): JSX.Element {
               Aktifkan IT-Manager
             </h2>
             <p className="mb-4 mt-1 text-[12.5px] leading-relaxed text-ink-soft">
-              Pilih provider &amp; tempel API key kamu (BYOK). Tanpa key = mode
-              mock. Key disimpan di browser ini &amp; dikirim per-perintah — tidak
-              dipersist di server.
+              Pilih satu LLM untuk semua role &amp; manajer. Isi API key (BYOK)
+              untuk otak cloud, atau kosongkan untuk memakai CLI yang sudah
+              terpasang di VPS (mis. <code>claude</code>). Key disimpan di browser
+              ini &amp; dikirim per-perintah — tidak dipersist di server. Setara
+              command <code>/use claude</code> di command bar.
             </p>
 
             <label className="block font-mono text-[11px] uppercase tracking-wide text-ink-faint">
