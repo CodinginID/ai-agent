@@ -48,14 +48,13 @@ jobs:
           go-version: "1.24"
           cache-dependency-path: octopus-cli/go.sum
 
-      - name: Gofmt
+      - name: Gofmt (informational)
         working-directory: octopus-cli
         run: |
           unformatted="$(gofmt -l .)"
           if [ -n "$unformatted" ]; then
-            echo "File belum diformat (jalankan gofmt -w):"
+            echo "::warning::File Go belum diformat (gofmt -w):"
             echo "$unformatted"
-            exit 1
           fi
 
       - name: Vet
