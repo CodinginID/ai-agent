@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { approvePlan, rejectPlan, runTask } from "../net/api";
+import { approvePlan, rejectPlan, runTask, setApiKey, setProvider } from "../net/api";
 import type {
   Agent,
   Approval,
@@ -303,6 +303,28 @@ export const useStore = create<RoomState>((set, get) => {
     submitCommand: (text) => {
       const txt = text.trim();
       if (!txt) return;
+
+      // Command aktivasi LLM: "/use <provider> [api-key]" — satu LLM untuk
+      // semua role + manajer. Tanpa key = pakai CLI yang sudah ada di VPS.
+      const useMatch = txt.match(/^\/use\s+(\S+)(?:\s+(\S+))?/i);
+      if (useMatch) {
+        const provider = useMatch[1].toLowerCase();
+        const key = useMatch[2] ?? "";
+        setProvider(provider);
+        setApiKey(key);
+        set((s) => ({
+          live: true,
+          events: feedInto(
+            s.events,
+            `🧠 LLM aktif: <b>${escapeHtml(provider)}</b> untuk semua role — ${
+              key ? "API key di-set" : "pakai CLI VPS (tanpa key)"
+            }`,
+            "done",
+          ),
+        }));
+        return;
+      }
+
       const safe = escapeHtml(txt);
 
       // Ruangan kini dikendalikan backend nyata → matikan simulasi mock.
