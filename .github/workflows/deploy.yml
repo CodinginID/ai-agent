@@ -44,7 +44,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          DEPLOY_DIR="${DEPLOY_DIR:-/home/ali/project/codinginid/ai-agent}"
+          DEPLOY_DIR="${DEPLOY_DIR:-/home/ali/project/ai-agent}"
 
           if [ ! -d "$DEPLOY_DIR/.git" ]; then
             echo "::error::Deploy directory tidak ditemukan: $DEPLOY_DIR"
