@@ -255,6 +255,7 @@ async def worker_socket(
         "worker_id": worker_id,
         "user_id": user_id,
     })
+    _publish_worker_presence("worker.online", worker_id)
 
     try:
         while True:
@@ -315,6 +316,17 @@ async def worker_socket(
             await unregister(user_id, worker_id)
         except Exception:
             logger.exception("failed to unregister worker")
+        _publish_worker_presence("worker.offline", worker_id)
+
+
+def _publish_worker_presence(event_type: str, worker_id: str) -> None:
+    """Umumkan pasukan online/offline ke gather-room. Best-effort, lazy import
+    (hindari circular: room → chat → worker_ws)."""
+    try:
+        from app.interfaces.room import publish_room_event
+        publish_room_event(event_type, id=worker_id)
+    except Exception:
+        logger.debug("gagal publish presence worker", exc_info=True)
 
 
 # ── Public helpers untuk dispatcher (Fase B2) ─────────────────────────────────

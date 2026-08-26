@@ -92,6 +92,37 @@ export async function sendCommand(payload: CommandPayload): Promise<boolean> {
   }
 }
 
+export interface TaskOutcome {
+  order: number;
+  description: string;
+  role: string;
+  ok: boolean;
+  detail: string;
+}
+export interface TaskRunResult {
+  ok: boolean;
+  issue_url: string;
+  summary: string;
+  note: string;
+  outcomes: TaskOutcome[];
+}
+
+/** POST perintah ke Manajer IT (TaskRunner): PM pecah tugas → dispatch per-role
+ *  ke pasukan. Progres live muncul di /room/stream; ini kembalikan hasil akhir. */
+export async function runTask(request: string): Promise<TaskRunResult | null> {
+  try {
+    const resp = await fetch(`${API_BASE}/tasks/run`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ request, as_email: "demo@local" }),
+    });
+    if (!resp.ok) return null;
+    return (await resp.json()) as TaskRunResult;
+  } catch {
+    return null;
+  }
+}
+
 async function _decide(path: string, planId: string): Promise<boolean> {
   try {
     const resp = await fetch(`${API_BASE}${path}`, {

@@ -67,13 +67,117 @@ def publish_room_event(event_type: str, **data: Any) -> None:
     _bus.publish({"type": event_type, **data})
 
 
-def _snapshot() -> dict[str, Any]:
+# Role worker (TaskRunner) → avatar roster yang mewakili di ruangan.
+_ROLE_AVATAR: dict[str, str] = {
+    "engineer": "nadia",
+    "infra": "dewi",
+    "reviewer": "rangga",
+    "research": "yusuf",
+}
+
+# Role worker (backend) → Role kartu kanban di frontend (types.ts).
+_ROLE_CARD: dict[str, str] = {
+    "engineer": "coder",
+    "infra": "deployer",
+    "reviewer": "reviewer",
+    "research": "researcher",
+}
+
+
+class RoomTaskObserver:
+    """TaskObserver → RoomBus: bikin gather-room hidup saat TaskRunner jalan.
+
+    Publish ``activity`` (feed) + ``agent.status`` (avatar) per fase task, lalu
+    delegasi ke ``inner`` (LoggingTaskObserver) supaya papan ``/tasks`` & log
+    tetap terisi. Best-effort — kegagalan publish tak boleh menggagalkan task.
+    """
+
+    def __init__(self, inner: Any) -> None:
+        self._inner = inner
+
+    @staticmethod
+    def _avatar(role: str) -> str:
+        return _ROLE_AVATAR.get(role, "yusuf")
+
+    @staticmethod
+    def _card_id(task_id: str, order: int) -> str:
+        return f"{task_id}-{order}"
+
+    def task_started(self, task_id: str, user_id: str, request: str) -> None:
+        publish_room_event("agent.status", id="octo", status="working")
+        publish_room_event("activity", level="info", text=f"Octo memecah tugas: {request[:120]}")
+        self._inner.task_started(task_id, user_id, request)
+
+    def issue_opened(self, task_id: str, issue_number: int, issue_url: str) -> None:
+        publish_room_event("activity", level="info", text=f"Tugas dicatat (#{issue_number})")
+        self._inner.issue_opened(task_id, issue_number, issue_url)
+
+    def step_started(self, task_id: str, order: int, role: str, description: str) -> None:
+        avatar = self._avatar(role)
+        publish_room_event("agent.status", id=avatar, status="working")
+        publish_room_event(
+            "task.card",
+            id=self._card_id(task_id, order),
+            desc=description[:100],
+            role=_ROLE_CARD.get(role, "researcher"),
+            col="doing",
+        )
+        publish_room_event(
+            "activity", level="info",
+            text=f"Langkah {order} → {role}: {description[:100]}",
+        )
+        self._inner.step_started(task_id, order, role, description)
+
+    def step_finished(self, task_id: str, order: int, role: str, ok: bool, detail: str) -> None:
+        avatar = self._avatar(role)
+        publish_room_event("agent.status", id=avatar, status="idle")
+        publish_room_event(
+            "task.card",
+            id=self._card_id(task_id, order),
+            col="done" if ok else "todo",
+        )
+        publish_room_event(
+            "activity",
+            level="done" if ok else "error",
+            text=f"Langkah {order} ({role}) {'selesai' if ok else 'gagal'}",
+        )
+        self._inner.step_finished(task_id, order, role, ok, detail)
+
+    def task_finished(self, task_id: str, *, closed: bool, ok: bool, note: str) -> None:
+        publish_room_event("agent.status", id="octo", status="idle")
+        publish_room_event(
+            "activity",
+            level="done" if ok else "error",
+            text=f"Tugas {'selesai' if ok else 'berhenti'}: {note[:120]}",
+        )
+        self._inner.task_finished(task_id, closed=closed, ok=ok, note=note)
+
+
+def _snapshot(workers: int = 0) -> dict[str, Any]:
     return {
         "type": "room.snapshot",
         "agents": [dict(a, status="idle") for a in _ROSTER],
         "tasks": [],
         "approvals": [],
+        "workers": workers,
     }
+
+
+async def _worker_count_for(user_id: str, mode: str) -> int:
+    """Hitung pasukan online untuk room caller. Admin → user demo (room tunggal)."""
+    from app.adapters.worker_registry import worker_count
+    from app.interfaces.chat import _resolve_admin_target
+
+    target = user_id
+    if mode == "admin":
+        try:
+            target = _resolve_admin_target("demo@local")
+        except Exception:
+            return 0
+    try:
+        return await worker_count(target)
+    except Exception:
+        return 0
 
 
 def _sse(event: dict[str, Any]) -> str:
@@ -83,14 +187,15 @@ def _sse(event: dict[str, Any]) -> str:
 
 @router.get("/state")
 async def room_state(authorization: str | None = Header(default=None)) -> JSONResponse:
-    _resolve_caller(authorization)  # gate: session/admin token (401 kalau tidak)
-    return JSONResponse(_snapshot())
+    user_id, mode = _resolve_caller(authorization)  # gate: 401 kalau token invalid
+    workers = await _worker_count_for(user_id, mode)
+    return JSONResponse(_snapshot(workers))
 
 
-async def _room_stream() -> AsyncIterator[str]:
+async def _room_stream(workers: int = 0) -> AsyncIterator[str]:
     q = _bus.subscribe()
     try:
-        yield _sse(_snapshot())
+        yield _sse(_snapshot(workers))
         while True:
             try:
                 event = await asyncio.wait_for(q.get(), timeout=15.0)
@@ -105,5 +210,6 @@ async def _room_stream() -> AsyncIterator[str]:
 async def room_stream(
     authorization: str | None = Header(default=None),
 ) -> StreamingResponse:
-    _resolve_caller(authorization)
-    return StreamingResponse(_room_stream(), media_type="text/event-stream")
+    user_id, mode = _resolve_caller(authorization)
+    workers = await _worker_count_for(user_id, mode)
+    return StreamingResponse(_room_stream(workers), media_type="text/event-stream")

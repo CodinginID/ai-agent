@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { approvePlan, rejectPlan, sendCommand } from "../net/api";
+import { approvePlan, rejectPlan, runTask } from "../net/api";
 import type {
   Agent,
   Approval,
@@ -120,6 +120,10 @@ interface RoomState {
   selectedId: string | null;
   theme: Theme;
   managerName: string;
+  /** pasukan (worker) online — dari /room/state + event worker.online/offline */
+  workers: number;
+  /** true begitu backend nyata mengendalikan ruangan → matikan spawner mock */
+  live: boolean;
 
   // actions
   select: (id: string | null) => void;
@@ -179,14 +183,18 @@ export const useStore = create<RoomState>((set, get) => {
       });
     }
   };
-  const setCol = (board: BoardCard[], id: number, col: BoardCol): void => {
+  const setCol = (
+    board: BoardCard[],
+    id: number | string,
+    col: BoardCol,
+  ): void => {
     const c = board.find((bc) => bc.id === id);
     if (c) {
       c.col = col;
       if (col === "done") c.doneT = 0;
     }
   };
-  const removeCard = (board: BoardCard[], id: number): void => {
+  const removeCard = (board: BoardCard[], id: number | string): void => {
     const i = board.findIndex((c) => c.id === id);
     if (i >= 0) board.splice(i, 1);
   };
@@ -272,6 +280,8 @@ export const useStore = create<RoomState>((set, get) => {
     selectedId: null,
     theme: initialTheme(),
     managerName: MANAGER,
+    workers: 0,
+    live: false,
 
     select: (id) => set({ selectedId: id }),
 
@@ -293,36 +303,32 @@ export const useStore = create<RoomState>((set, get) => {
     submitCommand: (text) => {
       const txt = text.trim();
       if (!txt) return;
-      const risky =
-        /(restart|deploy|hapus|reboot|rotasi|kredensial|drop|matikan|down)/i.test(
-          txt,
-        );
-      const review = /(perbaiki|fix|refactor|tulis|buat|implement|kode|optimasi)/i.test(
-        txt,
-      );
-      let role: Role = "coder";
-      if (/(deploy|restart|backup|kredensial|reboot)/i.test(txt)) role = "deployer";
-      else if (/(test|uji|scan)/i.test(txt)) role = "tester";
-      else if (/(review|periksa)/i.test(txt)) role = "reviewer";
-      else if (/(cek|audit|analisa|riset|profil|disk|log)/i.test(txt))
-        role = "researcher";
-
-      // Kirim ke backend nyata (best-effort). Event balik lewat /room/stream.
-      void sendCommand({ text: txt });
       const safe = escapeHtml(txt);
-      set((s) => {
-        const agents = s.agents.map((a) => ({ ...a }));
-        const board = s.board.map((c) => ({ ...c }));
-        const queue = [...s.queue];
-        const approvals = s.approvals;
-        let events = feedInto(
+
+      // Ruangan kini dikendalikan backend nyata → matikan simulasi mock.
+      set((s) => ({
+        live: true,
+        events: feedInto(
           s.events,
           `📩 <b>${MANAGER}</b> menerima perintahmu: “${safe}”`,
           "work",
-        );
-        const task: Task = { id: ++taskSeq, desc: safe, role, risky, review };
-        events = assign(task, agents, board, events, approvals, queue);
-        return { agents, board, queue, events };
+        ),
+      }));
+
+      // Kirim ke Manajer IT nyata (TaskRunner): PM pecah tugas → dispatch
+      // per-role ke pasukan. Kartu kanban + avatar digerakkan event
+      // /room/stream (task.card); hasil akhir → feed.
+      void runTask(txt).then((res) => {
+        if (!res) return;
+        set((s) => ({
+          events: feedInto(
+            s.events,
+            res.ok
+              ? `✅ <b>${MANAGER}</b> selesai (${res.outcomes.length} langkah): ${escapeHtml(res.summary)}`
+              : `⚠️ <b>${MANAGER}</b> berhenti: ${escapeHtml(res.note)}`,
+            res.ok ? "done" : "error",
+          ),
+        }));
       });
     },
 
@@ -356,6 +362,43 @@ export const useStore = create<RoomState>((set, get) => {
           return {
             serverApprovals: s.serverApprovals.filter((a) => a.planId !== planId),
           };
+        }
+        if (type === "room.snapshot") {
+          const w = Number((ev as { workers?: unknown }).workers ?? 0);
+          return { workers: Number.isFinite(w) ? w : 0, live: w > 0 || s.live };
+        }
+        if (type === "worker.online") {
+          return {
+            workers: s.workers + 1,
+            live: true,
+            events: feedInto(s.events, "🟢 Pasukan bergabung (worker online)", "done"),
+          };
+        }
+        if (type === "worker.offline") {
+          return {
+            workers: Math.max(0, s.workers - 1),
+            events: feedInto(s.events, "⚪ Pasukan keluar (worker offline)", "idle"),
+          };
+        }
+        if (type === "task.card") {
+          const id = String((ev as { id?: unknown }).id ?? "");
+          if (!id) return {};
+          const col = String((ev as { col?: unknown }).col ?? "") as BoardCol;
+          const board = s.board.map((c) => ({ ...c }));
+          // Kartu baru (doing) → animasikan avatar role terkait via mesin assign.
+          if (col === "doing" && !board.some((c) => c.id === id)) {
+            const desc = escapeHtml(String((ev as { desc?: unknown }).desc ?? ""));
+            const role = String((ev as { role?: unknown }).role ?? "researcher") as Role;
+            const agents = s.agents.map((a) => ({ ...a }));
+            const approvals = s.approvals.map((r) => ({ ...r }));
+            const queue = [...s.queue];
+            const task: Task = { id, desc, role };
+            const events = assign(task, agents, board, s.events, approvals, queue);
+            return { live: true, agents, board, approvals, queue, events };
+          }
+          // Update kolom (done/todo) = kebenaran backend.
+          setCol(board, id, col || "done");
+          return { live: true, board };
         }
         return {};
       });
@@ -435,16 +478,18 @@ export const useStore = create<RoomState>((set, get) => {
           const queue = [...s.queue];
           let events = s.events;
 
-          // ── manager auto-scheduler ──
-          spawnT -= dt;
-          if (spawnT <= 0) {
-            spawnT = rand(4.5, 8);
-            const active = agents.filter(
-              (a) => a.role !== "manager" && a.state !== "idle",
-            ).length;
-            if (active < 4 && Math.random() < 0.85) {
-              const t: Task = { ...choice(TASKS), id: ++taskSeq };
-              events = assign(t, agents, board, events, approvals, queue);
+          // ── manager auto-scheduler (mock) — mati begitu backend nyata live ──
+          if (!s.live) {
+            spawnT -= dt;
+            if (spawnT <= 0) {
+              spawnT = rand(4.5, 8);
+              const active = agents.filter(
+                (a) => a.role !== "manager" && a.state !== "idle",
+              ).length;
+              if (active < 4 && Math.random() < 0.85) {
+                const t: Task = { ...choice(TASKS), id: ++taskSeq };
+                events = assign(t, agents, board, events, approvals, queue);
+              }
             }
           }
 

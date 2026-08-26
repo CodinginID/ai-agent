@@ -173,19 +173,31 @@ def build_workflow_orchestrator() -> WorkflowOrchestrator:
 def build_task_runner() -> TaskRunner:
     """Compose the PM→Issue→Worker→Close task runner (orchestrator end-to-end).
 
-    Raises ``GitHubUnavailableError`` when GITHUB_TOKEN/REPO are unset — the
-    caller (endpoint) maps that to a 503 so the failure is explicit, not silent.
+    GitHub opsional: kalau GITHUB_TOKEN/REPO belum diisi, pakai
+    ``NullGitHubAdapter`` (jejak issue lokal) supaya task tetap didekomposisi &
+    didispatch ke pasukan (mode portable/mock), bukan gagal 503.
     """
-    from app.adapters.github import GitHubAdapter
+    from app.adapters.github import (
+        GitHubAdapter,
+        GitHubUnavailableError,
+        NullGitHubAdapter,
+    )
     from app.adapters.task_memory import RagTaskMemory
     from app.adapters.task_observer import LoggingTaskObserver
+    from app.interfaces.room import RoomTaskObserver
+    from app.ports.github_issues import GitHubIssuesPort
 
-    github = GitHubAdapter(token=settings.github_token, repo=settings.github_repo)
+    github: GitHubIssuesPort
+    try:
+        github = GitHubAdapter(token=settings.github_token, repo=settings.github_repo)
+    except GitHubUnavailableError:
+        github = NullGitHubAdapter()
+
     return TaskRunner(
         pm=PMAgent(),
         github=github,
         dispatch=WorkerDispatchAdapter(),
-        observer=LoggingTaskObserver(),
+        observer=RoomTaskObserver(LoggingTaskObserver()),
         memory=RagTaskMemory(
             embedder=_embedder(),
             store=_knowledge_store(),

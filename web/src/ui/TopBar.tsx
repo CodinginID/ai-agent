@@ -4,6 +4,7 @@ import { ProviderButton } from "./ProviderSettings";
 
 export function TopBar(): JSX.Element {
   const count = useStore((s) => s.agents.length);
+  const workers = useStore((s) => s.workers);
   const theme = useStore((s) => s.theme);
   const toggleTheme = useStore((s) => s.toggleTheme);
 
@@ -28,6 +29,20 @@ export function TopBar(): JSX.Element {
       <div className="flex items-center gap-1.5 whitespace-nowrap font-mono text-[12px] text-ink-soft">
         <span className="h-[7px] w-[7px] rounded-full bg-accent shadow-[0_0_8px_var(--accent)]" />
         {count} agen
+      </div>
+
+      <div
+        className="flex items-center gap-1.5 whitespace-nowrap font-mono text-[12px] text-ink-soft"
+        title="Pasukan (worker) yang terhubung ke backend"
+      >
+        <span
+          className={
+            workers > 0
+              ? "h-[7px] w-[7px] rounded-full bg-[#3ddc84] shadow-[0_0_8px_#3ddc84]"
+              : "h-[7px] w-[7px] rounded-full bg-ink-faint"
+          }
+        />
+        {workers} pasukan
       </div>
 
       <ProviderButton />
