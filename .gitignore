@@ -242,3 +242,4 @@ logs/
 # Artefak tooling lokal
 .playwright-cli/
 octopus-cli/octopus-worker-bin
+octopus-cli/octopus
