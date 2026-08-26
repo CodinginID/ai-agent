@@ -114,7 +114,11 @@ export async function runTask(request: string): Promise<TaskRunResult | null> {
     const resp = await fetch(`${API_BASE}/tasks/run`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeaders() },
-      body: JSON.stringify({ request, as_email: "demo@local" }),
+      body: JSON.stringify({
+        request,
+        as_email: "demo@local",
+        provider: getProvider(),
+      }),
     });
     if (!resp.ok) return null;
     return (await resp.json()) as TaskRunResult;

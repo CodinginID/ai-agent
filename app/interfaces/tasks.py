@@ -35,6 +35,9 @@ class TaskRunRequest(BaseModel):
     context: str = ""
     # Only used when the caller is the admin token (run a task as user X).
     as_email: str | None = None
+    # BYOK: pilihan otak (anthropic/glm/mock) — dipersist sbg preferensi user.
+    # Key-nya dikirim via header X-Provider-Key (tak pernah dipersist).
+    provider: str | None = None
 
 
 class StepOutcomeOut(BaseModel):
@@ -97,6 +100,7 @@ async def task_board(
 async def run_task(
     req: Annotated[TaskRunRequest, Body(...)],
     authorization: str | None = Header(default=None),
+    x_provider_key: str | None = Header(default=None, alias="X-Provider-Key"),
 ) -> TaskRunResponse:
     request_text = req.request.strip()
     if not request_text:
@@ -113,6 +117,18 @@ async def run_task(
     else:
         user_id = caller_user_id
 
+    # BYOK: persist pilihan provider (kalau ada) + set key per-request ke
+    # contextvar supaya PMAgent & dispatch pakai otak asli milik user.
+    if req.provider:
+        from app.adapters.user_provider_config import UserProviderConfigRepository
+        from app.composition import _session_factory
+        UserProviderConfigRepository(_session_factory()).set(user_id, req.provider)
+
+    from app.adapters.ai_provider_db import personal_anthropic_key_var
+    key_token = (
+        personal_anthropic_key_var.set(x_provider_key) if x_provider_key else None
+    )
+
     try:
         runner = build_task_runner()
     except GitHubUnavailableError as exc:
@@ -122,7 +138,11 @@ async def run_task(
             detail=f"task runner unavailable: {exc}",
         ) from exc
 
-    result = await runner.run(user_id, request_text, req.context)
+    try:
+        result = await runner.run(user_id, request_text, req.context)
+    finally:
+        if key_token is not None:
+            personal_anthropic_key_var.reset(key_token)
 
     return TaskRunResponse(
         ok=result.ok,
