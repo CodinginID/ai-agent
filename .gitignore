@@ -235,3 +235,8 @@ logs/
 
 # Claude Code agent worktrees (embedded git repos — jangan di-track)
 .claude/worktrees/
+
+# octopus-cli build artifacts + playwright sessions
+octopus-cli/octopus-worker-bin
+octopus-cli/octopus
+.playwright-cli/

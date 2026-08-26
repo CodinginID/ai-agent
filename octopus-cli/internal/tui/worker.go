@@ -40,8 +40,10 @@ func RunWorkerLoop(cfg *config.Config, getSession func() *session.Session, isRun
 		if err == nil {
 			// Clean disconnect — reset backoff.
 			delay = workerReconnectInitial
-		} else {
+		} else if program != nil {
 			program.Send(outputMsg{simpleLine("dim", fmt.Sprintf("  worker disconnected (%s), reconnecting in %.0fs…", err.Error(), delay.Seconds()))})
+		} else {
+			fmt.Printf("worker disconnected (%s), reconnecting in %.0fs…\n", err.Error(), delay.Seconds())
 		}
 
 		if !isRunning() {
@@ -118,7 +120,11 @@ func handleWorkerMessage(conn *websocket.Conn, cfg *config.Config, msg map[strin
 	switch kind {
 	case "registered":
 		workerID, _ := msg["worker_id"].(string)
-		program.Send(workerStatusMsg{connected: true, workerID: workerID})
+		if program != nil {
+			program.Send(workerStatusMsg{connected: true, workerID: workerID})
+		} else {
+			fmt.Printf("worker registered: %s\n", workerID)
+		}
 
 	case "heartbeat_ack":
 		// no-op
@@ -156,10 +162,10 @@ func executeAgent(conn *websocket.Conn, cfg *config.Config, jobID, agent, prompt
 			"text":   fmt.Sprintf("[echo] received: %s\n", prompt),
 		})
 		sendWS(conn, map[string]any{
-			"type":     "job_done",
-			"job_id":   jobID,
+			"type":      "job_done",
+			"job_id":    jobID,
 			"exit_code": 0,
-			"summary":  fmt.Sprintf("echoed %d chars", len(prompt)),
+			"summary":   fmt.Sprintf("echoed %d chars", len(prompt)),
 		})
 		return
 	}
