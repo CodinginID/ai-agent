@@ -37,6 +37,7 @@ func main() {
 	}
 
 	root.AddCommand(upgradeCmd())
+	root.AddCommand(workerCmd())
 	root.Version = Version
 
 	if err := root.Execute(); err != nil {
@@ -76,6 +77,54 @@ func runTUI() error {
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("TUI error: %w", err)
 	}
+	return nil
+}
+
+// ── worker command (headless) ───────────────────────────────────────────────
+
+// workerCmd runs the agent worker loop without the TUI — untuk dijalankan
+// sebagai service (systemd/docker) di mesin mana pun agar jadi "pasukan".
+func workerCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "worker",
+		Short: "Jalankan sebagai pasukan headless (tanpa TUI): terima & eksekusi job",
+		Long: "Menghubungkan ke backend Octopus lewat WebSocket, mengiklankan agent " +
+			"yang terpasang, dan mengeksekusi job. Token dari ~/.config/octopus/session.json " +
+			"(hasil login TUI) atau env OCTOPUS_TOKEN. Backend dari OCTOPUS_URL.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runWorker()
+		},
+		SilenceUsage: true,
+	}
+}
+
+func runWorker() error {
+	cfg := config.Load(defaultAppURL, Version)
+
+	sess := session.Load(cfg.AppURL)
+	if t := os.Getenv("OCTOPUS_TOKEN"); t != "" {
+		if sess == nil {
+			sess = &session.Session{BackendURL: cfg.AppURL}
+		}
+		sess.Token = t
+	}
+	if sess == nil || sess.Token == "" {
+		return fmt.Errorf(
+			"belum ada sesi: login lewat TUI dulu, atau set env OCTOPUS_TOKEN",
+		)
+	}
+
+	fmt.Printf("octopus worker → %s\n", cfg.AppURL)
+	fmt.Printf("agents: codex=%v claude=%v glm=%v (echo selalu aktif)\n",
+		cfg.EnableCodex, cfg.EnableClaude, cfg.EnableGLM)
+	fmt.Println("menunggu job… (Ctrl+C untuk berhenti)")
+
+	// Headless: getSession konstan, isRunning selalu true, tanpa TUI program.
+	tui.RunWorkerLoop(cfg,
+		func() *session.Session { return sess },
+		func() bool { return true },
+		nil,
+	)
 	return nil
 }
 
