@@ -21,6 +21,7 @@ Hexagonal: depends on ``PMAgentPort``, ``GitHubIssuesPort`` and
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from dataclasses import dataclass, field
@@ -57,6 +58,15 @@ def role_for_action(action: str) -> str:
         if a == prefix or a.startswith(prefix):
             return role
     return _DEFAULT_STEP_ROLE
+
+
+def _active_single_agent(user_id: str) -> str | None:
+    """Agent tunggal aktif user (claude/glm/…) untuk decompose-via-worker.
+
+    Lazy import — reuse resolver preferensi provider di adapter dispatch.
+    """
+    from app.adapters.worker_dispatch import _single_agent_override
+    return _single_agent_override(user_id)
 
 
 def _issue_body(request: str, plan: TaskPlan) -> str:
@@ -115,16 +125,7 @@ class TaskRunner:
         self.observer.task_started(task_id, user_id, request)
         # Task-level RAG: enrich planning context with similar past tasks.
         planning_context = await self.memory.recall_for_planning(user_id, request, context)
-        provider = (
-            self.provider_resolver.for_user(user_id)
-            if self.provider_resolver is not None and user_id
-            else None
-        )
-        plan = (
-            self.pm.plan(request, planning_context, provider=provider)
-            if provider is not None
-            else self.pm.plan(request, planning_context)
-        )
+        plan = await self._make_plan(user_id, request, planning_context)
 
         # No actionable steps → don't open an issue; nothing to track.
         if not plan.steps:
@@ -194,3 +195,33 @@ class TaskRunner:
             closed=True,
             note="completed",
         )
+
+    async def _make_plan(self, user_id: str, request: str, context: str) -> TaskPlan:
+        """Decompose request → TaskPlan.
+
+        Prioritas: (1) provider cloud (BYOK key / mock) via resolver; (2) kalau
+        tak ada key tapi user mengaktifkan satu LLM (mis. claude), decompose
+        didelegasikan ke worker CLI VPS (tanpa key); (3) fallback plan kosong.
+        """
+        provider = None
+        if self.provider_resolver is not None and user_id:
+            try:
+                provider = self.provider_resolver.for_user(user_id)
+            except Exception:
+                provider = None  # mis. claude tanpa key → coba worker CLI
+        if provider is not None:
+            return self.pm.plan(request, context, provider=provider)
+
+        agent = await asyncio.to_thread(_active_single_agent, user_id)
+        if agent:
+            try:
+                result = await self.dispatch.dispatch_async(
+                    user_id, "research", self.pm.build_prompt(request, context)
+                )
+                text = result.output or result.summary
+                if result.ok and text:
+                    return self.pm.parse(text)
+            except Exception:
+                logger.exception("decompose via worker gagal")
+
+        return self.pm.plan(request, context)  # provider None → plan kosong

@@ -94,6 +94,14 @@ class PMAgent:
             )
         return self._parse_plan(response)
 
+    def build_prompt(self, request: str, context: str = "") -> str:
+        """Public: prompt decompose (dipakai jalur decompose-via-worker CLI)."""
+        return self._build_planning_prompt(request, context)
+
+    def parse(self, response: str) -> TaskPlan:
+        """Public: parse teks LLM (JSON) → TaskPlan."""
+        return self._parse_plan(response)
+
     # ── private ───────────────────────────────────────────────────────────────
 
     def _build_planning_prompt(self, request: str, context: str) -> str:
