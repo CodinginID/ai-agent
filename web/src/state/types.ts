@@ -23,7 +23,8 @@ export interface LogEntry {
 }
 
 export interface Task {
-  id: number;
+  // number = tugas simulasi lokal; string = task step dari backend.
+  id: number | string;
   desc: string;
   role: Role;
   risky?: boolean;
@@ -86,7 +87,8 @@ export interface RoomEvent {
 export type BoardCol = "todo" | "doing" | "review" | "done";
 
 export interface BoardCard {
-  id: number;
+  // number = kartu simulasi lokal; string = kartu dari backend (task step).
+  id: number | string;
   desc: string;
   role: Role;
   col: BoardCol;
