@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -20,7 +21,9 @@ from fastapi import APIRouter, Header
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.interfaces.chat import _resolve_caller
+from app.ports.push import NullPush, PushMessage, PushPort
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/room", tags=["room"])
 
 # Cast tetap ruangan (selaras mockup). Presence worker real menyusul.
@@ -90,10 +93,16 @@ class RoomTaskObserver:
     Publish ``activity`` (feed) + ``agent.status`` (avatar) per fase task, lalu
     delegasi ke ``inner`` (LoggingTaskObserver) supaya papan ``/tasks`` & log
     tetap terisi. Best-effort — kegagalan publish tak boleh menggagalkan task.
+
+    ``push`` (opsional) mengirim notifikasi Web Push ke user saat task selesai
+    (mis. HP terkunci / tab tidak aktif) — ingat ``task_id -> user_id`` dari
+    ``task_started`` lalu dipakai & dibuang di ``task_finished``.
     """
 
-    def __init__(self, inner: Any) -> None:
+    def __init__(self, inner: Any, push: PushPort | None = None) -> None:
         self._inner = inner
+        self._push = push if push is not None else NullPush()
+        self._task_users: dict[str, str] = {}
 
     @staticmethod
     def _avatar(role: str) -> str:
@@ -104,6 +113,7 @@ class RoomTaskObserver:
         return f"{task_id}-{order}"
 
     def task_started(self, task_id: str, user_id: str, request: str) -> None:
+        self._task_users[task_id] = user_id
         publish_room_event("agent.status", id="octo", status="working")
         publish_room_event("activity", level="info", text=f"Octo memecah tugas: {request[:120]}")
         self._inner.task_started(task_id, user_id, request)
@@ -150,7 +160,37 @@ class RoomTaskObserver:
             level="done" if ok else "error",
             text=f"Tugas {'selesai' if ok else 'berhenti'}: {note[:120]}",
         )
+        user_id = self._task_users.pop(task_id, None)
+        if user_id is not None:
+            self._notify_task_result(user_id, task_id, ok=ok, note=note)
         self._inner.task_finished(task_id, closed=closed, ok=ok, note=note)
+
+    def _notify_task_result(self, user_id: str, task_id: str, *, ok: bool, note: str) -> None:
+        """Kirim Web Push best-effort — fire-and-forget supaya tak menahan caller.
+
+        ``task_finished`` bagian Protocol sync, sedangkan ``PushPort.notify``
+        async — dijadwalkan sebagai task di event loop yang sedang jalan (task
+        runner selalu dipanggil dari ``async def run``). Tanpa loop aktif
+        (mis. dipanggil dari kode sync murni), push dilewati diam-diam.
+        """
+        msg = PushMessage(
+            title="Octopus",
+            body=f"Tugas {'selesai' if ok else 'berhenti'}: {note[:120]}",
+            tag=f"task-{task_id}",
+            kind="task",
+            url="/",
+        )
+
+        async def _send() -> None:
+            try:
+                await self._push.notify(user_id, msg)
+            except Exception:
+                logger.debug("push task_finished gagal", exc_info=True)
+
+        try:
+            asyncio.get_running_loop().create_task(_send())
+        except RuntimeError:
+            logger.debug("push task_finished dilewati: tidak ada event loop aktif")
 
 
 def _snapshot(workers: int = 0) -> dict[str, Any]:

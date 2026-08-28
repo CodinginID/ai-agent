@@ -1,6 +1,8 @@
 import { useStore } from "../state/store";
 import { CommandBar } from "./CommandBar";
+import { NotifyButton } from "./NotifyButton";
 import { ProviderButton } from "./ProviderSettings";
+import { UpdateButton } from "./UpdateButton";
 
 export function TopBar(): JSX.Element {
   const count = useStore((s) => s.agents.length);
@@ -46,6 +48,8 @@ export function TopBar(): JSX.Element {
       </div>
 
       <ProviderButton />
+      <NotifyButton />
+      <UpdateButton />
 
       <button
         type="button"

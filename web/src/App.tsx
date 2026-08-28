@@ -6,6 +6,8 @@ import { Roster } from "./ui/Roster";
 import { ApprovalQueue } from "./ui/ApprovalQueue";
 import { ActivityFeed } from "./ui/ActivityFeed";
 import { startRoomStream } from "./net/roomStream";
+import { setBadge, syncTokenToSw } from "./net/push";
+import { useStore } from "./state/store";
 
 function Section({
   title,
@@ -31,7 +33,26 @@ function Section({
 export default function App(): JSX.Element {
   useEffect(() => {
     const stream = startRoomStream();
+    // Token bisa berubah (login ulang) → selalu sinkron ke SW saat app dibuka
+    // supaya tombol Setujui/Tolak di notifikasi pakai token yang valid.
+    void syncTokenToSw();
     return () => stream.stop();
+  }, []);
+
+  // App badge (ikon di homescreen/taskbar) = jumlah approval pending —
+  // sinyal "perlu perhatian" tanpa buka tab, sinkron dgn ApprovalQueue.
+  // Store plain (tanpa middleware subscribeWithSelector) → subscribe manual
+  // & bandingkan panjang sebelumnya sendiri supaya tak spam setBadge tiap tick.
+  useEffect(() => {
+    let last = useStore.getState().serverApprovals.length;
+    setBadge(last);
+    return useStore.subscribe((s) => {
+      const n = s.serverApprovals.length;
+      if (n !== last) {
+        last = n;
+        setBadge(n);
+      }
+    });
   }, []);
 
   return (

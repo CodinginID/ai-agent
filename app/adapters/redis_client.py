@@ -162,6 +162,11 @@ def k_backend_channel(instance_id: str) -> str:
     return f"backend:{instance_id}"
 
 
+def k_push_subs(user_id: str) -> str:
+    """Hash Web Push subscription per user (field=endpoint, value=JSON)."""
+    return f"push:subs:{user_id}"
+
+
 # ── Generic helpers ──────────────────────────────────────────────────────────
 
 async def healthcheck() -> dict[str, Any]:

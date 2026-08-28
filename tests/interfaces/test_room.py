@@ -80,3 +80,84 @@ def test_chat_mirror_publishes_room_activity() -> None:
     types = {e["type"] for e in evs}
     assert "agent.status" in types
     assert "activity" in types
+
+
+# ── RoomTaskObserver push (Web Push saat task selesai) ────────────────────────
+
+class _FakePush:
+    def __init__(self, *, raise_on_notify: bool = False) -> None:
+        self.calls: list[tuple[str, str, str]] = []  # (user_id, tag, body)
+        self._raise = raise_on_notify
+
+    async def subscribe(self, user_id: str, sub: object) -> None:
+        return None
+
+    async def unsubscribe(self, user_id: str, endpoint: str) -> None:
+        return None
+
+    async def notify(self, user_id: str, msg: object) -> int:
+        if self._raise:
+            raise RuntimeError("push kaboom")
+        self.calls.append((user_id, msg.tag, msg.body))  # type: ignore[attr-defined]
+        return 1
+
+    def is_configured(self) -> bool:
+        return True
+
+
+class _NullInner:
+    def task_started(self, task_id: str, user_id: str, request: str) -> None:
+        return None
+
+    def issue_opened(self, task_id: str, issue_number: int, issue_url: str) -> None:
+        return None
+
+    def step_started(self, task_id: str, order: int, role: str, description: str) -> None:
+        return None
+
+    def step_finished(self, task_id: str, order: int, role: str, ok: bool, detail: str) -> None:
+        return None
+
+    def task_finished(self, task_id: str, *, closed: bool, ok: bool, note: str) -> None:
+        return None
+
+
+def test_room_task_observer_pushes_to_user_from_task_started() -> None:
+    from app.interfaces.room import RoomTaskObserver
+
+    async def go() -> _FakePush:
+        push = _FakePush()
+        obs = RoomTaskObserver(_NullInner(), push=push)
+        obs.task_started("t1", "user-42", "kerjakan sesuatu")
+        obs.task_finished("t1", closed=True, ok=True, note="beres semua")
+        await asyncio.sleep(0)  # let the fire-and-forget push task run
+        return push
+
+    push = asyncio.run(go())
+    assert push.calls == [("user-42", "task-t1", "Tugas selesai: beres semua")]
+
+
+def test_room_task_observer_cleans_task_user_mapping() -> None:
+    from app.interfaces.room import RoomTaskObserver
+
+    async def go() -> RoomTaskObserver:
+        obs = RoomTaskObserver(_NullInner(), push=_FakePush())
+        obs.task_started("t2", "user-9", "req")
+        obs.task_finished("t2", closed=True, ok=True, note="ok")
+        await asyncio.sleep(0)
+        return obs
+
+    obs = asyncio.run(go())
+    assert "t2" not in obs._task_users
+
+
+def test_room_task_observer_push_exception_does_not_propagate() -> None:
+    from app.interfaces.room import RoomTaskObserver
+
+    async def go() -> None:
+        obs = RoomTaskObserver(_NullInner(), push=_FakePush(raise_on_notify=True))
+        obs.task_started("t3", "user-1", "req")
+        obs.task_finished("t3", closed=False, ok=False, note="gagal total")
+        await asyncio.sleep(0)  # let the failing push task run & be swallowed
+
+    asyncio.run(go())  # must not raise
