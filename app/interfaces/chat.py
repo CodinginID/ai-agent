@@ -99,11 +99,12 @@ def _format_sse(event: ChatEvent) -> str:
     return f"event: {event.type.value}\ndata: {json.dumps(event.payload, ensure_ascii=False)}\n\n"
 
 
-def _mirror_to_room(ev: ChatEvent) -> None:
+def _mirror_to_room(ev: ChatEvent, user_id: str = "") -> None:
     """Cermin ChatEvent ke RoomBus supaya gather-room hidup saat perintah jalan.
 
     Best-effort — kegagalan mirror tidak boleh mengganggu stream chat. Import
     lazy untuk menghindari circular import (room mengimpor chat._resolve_caller).
+    ``user_id`` dipakai untuk push notification saat APPROVAL_REQUIRED.
     """
     try:
         from app.domain.messaging import ChatEventType
@@ -123,12 +124,11 @@ def _mirror_to_room(ev: ChatEvent) -> None:
         elif t == ChatEventType.ACTION_RESULT:
             publish_room_event("activity", level="info", text=f"Hasil: {ev.payload.get('action', '')}")
         elif t == ChatEventType.APPROVAL_REQUIRED:
-            publish_room_event(
-                "approval.request",
-                id=str(ev.payload.get("plan_id", "")),
-                desc=str(ev.payload.get("summary", "")),
-            )
+            plan_id = str(ev.payload.get("plan_id", ""))
+            summary = str(ev.payload.get("summary", ""))
+            publish_room_event("approval.request", id=plan_id, desc=summary)
             publish_room_event("agent.status", id="octo", status="awaiting_approval")
+            _push_approval_notice(user_id, plan_id, summary)
         elif t == ChatEventType.FINAL:
             publish_room_event("agent.status", id="octo", status="idle")
             publish_room_event("activity", level="done", text="Selesai")
@@ -136,6 +136,37 @@ def _mirror_to_room(ev: ChatEvent) -> None:
             publish_room_event("activity", level="error", text=str(ev.payload.get("message", ""))[:200])
     except Exception:
         logger.debug("room mirror gagal", exc_info=True)
+
+
+def _push_approval_notice(user_id: str, plan_id: str, summary: str) -> None:
+    """Kirim Web Push "perlu persetujuan" — fire-and-forget, tak pernah ganggu SSE.
+
+    Import ``build_push`` lazy (bukan di level modul) supaya bisa di-monkeypatch
+    per-test dan menghindari import berat saat modul chat di-load.
+    """
+    try:
+        from app.composition import build_push
+        from app.ports.push import PushMessage
+
+        msg = PushMessage(
+            title="Perlu persetujuan",
+            body=summary[:160],
+            tag=f"approval-{plan_id}",
+            kind="approval",
+            url="/",
+            data={"plan_id": plan_id},
+        )
+        push = build_push()
+
+        async def _send() -> None:
+            try:
+                await push.notify(user_id, msg)
+            except Exception:
+                logger.debug("push approval gagal", exc_info=True)
+
+        asyncio.get_running_loop().create_task(_send())
+    except Exception:
+        logger.debug("push approval scheduling gagal", exc_info=True)
 
 
 async def _stream_events(
@@ -193,7 +224,7 @@ async def _stream_events(
             if ev is None:
                 break
             yield _format_sse(ev)
-            _mirror_to_room(ev)
+            _mirror_to_room(ev, ctx.user_id)
             # Saat dapat DELEGATE_TO_AGENT, jangan break — terus drain queue
             # SAMBIL juga dispatch ke worker dan stream chunk-nya. Use case
             # sudah selesai (return setelah yield delegate), jadi queue akan

@@ -141,6 +141,8 @@ services:
     depends_on:
       bot:
         condition: service_healthy
+      web:
+        condition: service_started
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:${PORT:-8080}/health || exit 1"]

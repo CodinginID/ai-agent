@@ -119,6 +119,11 @@ class Settings:
     glm_api_model: str
     glm_api_base_url: str
 
+    # ── Web Push (notifikasi approval / task selesai) ─────────────────────────
+    vapid_public_key: str
+    vapid_private_key: str
+    vapid_subject: str
+
 
 _DEFAULT_MANUAL_COMMANDS: frozenset[str] = frozenset({
     "docker", "git", "ls", "ps", "df", "du", "free",
@@ -231,6 +236,9 @@ def load_settings() -> Settings:
         glm_api_key=os.getenv("GLM_API_KEY", "").strip(),
         glm_api_model=os.getenv("GLM_API_MODEL", "glm-4-plus").strip(),
         glm_api_base_url=os.getenv("GLM_API_BASE_URL", "https://open.bigmodel.cn/api/paas/v4").rstrip("/"),
+        vapid_public_key=os.getenv("VAPID_PUBLIC_KEY", "").strip(),
+        vapid_private_key=os.getenv("VAPID_PRIVATE_KEY", "").strip(),
+        vapid_subject=os.getenv("VAPID_SUBJECT", "mailto:admin@example.com").strip(),
     )
 
 

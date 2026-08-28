@@ -40,6 +40,7 @@ from app.orchestrator.task_runner import TaskRunner
 from app.orchestrator.workflow import WorkflowOrchestrator
 from app.ports.embedder import Embedder
 from app.ports.knowledge_store import KnowledgeStore
+from app.ports.push import PushPort
 
 
 @lru_cache(maxsize=1)
@@ -165,6 +166,25 @@ def _workflow_orchestrator() -> WorkflowOrchestrator:
     )
 
 
+@lru_cache(maxsize=1)
+def build_push() -> PushPort:
+    """Compose ``PushPort`` — ``WebPushAdapter`` kalau VAPID key di-set, else no-op.
+
+    ``@lru_cache`` supaya satu instance dipakai bersama (store Redis + sender)
+    di semua caller (chat mirror, task observer, router /push).
+    """
+    from app.adapters.push_webpush import RedisPushSubscriptionStore, WebPushAdapter
+    from app.ports.push import NullPush
+
+    if not settings.vapid_private_key:
+        return NullPush()
+    return WebPushAdapter(
+        store=RedisPushSubscriptionStore(),
+        vapid_private_key=settings.vapid_private_key,
+        vapid_subject=settings.vapid_subject,
+    )
+
+
 def build_workflow_orchestrator() -> WorkflowOrchestrator:
     """Compose the architect→engineer→reviewer orchestrator (prompt fallback)."""
     return _workflow_orchestrator()
@@ -197,7 +217,7 @@ def build_task_runner() -> TaskRunner:
         pm=PMAgent(),
         github=github,
         dispatch=WorkerDispatchAdapter(),
-        observer=RoomTaskObserver(LoggingTaskObserver()),
+        observer=RoomTaskObserver(LoggingTaskObserver(), push=build_push()),
         memory=RagTaskMemory(
             embedder=_embedder(),
             store=_knowledge_store(),
