@@ -1,4 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <rect width="512" height="512" rx="108" fill="#0d9e88"/>
-  <text x="256" y="352" font-size="300" text-anchor="middle">🐙</text>
+  <g fill="none" stroke="#eaf7f4" stroke-width="30" stroke-linecap="round">
+    <path d="M150 300 C120 350, 90 380, 80 430 C75 455, 100 460, 110 440"/>
+    <path d="M196 322 C186 372, 170 400, 165 445 C162 468, 190 470, 195 448"/>
+    <path d="M256 330 C256 380, 250 410, 256 452 C258 472, 282 472, 280 450"/>
+    <path d="M316 322 C326 372, 342 400, 347 445 C350 468, 322 470, 317 448"/>
+    <path d="M362 300 C392 350, 422 380, 432 430 C437 455, 412 460, 402 440"/>
+  </g>
+  <ellipse cx="256" cy="215" rx="120" ry="112" fill="#eaf7f4"/>
+  <circle cx="214" cy="212" r="20" fill="#0b3d36"/>
+  <circle cx="298" cy="212" r="20" fill="#0b3d36"/>
+  <circle cx="221" cy="205" r="7" fill="#ffffff"/>
+  <circle cx="305" cy="205" r="7" fill="#ffffff"/>
+  <path d="M226 262 Q256 284 286 262" stroke="#0b3d36" stroke-width="12" fill="none" stroke-linecap="round"/>
 </svg>
