@@ -21,12 +21,17 @@ export function startRoomStream(): RoomStream {
 }
 
 async function connectLive(signal: AbortSignal): Promise<void> {
-  const token = getToken();
-  const headers: Record<string, string> = token
-    ? { Authorization: `Bearer ${token}` }
-    : {};
-
   while (!signal.aborted) {
+    // Token dibaca ulang tiap percobaan: setelah user login lewat Pengaturan
+    // → Akun, stream langsung tersambung tanpa reload halaman.
+    const token = getToken();
+    const headers: Record<string, string> = token
+      ? { Authorization: `Bearer ${token}` }
+      : {};
+    if (!token) {
+      await new Promise((r) => setTimeout(r, 2000));
+      continue;
+    }
     try {
       const resp = await fetch("/room/stream", { headers, signal });
       if (!resp.ok || !resp.body) throw new Error(`room/stream HTTP ${resp.status}`);

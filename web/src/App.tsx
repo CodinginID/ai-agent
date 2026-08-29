@@ -40,6 +40,11 @@ export default function App(): JSX.Element {
     // Token bisa berubah (login ulang) → selalu sinkron ke SW saat app dibuka
     // supaya tombol Setujui/Tolak di notifikasi pakai token yang valid.
     void syncTokenToSw();
+    // Belum ada token → fitur live (persetujuan, pasukan, stream) 401.
+    // Arahkan langsung ke Pengaturan → Akun supaya user tahu harus masuk.
+    void useStore.getState().refreshAuth().then(() => {
+      if (useStore.getState().auth.status === "anon") useStore.getState().openSettings();
+    });
     return () => stream.stop();
   }, []);
 

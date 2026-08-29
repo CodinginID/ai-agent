@@ -34,6 +34,88 @@ export function getToken(): string {
   }
 }
 
+export function setToken(t: string): void {
+  const store = ls();
+  if (!store) return;
+  if (t) store.setItem(TOKEN_KEY, t);
+  else store.removeItem(TOKEN_KEY);
+}
+export function clearToken(): void {
+  setToken("");
+}
+
+// ── Auth (sesi web) ──────────────────────────────────────────────────────────
+export interface AuthConfig {
+  google_oauth: boolean;
+}
+export async function fetchAuthConfig(): Promise<AuthConfig> {
+  try {
+    const resp = await fetch(`${API_BASE}/auth/config`);
+    if (!resp.ok) return { google_oauth: false };
+    return (await resp.json()) as AuthConfig;
+  } catch {
+    return { google_oauth: false };
+  }
+}
+
+export interface MeInfo {
+  user_id: string;
+  email: string;
+  display_name: string;
+}
+/** Identitas sesi saat ini. null = token kosong/tidak valid. Token admin
+ *  (ADMIN_TOKEN) bukan sesi user → /auth/me 401, kita kembalikan label admin. */
+export async function fetchMe(): Promise<MeInfo | "admin" | null> {
+  const t = getToken();
+  if (!t) return null;
+  try {
+    const resp = await fetch(`${API_BASE}/auth/me`, { headers: authHeaders() });
+    if (resp.ok) return (await resp.json()) as MeInfo;
+    // /auth/me hanya kenal sesi user; cek apakah token ini admin lewat endpoint ber-auth ringan.
+    const probe = await fetch(`${API_BASE}/room/state`, { headers: authHeaders() });
+    return probe.ok ? "admin" : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Mulai login Google (alur pairing yang sama dengan TUI): dapat kode, buka
+ *  halaman login, lalu poll sampai sesi terbentuk. */
+export async function startGoogleLogin(): Promise<{ code: string; loginUrl: string } | null> {
+  try {
+    const resp = await fetch(`${API_BASE}/auth/tui/start`, { method: "POST" });
+    if (!resp.ok) return null;
+    const body = (await resp.json()) as { code: string };
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    return { code: body.code, loginUrl: `${origin}/auth/tui-login?code=${encodeURIComponent(body.code)}` };
+  } catch {
+    return null;
+  }
+}
+export async function pollGoogleLogin(code: string): Promise<"pending" | "expired" | { token: string }> {
+  try {
+    const resp = await fetch(`${API_BASE}/auth/tui/poll`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    });
+    if (resp.status === 202) return "pending";
+    if (!resp.ok) return "expired";
+    const body = (await resp.json()) as { session_token?: string };
+    return body.session_token ? { token: body.session_token } : "pending";
+  } catch {
+    return "pending";
+  }
+}
+export async function logoutSession(): Promise<void> {
+  try {
+    await fetch(`${API_BASE}/auth/tui/logout`, { method: "POST", headers: authHeaders() });
+  } catch {
+    /* best-effort */
+  }
+  clearToken();
+}
+
 // ── Provider (otak) + API key BYOK ────────────────────────────────────────────
 export function getProvider(): string {
   return ls()?.getItem(PROVIDER_KEY) ?? "mock";
