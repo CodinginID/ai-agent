@@ -64,11 +64,11 @@ export function computeCamera(cssW: number, cssH: number): Camera {
   // → pakai mode cover: skala ke tinggi kontainer, lebar boleh meluap dan
   // di-pan horizontal (lihat useRoomEngine). Awal: pusat world di tengah layar.
   if (cssH > cssW * (WORLD_H / WORLD_W) * 1.35) {
-    const scale = (cssH - pad * 2) / WORLD_H;
+    const scale = Math.min((cssH - pad * 2) / WORLD_H, (cssW * 2.0) / WORLD_W);
     return {
       scale,
       offX: clampOffX((cssW - WORLD_W * scale) / 2, cssW, scale),
-      offY: pad,
+      offY: Math.max(pad, (cssH - WORLD_H * scale) / 2),
     };
   }
   const scale = Math.min(

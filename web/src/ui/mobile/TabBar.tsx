@@ -75,7 +75,7 @@ export function TabBar({ active, onChange, approvalCount, vertical }: TabBarProp
       style={
         vertical
           ? { paddingLeft: "env(safe-area-inset-left)" }
-          : { paddingBottom: "env(safe-area-inset-bottom)" }
+          : { paddingBottom: "max(env(safe-area-inset-bottom), 8px)" }
       }
     >
       {TABS.map((t) => {

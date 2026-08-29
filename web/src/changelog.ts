@@ -12,6 +12,14 @@ export interface ReleaseNote {
 
 export const CHANGELOG: ReleaseNote[] = [
   {
+    version: "0.3.2",
+    date: "2026-08-29",
+    notes: [
+      "Perbaikan iPhone: tab bar kini menempel di dasar layar (tidak ada celah kosong di atas home indicator).",
+      "Kanvas ruangan di HP tidak lagi terlalu zoom; petunjuk yang menutupi kartu manajer disembunyikan.",
+    ],
+  },
+  {
     version: "0.3.1",
     date: "2026-08-29",
     notes: [

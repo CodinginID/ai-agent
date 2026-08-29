@@ -12,9 +12,9 @@ export function RuanganTab(): JSX.Element {
 
   return (
     <div className="relative h-full w-full">
-      <RoomCanvas />
+      <RoomCanvas hideHint />
       {manager && (
-        <div className="pointer-events-none absolute inset-x-3 bottom-14 rounded-xl border border-line bg-[var(--c-namebg)] px-3 py-2.5 backdrop-blur">
+        <div className="pointer-events-none absolute inset-x-3 bottom-3 rounded-xl border border-line bg-[var(--c-namebg)] px-3 py-2.5 backdrop-blur">
           <div className="flex items-center gap-2.5">
             <span
               className="grid h-7 w-7 flex-none place-items-center rounded-full text-[14px]"
