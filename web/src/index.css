@@ -34,7 +34,7 @@ button {
   user-select: none;
 }
 
-@media (max-width: 767px) {
+@media (max-width: 1023px) {
   .scroll-thin {
     scrollbar-width: none;
   }
@@ -59,5 +59,38 @@ button {
 @media (prefers-reduced-motion: reduce) {
   * {
     scroll-behavior: auto;
+  }
+}
+
+/* ── Mobile shell: transisi konten tab + tekan tombol terasa "native" ─────── */
+@keyframes tab-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.tab-in {
+  animation: tab-in 180ms ease-out;
+}
+@keyframes sheet-in {
+  from { transform: translateY(24px); opacity: 0.6; }
+  to { transform: none; opacity: 1; }
+}
+.sheet-in {
+  animation: sheet-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@media (max-width: 1023px) {
+  button:active {
+    transform: scale(0.97);
+  }
+  /* iOS zoom-in otomatis saat fokus input < 16px — hindari */
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tab-in,
+  .sheet-in {
+    animation: none;
   }
 }

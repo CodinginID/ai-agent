@@ -12,6 +12,15 @@ export interface ReleaseNote {
 
 export const CHANGELOG: ReleaseNote[] = [
   {
+    version: "0.3.1",
+    date: "2026-08-29",
+    notes: [
+      "Tampilan mobile kini dipakai juga di tablet portrait dan HP landscape (rail tab di kiri, tombol tulis perintah di header).",
+      "Teks & tombol lebih besar dan nyaman disentuh; input tidak lagi memicu zoom otomatis di iOS.",
+      "Header menghormati area status bar (notch), transisi tab & sheet lebih halus.",
+    ],
+  },
+  {
     version: "0.3.0",
     date: "2026-08-29",
     notes: [
