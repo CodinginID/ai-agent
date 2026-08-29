@@ -82,7 +82,7 @@ export function MobileShell(): JSX.Element {
   );
 
   return (
-    <div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-bg">
+    <div className="fixed inset-0 flex flex-col overflow-hidden bg-bg" style={{ height: "100dvh", minHeight: "-webkit-fill-available" }}>
       <MobileHeader onCompose={short ? () => setComposeOpen(true) : undefined} />
 
       {short ? (

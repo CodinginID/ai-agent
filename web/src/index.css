@@ -94,3 +94,10 @@ button {
     animation: none;
   }
 }
+
+/* iOS standalone: area di luar shell (bila ada) menyatu dgn bar bawah */
+@media (max-width: 1023px) {
+  body {
+    background: var(--surface);
+  }
+}
