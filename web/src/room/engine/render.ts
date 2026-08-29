@@ -60,6 +60,17 @@ export function readPalette(): Palette {
 
 export function computeCamera(cssW: number, cssH: number): Camera {
   const pad = 24;
+  // Portrait (HP): world 1280×800 di-"contain" akan jadi strip kecil di tengah
+  // → pakai mode cover: skala ke tinggi kontainer, lebar boleh meluap dan
+  // di-pan horizontal (lihat useRoomEngine). Awal: pusat world di tengah layar.
+  if (cssH > cssW * (WORLD_H / WORLD_W) * 1.35) {
+    const scale = (cssH - pad * 2) / WORLD_H;
+    return {
+      scale,
+      offX: clampOffX((cssW - WORLD_W * scale) / 2, cssW, scale),
+      offY: pad,
+    };
+  }
   const scale = Math.min(
     (cssW - pad * 2) / WORLD_W,
     (cssH - pad * 2) / WORLD_H,
@@ -69,6 +80,15 @@ export function computeCamera(cssW: number, cssH: number): Camera {
     offX: (cssW - WORLD_W * scale) / 2,
     offY: (cssH - WORLD_H * scale) / 2,
   };
+}
+
+/** Batasi pan horizontal supaya tepi world tak lepas dari layar (mode cover). */
+export function clampOffX(offX: number, cssW: number, scale: number): number {
+  const pad = 24;
+  const minX = cssW - WORLD_W * scale - pad;
+  const maxX = pad;
+  if (minX > maxX) return (cssW - WORLD_W * scale) / 2; // world lebih sempit: tengah
+  return Math.min(maxX, Math.max(minX, offX));
 }
 
 export function rrect(

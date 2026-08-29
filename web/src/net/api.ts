@@ -149,3 +149,74 @@ export async function approvePlan(planId: string): Promise<boolean> {
 export async function rejectPlan(planId: string): Promise<boolean> {
   return _decide("/chat/reject", planId);
 }
+
+// ── Roster pasukan (CRUD nama/peran agen) ─────────────────────────────────────
+
+export interface RosterAgentDto {
+  id: string;
+  name: string;
+  role: string;
+}
+
+export interface RosterMutationResult {
+  ok: boolean;
+  /** Pesan error server (400 validasi, dll) — cuma diisi kalau ok=false. */
+  detail?: string;
+}
+
+async function _detailOf(resp: Response): Promise<string | undefined> {
+  try {
+    const body = (await resp.json()) as { detail?: string };
+    return body.detail;
+  } catch {
+    return undefined;
+  }
+}
+
+/** GET roster lengkap milik user (fallback roster default kalau baru pertama kali). */
+export async function fetchRoster(): Promise<RosterAgentDto[] | null> {
+  try {
+    const resp = await fetch(`${API_BASE}/room/roster?as_email=demo@local`, {
+      headers: authHeaders(),
+    });
+    if (!resp.ok) return null;
+    return (await resp.json()) as RosterAgentDto[];
+  } catch {
+    return null;
+  }
+}
+
+/** PUT — buat agen baru (id belum ada) atau ubah nama/peran agen yang ada. */
+export async function saveAgent(
+  id: string,
+  data: { name: string; role: string },
+): Promise<RosterMutationResult> {
+  try {
+    const resp = await fetch(`${API_BASE}/room/roster/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ ...data, as_email: "demo@local" }),
+    });
+    if (!resp.ok) return { ok: false, detail: await _detailOf(resp) };
+    return { ok: true };
+  } catch {
+    return { ok: false, detail: "gagal terhubung ke server" };
+  }
+}
+
+/** DELETE agen — backend menolak (400) kalau agennya manajer. */
+export async function deleteAgent(id: string): Promise<RosterMutationResult> {
+  try {
+    const resp = await fetch(
+      `${API_BASE}/room/roster/${encodeURIComponent(id)}?as_email=demo@local`,
+      { method: "DELETE", headers: authHeaders() },
+    );
+    if (!resp.ok) return { ok: false, detail: await _detailOf(resp) };
+    const body = (await resp.json()) as { ok?: boolean };
+    return body.ok === true
+      ? { ok: true }
+      : { ok: false, detail: "agen tidak ditemukan" };
+  } catch {
+    return { ok: false, detail: "gagal terhubung ke server" };
+  }
+}

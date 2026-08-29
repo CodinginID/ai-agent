@@ -8,6 +8,8 @@ import { ActivityFeed } from "./ui/ActivityFeed";
 import { startRoomStream } from "./net/roomStream";
 import { setBadge, syncTokenToSw } from "./net/push";
 import { useStore } from "./state/store";
+import { useIsMobile } from "./hooks/useIsMobile";
+import { MobileShell } from "./ui/mobile/MobileShell";
 
 function Section({
   title,
@@ -31,6 +33,8 @@ function Section({
 }
 
 export default function App(): JSX.Element {
+  const isMobile = useIsMobile();
+
   useEffect(() => {
     const stream = startRoomStream();
     // Token bisa berubah (login ulang) → selalu sinkron ke SW saat app dibuka
@@ -54,6 +58,10 @@ export default function App(): JSX.Element {
       }
     });
   }, []);
+
+  if (isMobile) {
+    return <MobileShell />;
+  }
 
   return (
     <div className="flex min-h-[100dvh] flex-col md:grid md:h-[100dvh] md:min-h-0 md:grid-cols-[1fr_minmax(300px,348px)] md:grid-rows-[auto_1fr] md:overflow-hidden">

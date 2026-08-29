@@ -8,12 +8,39 @@ body,
   height: 100%;
 }
 
+html,
+body {
+  overscroll-behavior: none; /* cegah "pull to refresh" / bounce ala native app */
+}
+
 body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
   font-family: "IBM Plex Sans", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  touch-action: manipulation; /* hilangkan delay 300ms & double-tap-zoom di tombol */
+}
+
+/* Chrome UI (bukan teks konten seperti feed/log) tak perlu bisa di-select —
+   mengurangi selection tak sengaja saat scroll/tap di layar sentuh. */
+header,
+nav,
+button {
+  user-select: none;
+}
+
+@media (max-width: 767px) {
+  .scroll-thin {
+    scrollbar-width: none;
+  }
+  .scroll-thin::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 /* thin scrollbars for panels */

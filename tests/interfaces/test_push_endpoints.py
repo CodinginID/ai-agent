@@ -93,7 +93,11 @@ def test_subscribe_requires_auth() -> None:
 
 def test_vapid_key_503_when_unconfigured(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(push_iface, "_resolve_caller", lambda _a: (USER, "user"))
-    monkeypatch.setattr(push_iface, "settings", load_settings())  # blank vapid keys
+    monkeypatch.setattr(
+        push_iface,
+        "settings",
+        dataclasses.replace(load_settings(), vapid_public_key="", vapid_private_key=""),
+    )  # blank vapid keys
     app = FastAPI()
     app.include_router(push_iface.router)
     client = TestClient(app)
@@ -104,7 +108,11 @@ def test_vapid_key_503_when_unconfigured(monkeypatch: pytest.MonkeyPatch) -> Non
 
 def test_subscribe_503_when_unconfigured(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(push_iface, "_resolve_user_and_conv", lambda _a, _e: (USER, USER))
-    monkeypatch.setattr(push_iface, "settings", load_settings())
+    monkeypatch.setattr(
+        push_iface,
+        "settings",
+        dataclasses.replace(load_settings(), vapid_public_key="", vapid_private_key=""),
+    )
     app = FastAPI()
     app.include_router(push_iface.router)
     client = TestClient(app)

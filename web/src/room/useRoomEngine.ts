@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import type { RefObject } from "react";
 import { useStore } from "../state/store";
 import {
-  computeCamera,
+  clampOffX, computeCamera,
   drawPings,
   drawWorld,
   readPalette,
@@ -60,7 +60,24 @@ export function useRoomEngine(canvasRef: RefObject<HTMLCanvasElement>): void {
     if (canvas.parentElement) ro.observe(canvas.parentElement);
     resize();
 
+    // Tap = pilih agen; drag horizontal = pan kamera (mode cover di HP).
+    let drag: { id: number; startX: number; startOffX: number; moved: boolean } | null = null;
     const onPointerDown = (e: PointerEvent): void => {
+      drag = { id: e.pointerId, startX: e.clientX, startOffX: cam.offX, moved: false };
+      canvas.setPointerCapture(e.pointerId);
+    };
+    const onPointerMove = (e: PointerEvent): void => {
+      if (!drag || drag.id !== e.pointerId) return;
+      const dx = e.clientX - drag.startX;
+      if (!drag.moved && Math.abs(dx) < 6) return;
+      drag.moved = true;
+      cam = { ...cam, offX: clampOffX(drag.startOffX + dx, cssW, cam.scale) };
+    };
+    const onPointerUp = (e: PointerEvent): void => {
+      if (!drag || drag.id !== e.pointerId) return;
+      const wasTap = !drag.moved;
+      drag = null;
+      if (!wasTap) return;
       const rect = canvas.getBoundingClientRect();
       const { x, y } = screenToWorld(
         cam,
@@ -71,6 +88,9 @@ export function useRoomEngine(canvasRef: RefObject<HTMLCanvasElement>): void {
       if (id) useStore.getState().select(id);
     };
     canvas.addEventListener("pointerdown", onPointerDown);
+    canvas.addEventListener("pointermove", onPointerMove);
+    canvas.addEventListener("pointerup", onPointerUp);
+    canvas.addEventListener("pointercancel", onPointerUp);
 
     const frame = (t: number): void => {
       const dt = Math.min((t - last) / 1000, 0.05);
@@ -123,6 +143,9 @@ export function useRoomEngine(canvasRef: RefObject<HTMLCanvasElement>): void {
       cancelAnimationFrame(raf);
       ro.disconnect();
       canvas.removeEventListener("pointerdown", onPointerDown);
+      canvas.removeEventListener("pointermove", onPointerMove);
+      canvas.removeEventListener("pointerup", onPointerUp);
+      canvas.removeEventListener("pointercancel", onPointerUp);
     };
   }, [canvasRef]);
 }
