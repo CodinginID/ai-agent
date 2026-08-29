@@ -150,6 +150,42 @@ export async function rejectPlan(planId: string): Promise<boolean> {
   return _decide("/chat/reject", planId);
 }
 
+// ── Push (Pengaturan → Notifikasi) ────────────────────────────────────────────
+
+export interface TestPushResult {
+  ok: boolean;
+  /** Jumlah perangkat yang menerima notifikasi tes (cuma diisi kalau ok=true). */
+  sent?: number;
+  /** Pesan error server — cuma diisi kalau ok=false. */
+  detail?: string;
+}
+
+/** POST /push/test — kirim notifikasi tes ke semua device yang subscribe
+ *  (dipanggil dari SettingsPanel bagian Notifikasi). */
+export async function sendTestPush(): Promise<TestPushResult> {
+  try {
+    const resp = await fetch(`${API_BASE}/push/test`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ as_email: "demo@local" }),
+    });
+    if (!resp.ok) {
+      let detail: string | undefined;
+      try {
+        const body = (await resp.json()) as { detail?: string };
+        detail = body.detail;
+      } catch {
+        /* body bukan JSON — abaikan */
+      }
+      return { ok: false, detail };
+    }
+    const body = (await resp.json()) as { sent?: number };
+    return { ok: true, sent: typeof body.sent === "number" ? body.sent : undefined };
+  } catch {
+    return { ok: false, detail: "gagal terhubung ke server" };
+  }
+}
+
 // ── Roster pasukan (CRUD nama/peran agen) ─────────────────────────────────────
 
 export interface RosterAgentDto {

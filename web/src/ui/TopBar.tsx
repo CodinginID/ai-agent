@@ -1,14 +1,10 @@
 import { useStore } from "../state/store";
 import { CommandBar } from "./CommandBar";
-import { NotifyButton } from "./NotifyButton";
-import { ProviderButton } from "./ProviderSettings";
-import { UpdateButton } from "./UpdateButton";
+import { SettingsButton } from "./settings/SettingsButton";
 
 export function TopBar(): JSX.Element {
   const count = useStore((s) => s.agents.length);
   const workers = useStore((s) => s.workers);
-  const theme = useStore((s) => s.theme);
-  const toggleTheme = useStore((s) => s.toggleTheme);
 
   return (
     <header className="flex flex-wrap items-center gap-4 border-b border-line bg-surface px-4 py-2.5">
@@ -47,19 +43,7 @@ export function TopBar(): JSX.Element {
         {workers} pasukan
       </div>
 
-      <ProviderButton />
-      <NotifyButton />
-      <UpdateButton />
-
-      <button
-        type="button"
-        title="Ganti tema"
-        aria-label="Ganti tema"
-        onClick={toggleTheme}
-        className="rounded-lg border border-line bg-surface-2 px-2.5 py-2 text-[13px] font-semibold text-ink transition hover:border-accent"
-      >
-        {theme === "dark" ? "☀" : "◐"}
-      </button>
+      <SettingsButton />
     </header>
   );
 }

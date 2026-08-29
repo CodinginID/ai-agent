@@ -17,7 +17,8 @@ precacheAndRoute(self.__WB_MANIFEST);
 cleanupOutdatedCaches();
 
 // Mode "prompt" (vite.config.ts): SW baru menunggu sampai user tekan "Perbarui"
-// di UpdateButton → updateServiceWorker() kirim SKIP_WAITING ke SW ini.
+// di Pengaturan → Tentang (net/swUpdate.ts) → updateServiceWorker() kirim
+// SKIP_WAITING ke SW ini.
 self.addEventListener("message", (event) => {
   if ((event.data as { type?: string } | null)?.type === "SKIP_WAITING") {
     void self.skipWaiting();

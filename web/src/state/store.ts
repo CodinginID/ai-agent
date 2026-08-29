@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { approvePlan, rejectPlan, runTask } from "../net/api";
+import { CURRENT_VERSION, fetchLatestVersion, type VersionInfo } from "../net/version";
 import type {
   Agent,
   Approval,
@@ -189,10 +190,63 @@ function reconcileAgents(current: Agent[], roster: RosterEntry[]): Agent[] {
 function initialTheme(): Theme {
   if (typeof window === "undefined") return "dark";
   const stored = window.localStorage.getItem("octopus-theme");
-  if (stored === "light" || stored === "dark") return stored;
+  if (stored === "light" || stored === "dark" || stored === "system") return stored;
   return window.matchMedia("(prefers-color-scheme: dark)").matches
     ? "dark"
     : "light";
+}
+
+/** "system" → resolusi nyata (light/dark) berdasarkan prefers-color-scheme. */
+function resolveTheme(pref: Theme): "light" | "dark" {
+  if (pref !== "system") return pref;
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return "dark";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function applyThemeAttr(pref: Theme): void {
+  if (typeof document === "undefined") return;
+  document.documentElement.setAttribute("data-theme", resolveTheme(pref));
+}
+
+// Listener matchMedia aktif hanya saat theme === "system" — dipasang ulang
+// tiap setTheme() supaya tak menumpuk listener lama.
+let systemMql: MediaQueryList | null = null;
+let systemMqlListener: (() => void) | null = null;
+
+function watchSystemTheme(pref: Theme, onChange: () => void): void {
+  if (systemMql && systemMqlListener) {
+    systemMql.removeEventListener("change", systemMqlListener);
+    systemMql = null;
+    systemMqlListener = null;
+  }
+  if (pref !== "system" || typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return;
+  }
+  systemMql = window.matchMedia("(prefers-color-scheme: dark)");
+  systemMqlListener = onChange;
+  systemMql.addEventListener("change", systemMqlListener);
+}
+
+// ── Update aplikasi (service worker) — handle nyata diisi net/swUpdate.ts
+// setelah registerSW(); store cuma menyimpan state reaktif (lihat `update`)
+// + memanggil handle ini dari aksi checkForUpdate/applyUpdate. ──
+export interface SwHandle {
+  reg: ServiceWorkerRegistration | undefined;
+  updateServiceWorker: (reload?: boolean) => Promise<void>;
+}
+let swHandle: SwHandle | null = null;
+/** Dipanggil sekali oleh net/swUpdate.ts begitu registerSW() selesai. */
+export function setSwHandle(handle: SwHandle): void {
+  swHandle = handle;
+}
+
+/** Status pembaruan aplikasi (service worker) — lihat net/swUpdate.ts. */
+export interface UpdateState {
+  /** true = SW baru sudah menunggu (atau /version.json melaporkan versi lebih baru). */
+  available: boolean;
+  latest: VersionInfo | null;
+  /** true selagi checkForUpdate() berjalan (reg.update() + fetch /version.json). */
+  checking: boolean;
 }
 
 interface RoomState {
@@ -209,6 +263,7 @@ interface RoomState {
   workers: number;
   /** true begitu backend nyata mengendalikan ruangan → matikan spawner mock */
   live: boolean;
+  update: UpdateState;
 
   // actions
   select: (id: string | null) => void;
@@ -222,7 +277,12 @@ interface RoomState {
   approveServer: (planId: string) => void;
   rejectServer: (planId: string) => void;
   setTheme: (t: Theme) => void;
-  toggleTheme: () => void;
+  /** Cek pembaruan manual (tombol "Periksa pembaruan" di Tentang). */
+  checkForUpdate: () => Promise<void>;
+  /** Pasang SW baru (SKIP_WAITING) → reload otomatis. */
+  applyUpdate: () => void;
+  /** Sembunyikan badge/tombol update sampai pengecekan berikutnya. */
+  dismissUpdate: () => void;
   startScheduler: () => () => void;
 }
 
@@ -370,22 +430,44 @@ export const useStore = create<RoomState>((set, get) => {
     managerName: MANAGER,
     workers: 0,
     live: false,
+    update: { available: false, latest: null, checking: false },
 
     select: (id) => set({ selectedId: id }),
 
     setTheme: (t) => {
-      if (typeof document !== "undefined") {
-        document.documentElement.setAttribute("data-theme", t);
-      }
+      applyThemeAttr(t);
       if (typeof window !== "undefined") {
         window.localStorage.setItem("octopus-theme", t);
       }
+      // "system" perlu listener matchMedia supaya data-theme ikut berubah
+      // kalau OS ganti tema tanpa reload halaman.
+      watchSystemTheme(t, () => applyThemeAttr(get().theme));
       set({ theme: t });
     },
 
-    toggleTheme: () => {
-      const next = get().theme === "dark" ? "light" : "dark";
-      get().setTheme(next);
+    checkForUpdate: async () => {
+      set((s) => ({ update: { ...s.update, checking: true } }));
+      try {
+        await swHandle?.reg?.update().catch(() => {});
+      } finally {
+        const info = await fetchLatestVersion();
+        set((s) => ({
+          update: {
+            checking: false,
+            latest: info ?? s.update.latest,
+            available:
+              s.update.available || (info !== null && info.version !== CURRENT_VERSION),
+          },
+        }));
+      }
+    },
+
+    applyUpdate: () => {
+      void swHandle?.updateServiceWorker(true);
+    },
+
+    dismissUpdate: () => {
+      set((s) => ({ update: { ...s.update, available: false } }));
     },
 
     submitCommand: (text) => {

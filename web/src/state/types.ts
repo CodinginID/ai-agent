@@ -95,4 +95,4 @@ export interface BoardCard {
   doneT: number;
 }
 
-export type Theme = "light" | "dark";
+export type Theme = "light" | "dark" | "system";

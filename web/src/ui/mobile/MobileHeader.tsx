@@ -1,19 +1,18 @@
-import { useState } from "react";
 import { useStore } from "../../state/store";
-import { NotifyButton } from "../NotifyButton";
-import { MoreMenu } from "./MoreMenu";
+import { SettingsButton } from "../settings/SettingsButton";
 
-/** Header ringkas mobile: logo + judul + status satu baris, lonceng notifikasi
- *  + menu "⋯ Lainnya" (bottom sheet) di kanan. TopBar desktop tak disentuh. */
+/** Header ringkas mobile: logo + judul + status satu baris, tombol Pengaturan
+ *  (gerigi) di kanan. TopBar desktop tak disentuh. */
 export interface MobileHeaderProps {
   /** Mode layar pendek: tampilkan tombol tulis perintah (command bar disembunyikan). */
   onCompose?: () => void;
+  /** Diteruskan ke SettingsButton → baris "Kelola pasukan" pindah tab ini. */
+  onNavigateToPasukan?: () => void;
 }
 
-export function MobileHeader({ onCompose }: MobileHeaderProps = {}): JSX.Element {
+export function MobileHeader({ onCompose, onNavigateToPasukan }: MobileHeaderProps = {}): JSX.Element {
   const workers = useStore((s) => s.workers);
   const count = useStore((s) => s.agents.length);
-  const [moreOpen, setMoreOpen] = useState(false);
 
   return (
     <header
@@ -54,19 +53,7 @@ export function MobileHeader({ onCompose }: MobileHeaderProps = {}): JSX.Element
         </button>
       )}
 
-      <NotifyButton />
-
-      <button
-        type="button"
-        onClick={() => setMoreOpen(true)}
-        title="Lainnya"
-        aria-label="Menu lainnya"
-        className="grid h-10 w-10 flex-none place-items-center rounded-lg border border-line text-[18px] leading-none text-ink-soft"
-      >
-        ⋯
-      </button>
-
-      {moreOpen && <MoreMenu onClose={() => setMoreOpen(false)} />}
+      <SettingsButton onNavigateToPasukan={onNavigateToPasukan} />
     </header>
   );
 }
