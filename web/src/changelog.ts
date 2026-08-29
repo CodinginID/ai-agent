@@ -12,6 +12,11 @@ export interface ReleaseNote {
 
 export const CHANGELOG: ReleaseNote[] = [
   {
+    version: "0.3.3",
+    date: "2026-08-29",
+    notes: ["Ikon aplikasi baru (gurita vektor) — tampil benar saat Add to Home Screen di iOS/Android."],
+  },
+  {
     version: "0.3.2",
     date: "2026-08-29",
     notes: [
