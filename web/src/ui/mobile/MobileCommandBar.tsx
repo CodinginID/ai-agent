@@ -4,7 +4,7 @@ import { sendCommand } from "../../net/api";
 
 /** Command bar bawah ala chat: input rounded 44px + tombol kirim bulat.
  *  Submit lewat submitCommand yang sama dengan CommandBar desktop. */
-export function MobileCommandBar(): JSX.Element {
+export function MobileCommandBar({ autoFocus }: { autoFocus?: boolean } = {}): JSX.Element {
   const [value, setValue] = useState("");
   const submitCommand = useStore((s) => s.submitCommand);
 
@@ -25,16 +25,18 @@ export function MobileCommandBar(): JSX.Element {
     >
       <input
         type="text"
+        autoFocus={autoFocus}
+        enterKeyHint="send"
         value={value}
         onChange={(e) => setValue(e.target.value)}
         placeholder="Perintahkan Manajer…"
         aria-label="Perintah untuk Manajer"
-        className="h-11 min-w-0 flex-1 rounded-full border border-line bg-surface-2 px-4 text-[14px] text-ink outline-none placeholder:text-ink-faint focus-visible:border-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+        className="h-12 min-w-0 flex-1 rounded-full border border-line bg-surface-2 px-4 text-[16px] text-ink outline-none placeholder:text-ink-faint focus-visible:border-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
       />
       <button
         type="submit"
         aria-label="Kirim perintah"
-        className="grid h-11 w-11 flex-none place-items-center rounded-full border border-transparent bg-accent text-accent-ink transition active:brightness-95"
+        className="grid h-12 w-12 flex-none place-items-center rounded-full border border-transparent bg-accent text-accent-ink transition active:brightness-95"
       >
         <svg
           width="20"

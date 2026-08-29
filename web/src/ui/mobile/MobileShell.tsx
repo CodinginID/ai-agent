@@ -8,6 +8,8 @@ import { MobileHeader } from "./MobileHeader";
 import { PasukanTab } from "./PasukanTab";
 import { RuanganTab } from "./RuanganTab";
 import { TabBar, type TabKey } from "./TabBar";
+import { BottomSheet } from "./BottomSheet";
+import { useShortViewport } from "../../hooks/useIsMobile";
 
 const TAB_STORAGE_KEY = "octopus-mobile-tab";
 const TAB_KEYS: TabKey[] = ["ruangan", "persetujuan", "aktivitas", "pasukan"];
@@ -36,6 +38,8 @@ function saveTab(tab: TabKey): void {
 export function MobileShell(): JSX.Element {
   const [tab, setTab] = useState<TabKey>(loadTab);
   const [approvalSheetOpen, setApprovalSheetOpen] = useState(false);
+  const [composeOpen, setComposeOpen] = useState(false);
+  const short = useShortViewport();
   const serverApprovals = useStore((s) => s.serverApprovals);
   const approvals = useStore((s) => s.approvals);
   const approvalCount = serverApprovals.length + approvals.length;
@@ -56,29 +60,51 @@ export function MobileShell(): JSX.Element {
     saveTab(t);
   };
 
+  const content = (
+    <main key={tab} className="tab-in min-h-0 flex-1 overflow-hidden">
+      {tab === "ruangan" && <RuanganTab />}
+      {tab === "persetujuan" && (
+        <div className="scroll-thin h-full overflow-y-auto px-3 py-3">
+          <ApprovalQueue />
+        </div>
+      )}
+      {tab === "aktivitas" && (
+        <div className="scroll-thin h-full overflow-y-auto px-3 py-3">
+          <ActivityFeed large />
+        </div>
+      )}
+      {tab === "pasukan" && <PasukanTab />}
+    </main>
+  );
+
+  const tabBar = (
+    <TabBar active={tab} onChange={changeTab} approvalCount={approvalCount} vertical={short} />
+  );
+
   return (
-    <div className="flex h-[100dvh] flex-col overflow-hidden bg-bg">
-      <MobileHeader />
+    <div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-bg">
+      <MobileHeader onCompose={short ? () => setComposeOpen(true) : undefined} />
 
-      <main className="min-h-0 flex-1 overflow-hidden">
-        {tab === "ruangan" && <RuanganTab />}
-        {tab === "persetujuan" && (
-          <div className="scroll-thin h-full overflow-y-auto px-3 py-3">
-            <ApprovalQueue />
-          </div>
-        )}
-        {tab === "aktivitas" && (
-          <div className="scroll-thin h-full overflow-y-auto px-3 py-3">
-            <ActivityFeed />
-          </div>
-        )}
-        {tab === "pasukan" && <PasukanTab />}
-      </main>
+      {short ? (
+        <div className="flex min-h-0 flex-1">
+          {tabBar}
+          <div className="flex min-h-0 flex-1 flex-col">{content}</div>
+        </div>
+      ) : (
+        <>
+          {content}
+          <MobileCommandBar />
+          {tabBar}
+        </>
+      )}
 
-      <MobileCommandBar />
-      <TabBar active={tab} onChange={changeTab} approvalCount={approvalCount} />
+      {composeOpen && (
+        <BottomSheet onClose={() => setComposeOpen(false)} title="Perintahkan Manajer">
+          <MobileCommandBar autoFocus />
+        </BottomSheet>
+      )}
 
-      {approvalSheetOpen && (
+      {approvalSheetOpen && approvalCount > 0 && (
         <ApprovalSheet onClose={() => setApprovalSheetOpen(false)} />
       )}
     </div>

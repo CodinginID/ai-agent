@@ -16,7 +16,7 @@ export function BottomSheet({ onClose, title, children }: BottomSheetProps): JSX
       onClick={onClose}
     >
       <div
-        className="max-h-[85vh] w-full max-w-lg overflow-hidden rounded-t-2xl border-t border-line bg-panel shadow-xl"
+        className="sheet-in max-h-[85dvh] w-full max-w-lg overflow-hidden rounded-t-2xl border-t border-line bg-panel shadow-xl"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -24,11 +24,11 @@ export function BottomSheet({ onClose, title, children }: BottomSheetProps): JSX
           <span className="h-1 w-10 rounded-full bg-line" />
         </div>
         {title && (
-          <div className="px-4 pb-1 pt-1 font-display text-[15px] font-bold text-ink">
+          <div className="px-4 pb-1 pt-1 font-display text-[16px] font-bold text-ink">
             {title}
           </div>
         )}
-        <div className="scroll-thin max-h-[75vh] overflow-y-auto px-4 pb-4 pt-2">
+        <div className="scroll-thin max-h-[75dvh] overflow-y-auto px-4 pb-4 pt-2">
           {children}
         </div>
       </div>
