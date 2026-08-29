@@ -6,9 +6,9 @@ export interface BottomSheetProps {
   children: ReactNode;
 }
 
-/** Sheet generik dari bawah layar (dipakai MoreMenu, ApprovalSheet, AgentEditor
- *  mobile) — backdrop gelap + drag handle + judul opsional, tutup lewat
- *  backdrop atau tombol "Tutup" pemanggil sendiri di dalam `children`. */
+/** Sheet generik dari bawah layar (dipakai SettingsDialog, ApprovalSheet,
+ *  AgentEditor mobile) — backdrop gelap + drag handle + judul opsional, tutup
+ *  lewat backdrop atau tombol "Tutup" pemanggil sendiri di dalam `children`. */
 export function BottomSheet({ onClose, title, children }: BottomSheetProps): JSX.Element {
   return (
     <div

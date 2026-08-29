@@ -1,7 +1,7 @@
 // Riwayat rilis web Ruang Octopus — entri TERATAS = versi yang sedang di-build.
-// Dibaca vite.config.ts saat build → dist/version.json (dipakai UpdateButton
-// untuk menampilkan "apa yang baru" sebelum user memuat ulang versi baru).
-// Tambah entri baru di atas setiap PR yang mengubah web/ (bump juga
+// Dibaca vite.config.ts saat build → dist/version.json (dipakai Pengaturan →
+// Tentang untuk menampilkan "apa yang baru" sebelum user memuat ulang versi
+// baru). Tambah entri baru di atas setiap PR yang mengubah web/ (bump juga
 // package.json "version" supaya sama).
 
 export interface ReleaseNote {
@@ -11,6 +11,15 @@ export interface ReleaseNote {
 }
 
 export const CHANGELOG: ReleaseNote[] = [
+  {
+    version: "0.4.0",
+    date: "2026-08-29",
+    notes: [
+      "Menu Pengaturan baru (ikon ⚙): notifikasi, provider LLM, tema (termasuk mode Sistem), kelola pasukan, dan halaman Tentang.",
+      "Halaman Tentang: tombol periksa/perbarui versi dan riwayat perubahan.",
+      "Tombol-tombol di header dirapikan menjadi satu ikon ⚙.",
+    ],
+  },
   {
     version: "0.3.3",
     date: "2026-08-29",

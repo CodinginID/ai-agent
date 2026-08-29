@@ -10,6 +10,7 @@ import {
 
 /** iOS Safari cuma dukung Web Push kalau app sudah "Add to Home Screen". */
 function isIosNonStandalone(): boolean {
+  if (typeof window === "undefined") return false;
   const ua = window.navigator.userAgent;
   const isIos = /iPad|iPhone|iPod/.test(ua);
   const isStandalone =
@@ -18,33 +19,35 @@ function isIosNonStandalone(): boolean {
   return isIos && !isStandalone;
 }
 
-const LABEL: Record<PushState, string> = {
-  enabled: "🔔 aktif",
-  disabled: "🔕 nonaktif",
-  denied: "🚫 diblokir",
-  unsupported: "",
-};
+export interface PushToggle {
+  /** false = browser ini tidak dukung Web Push sama sekali (sembunyikan UI). */
+  supported: boolean;
+  state: PushState;
+  busy: boolean;
+  /** true = iOS belum di-"Add to Home Screen" — notifikasi tak bisa diaktifkan. */
+  iosBlocked: boolean;
+  toggle: () => Promise<void>;
+}
 
-/** Tombol lonceng di TopBar — aktifkan/nonaktifkan Web Push notification. */
-export function NotifyButton(): JSX.Element | null {
-  const [state, setState] = useState<PushState>("unsupported");
+/** Logic tombol notifikasi push (dulu NotifyButton) — dipakai SettingsPanel
+ *  bagian Notifikasi. Cuma state + aksi; tak render apa pun. */
+export function usePushToggle(): PushToggle {
+  const supported = isPushSupported();
+  const [state, setState] = useState<PushState>(supported ? "disabled" : "unsupported");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!isPushSupported()) {
+    if (!supported) {
       setState("unsupported");
       return;
     }
     void getPushState().then(setState);
-  }, []);
-
-  if (!isPushSupported()) return null;
+  }, [supported]);
 
   const iosBlocked = isIosNonStandalone();
 
   const toggle = async (): Promise<void> => {
-    if (busy) return;
-    if (iosBlocked) return;
+    if (busy || !supported || iosBlocked) return;
     setBusy(true);
     try {
       if (state === "enabled") {
@@ -64,26 +67,5 @@ export function NotifyButton(): JSX.Element | null {
     }
   };
 
-  const title = iosBlocked
-    ? "Install ke Home Screen dulu (iOS) untuk notifikasi"
-    : state === "denied"
-      ? "Notifikasi diblokir di pengaturan browser"
-      : "Notifikasi push (approval & tugas selesai)";
-
-  return (
-    <button
-      type="button"
-      onClick={() => void toggle()}
-      disabled={busy || state === "denied"}
-      title={title}
-      aria-label="Notifikasi push"
-      className={`rounded-lg border px-2.5 py-2 font-mono text-[12px] font-semibold transition ${
-        state === "enabled"
-          ? "border-accent text-accent"
-          : "border-line text-ink-soft hover:border-accent"
-      }`}
-    >
-      {LABEL[state]}
-    </button>
-  );
+  return { supported, state, busy, iosBlocked, toggle };
 }
