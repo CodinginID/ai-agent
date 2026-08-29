@@ -17,11 +17,20 @@ import {
   center,
   MEET,
   REVIEW,
+  ROLE,
   SERVER,
   WORLD_H,
   WORLD_W,
   zoneBy,
 } from "../room/engine/scene";
+
+/** Roster entry hasil CRUD backend (/room/roster, event roster.updated /
+ *  room.snapshot) — cuma identitas, bukan runtime state (posisi/tugas/log). */
+export interface RosterEntry {
+  id: string;
+  name: string;
+  role: Role;
+}
 
 // ── small helpers ──
 const rand = (a: number, b: number): number => a + Math.random() * (b - a);
@@ -57,6 +66,7 @@ const TASKS: Omit<Task, "id">[] = [
 
 // ── initial roster ──
 function mk(
+  id: string,
   name: string,
   role: Role,
   x: number,
@@ -64,7 +74,7 @@ function mk(
   state: Agent["state"] = "idle",
 ): Agent {
   return {
-    id: name.toLowerCase(),
+    id,
     name,
     role,
     state,
@@ -83,22 +93,97 @@ function mk(
   };
 }
 
+// Zona kantor per peran — dipakai baik untuk penempatan awal maupun agen baru
+// hasil CRUD roster (lihat homeFor).
+const ZONE_FOR_ROLE: Record<Role, string> = {
+  manager: "Kantor Manajer",
+  coder: "Dev Bay",
+  tester: "QA Corner",
+  reviewer: "Ruang Review",
+  deployer: "Deploy Station",
+  researcher: "Riset",
+};
+
+/** Slot tempat tinggal (home) agen ke-`index` (0-based, di antara agen
+ *  seperan lain) di dalam zona kantor perannya — grid 3 kolom, spasi merata
+ *  supaya banyak agen seperan tak bertumpuk di satu titik. */
+function homeFor(role: Role, index: number): { x: number; y: number } {
+  const zone = zoneBy(ZONE_FOR_ROLE[role]);
+  if (role === "manager") {
+    const c = center(zone);
+    return { x: c.x, y: c.y + 8 };
+  }
+  const cols = 3;
+  const col = index % cols;
+  const row = Math.floor(index / cols);
+  const pad = 70;
+  const stepX = cols > 1 ? (zone.w - pad * 2) / (cols - 1) : 0;
+  return {
+    x: clamp(zone.x + pad + col * stepX, zone.x + 24, zone.x + zone.w - 24),
+    y: clamp(zone.y + pad + row * 90, zone.y + 24, zone.y + zone.h - 24),
+  };
+}
+
+const VALID_ROLES = new Set<string>(Object.keys(ROLE));
+
+/** Validasi payload agents dari event server (boundary tak terpercaya) —
+ *  entri dengan id kosong atau peran tak dikenal dibuang, bukan bikin crash. */
+function parseRosterEntries(raw: unknown): RosterEntry[] {
+  if (!Array.isArray(raw)) return [];
+  const out: RosterEntry[] = [];
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) continue;
+    const id = String((item as { id?: unknown }).id ?? "").trim();
+    const name = String((item as { name?: unknown }).name ?? "").trim();
+    const role = String((item as { role?: unknown }).role ?? "");
+    if (!id || !name || !VALID_ROLES.has(role)) continue;
+    out.push({ id, name, role: role as Role });
+  }
+  return out;
+}
+
+/** selectedId tetap valid setelah reconcile — null-kan kalau agennya dibuang. */
+function keepSelected(selectedId: string | null, agents: Agent[]): string | null {
+  if (selectedId === null) return null;
+  return agents.some((a) => a.id === selectedId) ? selectedId : null;
+}
+
 function initialAgents(): Agent[] {
-  const devBay = zoneBy("Dev Bay");
-  const qa = zoneBy("QA Corner");
-  const rev = zoneBy("Ruang Review");
-  const deploy = zoneBy("Deploy Station");
-  const research = zoneBy("Riset");
-  const mgr = center(zoneBy("Kantor Manajer"));
-  return [
-    mk("Octo", "manager", mgr.x, mgr.y + 8, "patrol"),
-    mk("Nadia", "coder", devBay.x + 80, devBay.y + 95),
-    mk("Bima", "coder", devBay.x + 210, devBay.y + 150),
-    mk("Sari", "tester", qa.x + 90, qa.y + 110),
-    mk("Rangga", "reviewer", rev.x + 95, rev.y + 95),
-    mk("Dewi", "deployer", deploy.x + 118, deploy.y + 110),
-    mk("Yusuf", "researcher", research.x + 105, research.y + 90),
-  ];
+  return reconcileAgents([], [
+    { id: "octo", name: "Octo", role: "manager" },
+    { id: "nadia", name: "Nadia", role: "coder" },
+    { id: "bima", name: "Bima", role: "coder" },
+    { id: "sari", name: "Sari", role: "tester" },
+    { id: "rangga", name: "Rangga", role: "reviewer" },
+    { id: "dewi", name: "Dewi", role: "deployer" },
+    { id: "yusuf", name: "Yusuf", role: "researcher" },
+  ]).map((a) => (a.role === "manager" ? { ...a, state: "patrol" } : a));
+}
+
+/** Reconcile roster server (CRUD /room/roster, event roster.updated /
+ *  room.snapshot) ke agents runtime: agen yang sudah ada mempertahankan
+ *  posisi/tugas/log-nya (cuma nama/peran yang disinkronkan), agen baru
+ *  ditempatkan via homeFor, agen yang sudah tak ada di roster dibuang. */
+function reconcileAgents(current: Agent[], roster: RosterEntry[]): Agent[] {
+  const byId = new Map(current.map((a) => [a.id, a]));
+  const roleCounts = new Map<Role, number>();
+  const next: Agent[] = [];
+  for (const r of roster) {
+    const idx = roleCounts.get(r.role) ?? 0;
+    roleCounts.set(r.role, idx + 1);
+    const existing = byId.get(r.id);
+    if (existing) {
+      next.push(
+        existing.name === r.name && existing.role === r.role
+          ? existing
+          : { ...existing, name: r.name, role: r.role },
+      );
+    } else {
+      const home = homeFor(r.role, idx);
+      next.push(mk(r.id, r.name, r.role, home.x, home.y));
+    }
+  }
+  return next;
 }
 
 function initialTheme(): Theme {
@@ -129,6 +214,9 @@ interface RoomState {
   select: (id: string | null) => void;
   submitCommand: (text: string) => void;
   applyServerEvent: (ev: Record<string, unknown>) => void;
+  /** Sinkronkan agents dengan roster server (CRUD /room/roster / event
+   *  roster.updated / room.snapshot) — lihat reconcileAgents. */
+  applyRoster: (roster: RosterEntry[]) => void;
   approve: (id: number) => void;
   reject: (id: number) => void;
   approveServer: (planId: string) => void;
@@ -365,7 +453,20 @@ export const useStore = create<RoomState>((set, get) => {
         }
         if (type === "room.snapshot") {
           const w = Number((ev as { workers?: unknown }).workers ?? 0);
-          return { workers: Number.isFinite(w) ? w : 0, live: w > 0 || s.live };
+          const roster = parseRosterEntries((ev as { agents?: unknown }).agents);
+          const agents = roster.length ? reconcileAgents(s.agents, roster) : s.agents;
+          return {
+            workers: Number.isFinite(w) ? w : 0,
+            live: w > 0 || s.live,
+            agents,
+            selectedId: keepSelected(s.selectedId, agents),
+          };
+        }
+        if (type === "roster.updated") {
+          const roster = parseRosterEntries((ev as { agents?: unknown }).agents);
+          if (!roster.length) return {};
+          const agents = reconcileAgents(s.agents, roster);
+          return { agents, selectedId: keepSelected(s.selectedId, agents) };
         }
         if (type === "worker.online") {
           return {
@@ -401,6 +502,13 @@ export const useStore = create<RoomState>((set, get) => {
           return { live: true, board };
         }
         return {};
+      });
+    },
+
+    applyRoster: (roster) => {
+      set((s) => {
+        const agents = reconcileAgents(s.agents, roster);
+        return { agents, selectedId: keepSelected(s.selectedId, agents) };
       });
     },
 

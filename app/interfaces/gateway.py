@@ -13,6 +13,7 @@ from app.interfaces.dashboard import router as dashboard_router
 from app.interfaces.health import router as health_router
 from app.interfaces.push import router as push_router
 from app.interfaces.room import router as room_router
+from app.interfaces.roster import router as roster_router
 from app.interfaces.skills import router as skills_router
 from app.interfaces.tasks import router as tasks_router
 from app.interfaces.worker_ws import router as worker_ws_router
@@ -51,6 +52,7 @@ app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(chat_router)
 app.include_router(room_router)
+app.include_router(roster_router)
 app.include_router(push_router)
 app.include_router(context_router)
 app.include_router(skills_router)

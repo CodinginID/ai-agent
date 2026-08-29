@@ -167,6 +167,11 @@ def k_push_subs(user_id: str) -> str:
     return f"push:subs:{user_id}"
 
 
+def k_roster(user_id: str) -> str:
+    """Hash roster pasukan per user (field=agent_id, value=JSON)."""
+    return f"room:roster:{user_id}"
+
+
 # ── Generic helpers ──────────────────────────────────────────────────────────
 
 async def healthcheck() -> dict[str, Any]:

@@ -1,5 +1,7 @@
 import { ROLE } from "../room/engine/scene";
 import { useStore } from "../state/store";
+import { useIsMobile } from "../hooks/useIsMobile";
+import { ApprovalCard } from "./ApprovalCard";
 
 export function ApprovalQueue(): JSX.Element {
   const approvals = useStore((s) => s.approvals);
@@ -9,6 +11,8 @@ export function ApprovalQueue(): JSX.Element {
   const reject = useStore((s) => s.reject);
   const approveServer = useStore((s) => s.approveServer);
   const rejectServer = useStore((s) => s.rejectServer);
+  // Tab Persetujuan / ApprovalSheet mobile butuh target sentuh >=48px.
+  const tall = useIsMobile();
 
   if (!approvals.length && !serverApprovals.length) {
     return (
@@ -18,33 +22,18 @@ export function ApprovalQueue(): JSX.Element {
     );
   }
 
-  const cardStyle = {
-    borderColor: "color-mix(in oklab, var(--st-approval) 45%, var(--line))",
-    background: "color-mix(in oklab, var(--st-approval) 9%, var(--panel))",
-  };
-  const yesCls =
-    "flex-1 rounded-lg border border-transparent bg-st-approval py-1.5 text-center text-[12.5px] font-semibold text-[#201400]";
-  const noCls =
-    "flex-1 rounded-lg border border-line bg-transparent py-1.5 text-center text-[12.5px] font-semibold text-ink transition hover:border-st-error";
-
   return (
     <div className="flex flex-col gap-2.5">
       {/* Approval backend nyata (dari /room/stream) */}
       {serverApprovals.map((r) => (
-        <div key={r.planId} className="rounded-[11px] border p-3" style={cardStyle}>
-          <div className="text-[13px] font-semibold text-ink">🛰️ Backend</div>
-          <div className="my-1 mb-2.5 whitespace-pre-line text-[12.5px] text-ink-soft">
-            {r.desc}
-          </div>
-          <div className="flex gap-2">
-            <button onClick={() => approveServer(r.planId)} className={yesCls}>
-              Setujui
-            </button>
-            <button onClick={() => rejectServer(r.planId)} className={noCls}>
-              Tolak
-            </button>
-          </div>
-        </div>
+        <ApprovalCard
+          key={r.planId}
+          title="🛰️ Backend"
+          desc={r.desc}
+          tall={tall}
+          onApprove={() => approveServer(r.planId)}
+          onReject={() => rejectServer(r.planId)}
+        />
       ))}
 
       {/* Approval mock (ambience scheduler) */}
@@ -52,22 +41,18 @@ export function ApprovalQueue(): JSX.Element {
         const agent = agents.find((a) => a.id === r.agentId);
         const icon = agent ? ROLE[agent.role].icon : "⚙";
         return (
-          <div key={r.id} className="rounded-[11px] border p-3" style={cardStyle}>
-            <div className="text-[13px] font-semibold text-ink">
-              {icon} {agent?.name ?? "Agen"}
-            </div>
-            <div className="my-1 mb-2.5 text-[12.5px] text-ink-soft">
-              ingin menjalankan: <b className="text-ink">{r.task.desc}</b>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => approve(r.id)} className={yesCls}>
-                Setujui
-              </button>
-              <button onClick={() => reject(r.id)} className={noCls}>
-                Tolak
-              </button>
-            </div>
-          </div>
+          <ApprovalCard
+            key={r.id}
+            title={`${icon} ${agent?.name ?? "Agen"}`}
+            desc={
+              <>
+                ingin menjalankan: <b className="text-ink">{r.task.desc}</b>
+              </>
+            }
+            tall={tall}
+            onApprove={() => approve(r.id)}
+            onReject={() => reject(r.id)}
+          />
         );
       })}
     </div>

@@ -41,6 +41,7 @@ from app.orchestrator.workflow import WorkflowOrchestrator
 from app.ports.embedder import Embedder
 from app.ports.knowledge_store import KnowledgeStore
 from app.ports.push import PushPort
+from app.ports.roster import RosterPort
 
 
 @lru_cache(maxsize=1)
@@ -183,6 +184,15 @@ def build_push() -> PushPort:
         vapid_private_key=settings.vapid_private_key,
         vapid_subject=settings.vapid_subject,
     )
+
+
+@lru_cache(maxsize=1)
+def build_roster() -> RosterPort:
+    """Compose ``RosterPort`` — satu instance Redis store dibagi ke semua caller
+    (interfaces/roster.py, snapshot /room/state & /room/stream)."""
+    from app.adapters.roster_redis import RedisRosterStore
+
+    return RedisRosterStore()
 
 
 def build_workflow_orchestrator() -> WorkflowOrchestrator:

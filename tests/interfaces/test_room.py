@@ -14,11 +14,23 @@ from app.config import load_settings
 from app.interfaces.room import RoomBus, _bus, publish_room_event, router
 
 
+class _FakeRoster:
+    """Roster fake deterministik -- lepas dari Redis/DB nyata di test env."""
+
+    async def list(self, user_id: str) -> list[object]:
+        from app.ports.roster import DEFAULT_ROSTER
+
+        return list(DEFAULT_ROSTER)
+
+
 @pytest.fixture
 def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setattr(
         chat_mod, "settings", dataclasses.replace(load_settings(), admin_token="test-admin")
     )
+    import app.interfaces.room as room_mod
+
+    monkeypatch.setattr(room_mod, "build_roster", lambda: _FakeRoster())
     app = FastAPI()
     app.include_router(router)
     return TestClient(app)

@@ -12,6 +12,16 @@ export interface ReleaseNote {
 
 export const CHANGELOG: ReleaseNote[] = [
   {
+    version: "0.3.0",
+    date: "2026-08-29",
+    notes: [
+      "Tampilan mobile ala aplikasi: tab bar bawah (Ruangan · Persetujuan · Aktivitas · Pasukan) + command bar bawah bergaya chat.",
+      "Sheet persetujuan otomatis muncul saat Manajer minta persetujuan baru sambil kamu di HP.",
+      "Menu ⋯ \"Lainnya\" merapikan provider BYOK, versi/update, dan ganti tema di satu tempat.",
+      "Kelola pasukan: ganti nama & peran agen, tambah agen baru, atau hapus — langsung dari tab Pasukan (mobile) atau tombol \"Kelola\" di Roster (desktop). Manajer tak bisa dihapus.",
+    ],
+  },
+  {
     version: "0.2.0",
     date: "2026-08-28",
     notes: [

@@ -20,22 +20,13 @@ from typing import Any
 from fastapi import APIRouter, Header
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from app.composition import build_roster
 from app.interfaces.chat import _resolve_caller
 from app.ports.push import NullPush, PushMessage, PushPort
+from app.ports.roster import DEFAULT_ROSTER
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/room", tags=["room"])
-
-# Cast tetap ruangan (selaras mockup). Presence worker real menyusul.
-_ROSTER: tuple[dict[str, str], ...] = (
-    {"id": "octo", "name": "Octo", "role": "manager"},
-    {"id": "nadia", "name": "Nadia", "role": "coder"},
-    {"id": "bima", "name": "Bima", "role": "coder"},
-    {"id": "sari", "name": "Sari", "role": "tester"},
-    {"id": "rangga", "name": "Rangga", "role": "reviewer"},
-    {"id": "dewi", "name": "Dewi", "role": "deployer"},
-    {"id": "yusuf", "name": "Yusuf", "role": "researcher"},
-)
 
 
 class RoomBus:
@@ -193,10 +184,14 @@ class RoomTaskObserver:
             logger.debug("push task_finished dilewati: tidak ada event loop aktif")
 
 
-def _snapshot(workers: int = 0) -> dict[str, Any]:
+def _default_agent_dicts() -> list[dict[str, str]]:
+    return [{"id": a.id, "name": a.name, "role": a.role} for a in DEFAULT_ROSTER]
+
+
+def _snapshot(agents: list[dict[str, str]], workers: int = 0) -> dict[str, Any]:
     return {
         "type": "room.snapshot",
-        "agents": [dict(a, status="idle") for a in _ROSTER],
+        "agents": [dict(a, status="idle") for a in agents],
         "tasks": [],
         "approvals": [],
         "workers": workers,
@@ -220,6 +215,28 @@ async def _worker_count_for(user_id: str, mode: str) -> int:
         return 0
 
 
+async def _agents_snapshot_for(user_id: str, mode: str) -> list[dict[str, str]]:
+    """Ambil roster (nama/peran hasil CRUD user) untuk room caller.
+
+    Admin → resolve ke user demo (room tunggal), sama seperti
+    ``_worker_count_for``. Gagal di titik mana pun (resolve/Redis) → fallback
+    ke roster default supaya ruangan tetap tampil.
+    """
+    target = user_id
+    if mode == "admin":
+        from app.interfaces.chat import _resolve_admin_target
+
+        try:
+            target = _resolve_admin_target("demo@local")
+        except Exception:
+            return _default_agent_dicts()
+    try:
+        agents = await build_roster().list(target)
+        return [{"id": a.id, "name": a.name, "role": a.role} for a in agents]
+    except Exception:
+        return _default_agent_dicts()
+
+
 def _sse(event: dict[str, Any]) -> str:
     etype = event.get("type", "message")
     return f"event: {etype}\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
@@ -229,13 +246,14 @@ def _sse(event: dict[str, Any]) -> str:
 async def room_state(authorization: str | None = Header(default=None)) -> JSONResponse:
     user_id, mode = _resolve_caller(authorization)  # gate: 401 kalau token invalid
     workers = await _worker_count_for(user_id, mode)
-    return JSONResponse(_snapshot(workers))
+    agents = await _agents_snapshot_for(user_id, mode)
+    return JSONResponse(_snapshot(agents, workers))
 
 
-async def _room_stream(workers: int = 0) -> AsyncIterator[str]:
+async def _room_stream(agents: list[dict[str, str]], workers: int = 0) -> AsyncIterator[str]:
     q = _bus.subscribe()
     try:
-        yield _sse(_snapshot(workers))
+        yield _sse(_snapshot(agents, workers))
         while True:
             try:
                 event = await asyncio.wait_for(q.get(), timeout=15.0)
@@ -252,4 +270,5 @@ async def room_stream(
 ) -> StreamingResponse:
     user_id, mode = _resolve_caller(authorization)
     workers = await _worker_count_for(user_id, mode)
-    return StreamingResponse(_room_stream(workers), media_type="text/event-stream")
+    agents = await _agents_snapshot_for(user_id, mode)
+    return StreamingResponse(_room_stream(agents, workers), media_type="text/event-stream")
