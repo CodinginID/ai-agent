@@ -1,7 +1,15 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { usePushToggle } from "../../hooks/usePushToggle";
 import { useIsMobile } from "../../hooks/useIsMobile";
-import { sendTestPush } from "../../net/api";
+import {
+  fetchAuthConfig,
+  logoutSession,
+  pollGoogleLogin,
+  sendTestPush,
+  setToken,
+  startGoogleLogin,
+} from "../../net/api";
+import { syncTokenToSw } from "../../net/push";
 import { CURRENT_VERSION } from "../../net/version";
 import { CHANGELOG } from "../../changelog";
 import { useStore } from "../../state/store";
@@ -124,6 +132,63 @@ export function SettingsPanel({ onClose, onNavigateToPasukan }: SettingsPanelPro
   const checkForUpdate = useStore((s) => s.checkForUpdate);
   const applyUpdate = useStore((s) => s.applyUpdate);
 
+  const auth = useStore((s) => s.auth);
+  const refreshAuth = useStore((s) => s.refreshAuth);
+  const [googleAvail, setGoogleAvail] = useState(false);
+  const [tokenOpen, setTokenOpen] = useState(false);
+  const [tokenInput, setTokenInput] = useState("");
+  const [loginMsg, setLoginMsg] = useState<string | null>(null);
+  const [loginBusy, setLoginBusy] = useState(false);
+  const pollTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    void fetchAuthConfig().then((c) => setGoogleAvail(c.google_oauth));
+    return () => {
+      if (pollTimer.current) window.clearInterval(pollTimer.current);
+    };
+  }, []);
+
+  const finishLogin = async (token: string): Promise<void> => {
+    setToken(token.trim());
+    await syncTokenToSw();
+    await refreshAuth();
+    const st = useStore.getState().auth.status;
+    setLoginMsg(st === "anon" ? "Token tidak valid" : "Berhasil masuk");
+    if (st !== "anon") {
+      setTokenOpen(false);
+      setTokenInput("");
+    }
+  };
+
+  const loginGoogle = async (): Promise<void> => {
+    setLoginBusy(true);
+    setLoginMsg("Membuka halaman login Google…");
+    const start = await startGoogleLogin();
+    if (!start) {
+      setLoginBusy(false);
+      setLoginMsg("Login Google belum tersedia di server ini");
+      return;
+    }
+    window.open(start.loginUrl, "_blank", "noopener");
+    setLoginMsg("Selesaikan login di tab yang terbuka — menunggu…");
+    pollTimer.current = window.setInterval(() => {
+      void pollGoogleLogin(start.code).then((r) => {
+        if (r === "pending") return;
+        if (pollTimer.current) window.clearInterval(pollTimer.current);
+        pollTimer.current = null;
+        setLoginBusy(false);
+        if (r === "expired") setLoginMsg("Kode login kedaluwarsa, coba lagi");
+        else void finishLogin(r.token);
+      });
+    }, 2000);
+  };
+
+  const logout = async (): Promise<void> => {
+    await logoutSession();
+    await refreshAuth();
+    setLoginMsg(null);
+  };
+
   const [providerOpen, setProviderOpen] = useState(false);
   const [agentEditorOpen, setAgentEditorOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -161,6 +226,82 @@ export function SettingsPanel({ onClose, onNavigateToPasukan }: SettingsPanelPro
 
   return (
     <div className="flex flex-col">
+      <SectionTitle>Akun</SectionTitle>
+      <Group>
+        <Row
+          label={
+            auth.status === "user"
+              ? `Masuk sebagai ${auth.email ?? "pengguna"}`
+              : auth.status === "admin"
+                ? "Masuk dengan token admin"
+                : auth.status === "unknown"
+                  ? "Memeriksa sesi…"
+                  : "Belum masuk"
+          }
+          hint={
+            auth.status === "anon"
+              ? "Persetujuan, pasukan, dan stream ruangan butuh sesi masuk"
+              : loginMsg ?? undefined
+          }
+          trailing={
+            auth.status === "anon" ? (
+              <span className="h-2.5 w-2.5 flex-none rounded-full bg-st-approval" />
+            ) : auth.status === "unknown" ? undefined : (
+              <span className="h-2.5 w-2.5 flex-none rounded-full bg-st-done" />
+            )
+          }
+        />
+        {auth.status === "anon" && googleAvail && (
+          <Row
+            label={loginBusy ? "Menunggu login Google…" : "Masuk dengan Google"}
+            hint={loginMsg ?? undefined}
+            onClick={loginBusy ? undefined : () => void loginGoogle()}
+            trailing={<Chevron />}
+          />
+        )}
+        {auth.status === "anon" && (
+          <>
+            <Row
+              label="Masuk dengan token akses"
+              hint={tokenOpen ? undefined : "Tempel ADMIN_TOKEN / token sesi dari TUI (/login)"}
+              onClick={() => setTokenOpen((v) => !v)}
+              trailing={<Chevron />}
+            />
+            {tokenOpen && (
+              <form
+                className="flex items-center gap-2 px-3 py-2.5"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (tokenInput.trim()) void finishLogin(tokenInput);
+                }}
+              >
+                <input
+                  type="password"
+                  value={tokenInput}
+                  onChange={(e) => setTokenInput(e.target.value)}
+                  placeholder="Token akses"
+                  autoComplete="off"
+                  aria-label="Token akses"
+                  className="h-11 min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 text-[16px] text-ink outline-none focus-visible:border-accent"
+                />
+                <button
+                  type="submit"
+                  className="h-11 flex-none rounded-lg bg-accent px-4 text-[13.5px] font-semibold text-accent-ink"
+                >
+                  Masuk
+                </button>
+              </form>
+            )}
+            {loginMsg && !googleAvail && (
+              <div className="px-3 pb-2 text-[11.5px] text-ink-faint">{loginMsg}</div>
+            )}
+          </>
+        )}
+        {(auth.status === "user" || auth.status === "admin") && (
+          <Row label="Keluar" onClick={() => void logout()} trailing={<Chevron />} />
+        )}
+      </Group>
+
       <SectionTitle>Notifikasi</SectionTitle>
       <Group>
         <Row

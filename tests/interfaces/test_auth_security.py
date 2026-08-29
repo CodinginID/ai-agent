@@ -46,3 +46,18 @@ def test_email_allowlist_enforced_when_set(monkeypatch: pytest.MonkeyPatch) -> N
     assert auth._email_allowed("ali@hamasmart.com") is True
     assert auth._email_allowed("Ali@Hamasmart.com") is True  # case-insensitive
     assert auth._email_allowed("evil@example.com") is False
+
+
+def test_auth_config_reports_google_oauth_availability(monkeypatch: pytest.MonkeyPatch) -> None:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    app = FastAPI()
+    app.include_router(auth.router)
+    client = TestClient(app)
+
+    monkeypatch.setattr(auth, "settings", _with(google_client_id="", google_client_secret=""))
+    assert client.get("/auth/config").json() == {"google_oauth": False}
+
+    monkeypatch.setattr(auth, "settings", _with(google_client_id="id", google_client_secret="sec"))
+    assert client.get("/auth/config").json() == {"google_oauth": True}

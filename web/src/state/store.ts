@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { approvePlan, rejectPlan, runTask } from "../net/api";
+import { approvePlan, fetchMe, getToken, rejectPlan, runTask } from "../net/api";
 import { CURRENT_VERSION, fetchLatestVersion, type VersionInfo } from "../net/version";
 import type {
   Agent,
@@ -264,8 +264,15 @@ interface RoomState {
   /** true begitu backend nyata mengendalikan ruangan → matikan spawner mock */
   live: boolean;
   update: UpdateState;
+  /** Status sesi: unknown (belum dicek) · anon (tak ada/invalid token) · admin · user. */
+  auth: { status: "unknown" | "anon" | "admin" | "user"; email: string | null };
+  settingsOpen: boolean;
 
   // actions
+  /** Cek token di localStorage ke backend; dipanggil saat mount & setelah login/logout. */
+  refreshAuth: () => Promise<void>;
+  openSettings: () => void;
+  closeSettings: () => void;
   select: (id: string | null) => void;
   submitCommand: (text: string) => void;
   applyServerEvent: (ev: Record<string, unknown>) => void;
@@ -431,6 +438,21 @@ export const useStore = create<RoomState>((set, get) => {
     workers: 0,
     live: false,
     update: { available: false, latest: null, checking: false },
+    auth: { status: "unknown", email: null },
+    settingsOpen: false,
+
+    refreshAuth: async () => {
+      if (!getToken()) {
+        set({ auth: { status: "anon", email: null } });
+        return;
+      }
+      const me = await fetchMe();
+      if (me === null) set({ auth: { status: "anon", email: null } });
+      else if (me === "admin") set({ auth: { status: "admin", email: null } });
+      else set({ auth: { status: "user", email: me.email } });
+    },
+    openSettings: () => set({ settingsOpen: true }),
+    closeSettings: () => set({ settingsOpen: false }),
 
     select: (id) => set({ selectedId: id }),
 

@@ -12,6 +12,15 @@ export interface ReleaseNote {
 
 export const CHANGELOG: ReleaseNote[] = [
   {
+    version: "0.4.1",
+    date: "2026-08-29",
+    notes: [
+      "Pengaturan → Akun: masuk dengan token akses atau Google (bila server mengaktifkannya), lihat status sesi, keluar.",
+      "Bila belum masuk, Pengaturan terbuka otomatis dan ikon ⚙ berbadge kuning — memperbaiki error \"Missing Bearer token\" saat menyimpan pasukan.",
+      "Stream ruangan tersambung otomatis setelah masuk tanpa memuat ulang.",
+    ],
+  },
+  {
     version: "0.4.0",
     date: "2026-08-29",
     notes: [

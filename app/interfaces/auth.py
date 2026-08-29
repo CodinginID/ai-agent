@@ -184,6 +184,14 @@ def _login_page() -> str:
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
+@router.get("/config")
+async def auth_config() -> JSONResponse:
+    """Publik: kemampuan login yang tersedia — web memutuskan tombol mana yang ditampilkan."""
+    return JSONResponse(
+        {"google_oauth": bool(settings.google_client_id and settings.google_client_secret)}
+    )
+
+
 @router.get("/login", response_class=HTMLResponse)
 async def login_page() -> HTMLResponse:
     """Landing page — tampilkan tombol 'Login dengan Google' atau error jika tidak dikonfigurasi."""
