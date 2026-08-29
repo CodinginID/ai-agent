@@ -235,3 +235,10 @@ logs/
 
 # Claude Code agent worktrees (embedded git repos — jangan di-track)
 .claude/worktrees/
+
+# Virtualenv lokal untuk test (sebelumnya sempat ter-track — jangan lagi)
+.venv*/
+
+# Artefak tooling lokal
+.playwright-cli/
+octopus-cli/octopus-worker-bin
