@@ -177,9 +177,18 @@ def test_room_task_observer_push_exception_does_not_propagate() -> None:
 
 # ── /room/ws (WebSocket mirror) ───────────────────────────────────────────────
 
-def test_room_ws_rejects_invalid_token(client: TestClient) -> None:
+def test_room_ws_rejects_invalid_token(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from fastapi import HTTPException
     from starlette.websockets import WebSocketDisconnect
 
+    import app.interfaces.room as room_mod
+
+    # Token non-admin normalnya di-resolve ke DB sesi; di sini cukup dipastikan
+    # 401 dari resolver → WS ditutup 1008 (tanpa butuh tabel user_sessions).
+    def _deny(_auth: str | None) -> tuple[str, str]:
+        raise HTTPException(status_code=401, detail="invalid or expired session")
+
+    monkeypatch.setattr(room_mod, "_resolve_caller", _deny)
     with pytest.raises(WebSocketDisconnect) as exc, client.websocket_connect("/room/ws?session=wrong"):
         pass
     assert exc.value.code == 1008
