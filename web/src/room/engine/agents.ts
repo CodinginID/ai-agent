@@ -1,4 +1,4 @@
-import { AGENT_SPEED, center, ROLE, STATUS, zoneBy } from "./scene";
+import { AGENT_SPEED, getLayout, ROLE, STATUS } from "./scene";
 import type { Agent } from "../../state/types";
 import { mix, rrect, type Palette } from "./render";
 
@@ -31,7 +31,23 @@ export function initRender(agents: Agent[]): Map<string, RenderAgent> {
   return m;
 }
 
-const MGR_HOME = center(zoneBy("Kantor Manajer"));
+/** Snap render positions to the store's logical positions — called by
+ *  useRoomEngine right after a layout switch so agents don't visibly glide
+ *  across the (now differently-sized) world. */
+export function resetRenderPositions(
+  render: Map<string, RenderAgent>,
+  agents: Agent[],
+): void {
+  for (const a of agents) {
+    const r = render.get(a.id);
+    if (!r) continue;
+    r.rx = a.posX;
+    r.ry = a.posY;
+    r.wtx = a.homeX;
+    r.wty = a.homeY;
+    r.wanderT = rand(1, 3);
+  }
+}
 
 export function stepAgents(
   render: Map<string, RenderAgent>,
@@ -60,8 +76,10 @@ export function stepAgents(
       r.wanderT -= dt;
       if (r.wanderT <= 0) {
         r.wanderT = rand(3, 6);
-        r.wtx = MGR_HOME.x + rand(-70, 70);
-        r.wty = MGR_HOME.y + rand(-30, 40);
+        // Portrait: zona kecil (tile 40px + pill) → jelajah manajer dipersempit.
+        const k = getLayout().kind === "portrait" ? 0.3 : 1;
+        r.wtx = a.homeX + rand(-70, 70) * k;
+        r.wty = a.homeY + rand(-30, 40) * k;
       }
       tx = r.wtx;
       ty = r.wty;
@@ -70,8 +88,9 @@ export function stepAgents(
       if (r.wanderT <= 0) {
         r.wanderT = rand(2.5, 6);
         if (Math.random() < 0.6) {
-          r.wtx = a.homeX + rand(-46, 46);
-          r.wty = a.homeY + rand(-38, 38);
+          const k = getLayout().kind === "portrait" ? 0.25 : 1;
+          r.wtx = a.homeX + rand(-46, 46) * k;
+          r.wty = a.homeY + rand(-38, 38) * k;
         }
       }
       tx = r.wtx;
@@ -95,6 +114,85 @@ export function stepAgents(
 }
 
 export function drawAgent(
+  ctx: CanvasRenderingContext2D,
+  pal: Palette,
+  a: Agent,
+  r: RenderAgent,
+  selectedId: string | null,
+  timeMs: number,
+  reduceMotion: boolean,
+): void {
+  if (getLayout().kind === "portrait") {
+    drawAgentTile(ctx, pal, a, r, selectedId);
+    return;
+  }
+  drawAgentCircle(ctx, pal, a, r, selectedId, timeMs, reduceMotion);
+}
+
+/** Portrait "Ruangan" tab avatar — a 40×40 rounded-square tile filled with
+ *  the role color, a status-colored ring, the role's emoji icon, and a name
+ *  pill underneath (matches the approved mockup). */
+function drawAgentTile(
+  ctx: CanvasRenderingContext2D,
+  pal: Palette,
+  a: Agent,
+  r: RenderAgent,
+  selectedId: string | null,
+): void {
+  const size = 40;
+  const half = size / 2;
+  const x = r.rx;
+  const y = r.ry;
+  const st = STATUS[a.state] ?? STATUS.idle;
+  const ringColor = pal[st.c];
+
+  // selection highlight (drawn first, sits outside everything else)
+  if (a.id === selectedId) {
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = pal.ping;
+    rrect(ctx, x - half - 5, y - half - 5, size + 10, size + 10, 15);
+    ctx.stroke();
+  }
+
+  // tile body + drop shadow
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,.38)";
+  ctx.shadowBlur = 14;
+  ctx.shadowOffsetY = 4;
+  ctx.fillStyle = ROLE[a.role].color;
+  rrect(ctx, x - half, y - half, size, size, 12);
+  ctx.fill();
+  ctx.restore();
+
+  // status ring — sits just outside the tile edge (mirrors the mockup's
+  // outward box-shadow ring) instead of overlapping the icon.
+  const ringPad = 1.5;
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = ringColor;
+  rrect(ctx, x - half - ringPad, y - half - ringPad, size + ringPad * 2, size + ringPad * 2, 12 + ringPad);
+  ctx.stroke();
+
+  // role icon
+  ctx.font = '18px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(ROLE[a.role].icon, x, y + 1);
+
+  // name pill
+  ctx.font = "500 10.5px 'IBM Plex Sans', sans-serif";
+  const pw = ctx.measureText(a.name).width + 14;
+  const py = y + half + 6;
+  ctx.fillStyle = pal.nameBg;
+  rrect(ctx, x - pw / 2, py, pw, 17, 99);
+  ctx.fill();
+  ctx.fillStyle = pal.name;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(a.name, x, py + 8.5);
+}
+
+/** Landscape (desktop) avatar — unchanged circle+eyes body. */
+function drawAgentCircle(
   ctx: CanvasRenderingContext2D,
   pal: Palette,
   a: Agent,

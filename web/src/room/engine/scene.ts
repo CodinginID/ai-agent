@@ -1,8 +1,5 @@
 import type { AgentState, BoardCol, Role } from "../../state/types";
 
-export const WORLD_W = 1280;
-export const WORLD_H = 800;
-
 /** constant walking speed shared by the mock scheduler and the renderer,
  *  so logical arrival (store) and visual arrival (canvas) stay in sync */
 export const AGENT_SPEED = 150;
@@ -15,7 +12,23 @@ export interface Zone {
   h: number;
 }
 
-export const ZONES: Zone[] = [
+export type LayoutKind = "landscape" | "portrait";
+
+interface SceneLayout {
+  kind: LayoutKind;
+  worldW: number;
+  worldH: number;
+  zones: Zone[];
+  /** role -> home zone name, for this layout */
+  roleZone: Record<Role, string>;
+  meetZone: string;
+  reviewZone: string;
+  serverZone: string;
+}
+
+// ── landscape (desktop) world — unchanged from the original single-layout
+// scene, kept byte-for-byte so desktop visuals never move. ──
+const LANDSCAPE_ZONES: Zone[] = [
   { name: "Kantor Manajer", x: 500, y: 34, w: 280, h: 150 },
   { name: "Riset", x: 34, y: 34, w: 210, h: 150 },
   { name: "Dev Bay", x: 34, y: 214, w: 300, h: 250 },
@@ -26,8 +39,66 @@ export const ZONES: Zone[] = [
   { name: "Server Room", x: 1010, y: 464, w: 236, h: 302 },
 ];
 
+const LANDSCAPE: SceneLayout = {
+  kind: "landscape",
+  worldW: 1280,
+  worldH: 800,
+  zones: LANDSCAPE_ZONES,
+  roleZone: {
+    manager: "Kantor Manajer",
+    coder: "Dev Bay",
+    tester: "QA Corner",
+    reviewer: "Ruang Review",
+    deployer: "Deploy Station",
+    researcher: "Riset",
+  },
+  meetZone: "Meja Rapat",
+  reviewZone: "Ruang Review",
+  serverZone: "Server Room",
+};
+
+// ── portrait (mobile "Ruangan" tab) world — 390×560 CSS-px room, matching
+// the approved mockup grid (2 columns, 16px margins, ~18px gutters). ──
+const PORTRAIT_ZONES: Zone[] = [
+  { name: "Meja Manajer", x: 16, y: 18, w: 170, h: 150 },
+  { name: "Ruang Review", x: 204, y: 18, w: 170, h: 150 },
+  { name: "Area Kerja", x: 16, y: 190, w: 358, h: 190 },
+  { name: "Server", x: 16, y: 402, w: 170, h: 130 },
+  { name: "Meeting", x: 204, y: 402, w: 170, h: 130 },
+];
+
+const PORTRAIT: SceneLayout = {
+  kind: "portrait",
+  worldW: 390,
+  worldH: 560,
+  zones: PORTRAIT_ZONES,
+  roleZone: {
+    manager: "Meja Manajer",
+    coder: "Area Kerja",
+    tester: "Area Kerja",
+    reviewer: "Ruang Review",
+    deployer: "Server",
+    researcher: "Area Kerja",
+  },
+  meetZone: "Meeting",
+  reviewZone: "Ruang Review",
+  serverZone: "Server",
+};
+
+let active: SceneLayout = LANDSCAPE;
+
+/** Switch the scene the engine/store operate on. No-op safe to call every
+ *  render — callers should still guard redundant calls themselves. */
+export function setSceneLayout(kind: LayoutKind): void {
+  active = kind === "portrait" ? PORTRAIT : LANDSCAPE;
+}
+
+export function getLayout(): { kind: LayoutKind; worldW: number; worldH: number; zones: Zone[] } {
+  return active;
+}
+
 export const zoneBy = (name: string): Zone => {
-  const z = ZONES.find((zo) => zo.name === name);
+  const z = active.zones.find((zo) => zo.name === name);
   if (!z) throw new Error(`unknown zone: ${name}`);
   return z;
 };
@@ -37,9 +108,17 @@ export const center = (z: Zone): { x: number; y: number } => ({
   y: z.y + z.h / 2,
 });
 
-export const MEET = center(zoneBy("Meja Rapat"));
-export const SERVER = center(zoneBy("Server Room"));
-export const REVIEW = center(zoneBy("Ruang Review"));
+/** Home zone for a role in the *active* layout. */
+export const homeZoneFor = (role: Role): Zone => zoneBy(active.roleZone[role]);
+
+export const meetPoint = (): { x: number; y: number } => center(zoneBy(active.meetZone));
+export const reviewPoint = (): { x: number; y: number } => center(zoneBy(active.reviewZone));
+export const serverPoint = (): { x: number; y: number } => center(zoneBy(active.serverZone));
+
+/** true for the one zone that gets the animated server-rack drawing —
+ *  landscape only; the portrait "Server" card stays a plain zone (mockup). */
+export const isRackZone = (z: Zone): boolean =>
+  active.kind === "landscape" && z.name === active.serverZone;
 
 export interface RoleDef {
   label: string;

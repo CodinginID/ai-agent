@@ -12,6 +12,13 @@ export interface ReleaseNote {
 
 export const CHANGELOG: ReleaseNote[] = [
   {
+    version: "0.4.2",
+    date: "2026-08-29",
+    notes: [
+      "Tampilan Ruangan di HP dirancang ulang mengikuti mockup: 5 zona dalam grid portrait (Meja Manajer, Ruang Review, Area Kerja, Server, Meeting), avatar kotak dengan ikon peran & cincin status, tanpa zoom/pan berlebihan.",
+    ],
+  },
+  {
     version: "0.4.1",
     date: "2026-08-29",
     notes: [

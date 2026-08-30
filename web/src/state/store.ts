@@ -16,13 +16,14 @@ import type {
 import {
   AGENT_SPEED,
   center,
-  MEET,
-  REVIEW,
+  getLayout,
+  homeZoneFor,
+  meetPoint,
+  reviewPoint,
   ROLE,
-  SERVER,
-  WORLD_H,
-  WORLD_W,
-  zoneBy,
+  serverPoint,
+  setSceneLayout,
+  type LayoutKind,
 } from "../room/engine/scene";
 
 /** Roster entry hasil CRUD backend (/room/roster, event roster.updated /
@@ -94,22 +95,15 @@ function mk(
   };
 }
 
-// Zona kantor per peran — dipakai baik untuk penempatan awal maupun agen baru
-// hasil CRUD roster (lihat homeFor).
-const ZONE_FOR_ROLE: Record<Role, string> = {
-  manager: "Kantor Manajer",
-  coder: "Dev Bay",
-  tester: "QA Corner",
-  reviewer: "Ruang Review",
-  deployer: "Deploy Station",
-  researcher: "Riset",
-};
-
-/** Slot tempat tinggal (home) agen ke-`index` (0-based, di antara agen
- *  seperan lain) di dalam zona kantor perannya — grid 3 kolom, spasi merata
- *  supaya banyak agen seperan tak bertumpuk di satu titik. */
+/** Slot tempat tinggal (home) agen ke-`index` (0-based, di antara agen lain
+ *  yang berbagi zona home yang sama pada layout aktif — lihat homeZoneFor)
+ *  di dalam zona kantor perannya. Landscape: grid 3 kolom disebar merata di
+ *  lebar zona (perilaku asli, tak berubah — satu zona = satu peran).
+ *  Portrait: grid 3-kolom berpitch tetap ~56px supaya beberapa peran yang
+ *  berbagi satu zona (mis. Area Kerja) tak bertumpuk, dan baris pertama
+ *  disisakan ruang di bawah label zona. */
 function homeFor(role: Role, index: number): { x: number; y: number } {
-  const zone = zoneBy(ZONE_FOR_ROLE[role]);
+  const zone = homeZoneFor(role);
   if (role === "manager") {
     const c = center(zone);
     return { x: c.x, y: c.y + 8 };
@@ -117,12 +111,45 @@ function homeFor(role: Role, index: number): { x: number; y: number } {
   const cols = 3;
   const col = index % cols;
   const row = Math.floor(index / cols);
+  if (getLayout().kind === "portrait") {
+    // Tile 40px + pill nama ≈ 64px tinggi → pitch vertikal 74 supaya baris
+    // kedua tidak menimpa pill baris pertama; horizontal 100 (3 kolom / 358).
+    const pitchX = Math.min(100, (zone.w - 60) / Math.max(1, cols - 1));
+    const pitchY = 74;
+    const labelH = 30;
+    const gridW = (cols - 1) * pitchX;
+    const startX = zone.x + zone.w / 2 - gridW / 2;
+    return {
+      x: clamp(startX + col * pitchX, zone.x + 30, zone.x + zone.w - 30),
+      y: clamp(zone.y + labelH + 26 + row * pitchY, zone.y + labelH + 20, zone.y + zone.h - 44),
+    };
+  }
   const pad = 70;
   const stepX = cols > 1 ? (zone.w - pad * 2) / (cols - 1) : 0;
   return {
     x: clamp(zone.x + pad + col * stepX, zone.x + 24, zone.x + zone.w - 24),
     y: clamp(zone.y + pad + row * 90, zone.y + 24, zone.y + zone.h - 24),
   };
+}
+
+/** Tempat logis agen yang sedang "away" dari home-nya, diturunkan dari
+ *  state — dipakai applyLayout untuk retarget ke titik yang setara secara
+ *  logis di layout baru (mis. agen "await" tetap di titik rapat, bukan
+ *  balik ke home). */
+function logicalPlaceFor(state: Agent["state"]): "home" | "meet" | "review" | "server" {
+  switch (state) {
+    case "to_meet":
+    case "await":
+      return "meet";
+    case "to_srv":
+    case "working":
+      return "server";
+    case "to_rev":
+    case "review":
+      return "review";
+    default:
+      return "home";
+  }
 }
 
 const VALID_ROLES = new Set<string>(Object.keys(ROLE));
@@ -167,11 +194,15 @@ function initialAgents(): Agent[] {
  *  ditempatkan via homeFor, agen yang sudah tak ada di roster dibuang. */
 function reconcileAgents(current: Agent[], roster: RosterEntry[]): Agent[] {
   const byId = new Map(current.map((a) => [a.id, a]));
-  const roleCounts = new Map<Role, number>();
+  // dihitung per-zona-home (bukan per-peran) supaya peran yang berbagi satu
+  // zona di layout portrait (coder/tester/researcher → Area Kerja) tetap
+  // dapat slot grid yang berbeda-beda, bukan saling menumpuk di slot 0.
+  const zoneCounts = new Map<string, number>();
   const next: Agent[] = [];
   for (const r of roster) {
-    const idx = roleCounts.get(r.role) ?? 0;
-    roleCounts.set(r.role, idx + 1);
+    const zoneName = homeZoneFor(r.role).name;
+    const idx = zoneCounts.get(zoneName) ?? 0;
+    zoneCounts.set(zoneName, idx + 1);
     const existing = byId.get(r.id);
     if (existing) {
       next.push(
@@ -279,6 +310,10 @@ interface RoomState {
   /** Sinkronkan agents dengan roster server (CRUD /room/roster / event
    *  roster.updated / room.snapshot) — lihat reconcileAgents. */
   applyRoster: (roster: RosterEntry[]) => void;
+  /** Ganti scene aktif (landscape/portrait) dan re-home semua agen ke zona
+   *  yang sepadan di layout baru — dipanggil RuanganTab mobile saat tab
+   *  Ruangan berorientasi portrait; desktop tidak pernah memanggil ini. */
+  applyLayout: (kind: LayoutKind) => void;
   approve: (id: number) => void;
   reject: (id: number) => void;
   approveServer: (planId: string) => void;
@@ -318,8 +353,9 @@ export const useStore = create<RoomState>((set, get) => {
   };
 
   const moveTo = (a: Agent, x: number, y: number): void => {
-    a.targetX = clamp(x, 24, WORLD_W - 24);
-    a.targetY = clamp(y, 24, WORLD_H - 24);
+    const layout = getLayout();
+    a.targetX = clamp(x, 24, layout.worldW - 24);
+    a.targetY = clamp(y, 24, layout.worldH - 24);
     a.travel = Math.max(
       dist(a.posX, a.posY, a.targetX, a.targetY) / AGENT_SPEED,
       0.35,
@@ -378,10 +414,15 @@ export const useStore = create<RoomState>((set, get) => {
     logInto(a, `Ditugaskan: ${task.desc}`);
     if (task.risky) {
       a.state = "to_meet";
-      moveTo(a, MEET.x + rand(-34, 34), MEET.y + rand(-18, 18));
+      const meet = meetPoint();
+      // Portrait: zona 170×130 → sebar horizontal saja supaya pill nama tak bertumpuk.
+      if (getLayout().kind === "portrait") moveTo(a, meet.x + rand(-44, 44), meet.y + 6);
+      else moveTo(a, meet.x + rand(-34, 34), meet.y + rand(-18, 18));
     } else {
       a.state = "to_srv";
-      moveTo(a, SERVER.x + rand(-40, 40), SERVER.y + rand(-30, 30));
+      const server = serverPoint();
+      if (getLayout().kind === "portrait") moveTo(a, server.x + rand(-44, 44), server.y + 6);
+      else moveTo(a, server.x + rand(-40, 40), server.y + rand(-30, 30));
     }
     void approvals;
     return ev;
@@ -616,6 +657,40 @@ export const useStore = create<RoomState>((set, get) => {
       });
     },
 
+    applyLayout: (kind) => {
+      if (getLayout().kind === kind) return; // guard: no-op on redundant re-application
+      setSceneLayout(kind);
+      set((s) => {
+        const zoneCounts = new Map<string, number>();
+        const agents = s.agents.map((a) => {
+          const zoneName = homeZoneFor(a.role).name;
+          const idx = zoneCounts.get(zoneName) ?? 0;
+          zoneCounts.set(zoneName, idx + 1);
+          const home = homeFor(a.role, idx);
+          const place = logicalPlaceFor(a.state);
+          const pt =
+            place === "meet"
+              ? meetPoint()
+              : place === "review"
+                ? reviewPoint()
+                : place === "server"
+                  ? serverPoint()
+                  : home;
+          return {
+            ...a,
+            homeX: home.x,
+            homeY: home.y,
+            posX: pt.x,
+            posY: pt.y,
+            targetX: pt.x,
+            targetY: pt.y,
+            travel: 0,
+          };
+        });
+        return { agents };
+      });
+    },
+
     approve: (id) => {
       set((s) => {
         const i = s.approvals.findIndex((r) => r.id === id);
@@ -632,7 +707,8 @@ export const useStore = create<RoomState>((set, get) => {
         if (a) {
           logInto(a, "Disetujui — lanjut eksekusi");
           a.state = "to_srv";
-          moveTo(a, SERVER.x + rand(-40, 40), SERVER.y + rand(-30, 30));
+          const server = serverPoint();
+          moveTo(a, server.x + rand(-40, 40), server.y + rand(-30, 30));
         }
         return { approvals, agents, events };
       });
@@ -781,7 +857,8 @@ export const useStore = create<RoomState>((set, get) => {
                   if (a.task?.review) {
                     setCol(board, a.task.id, "review");
                     a.state = "to_rev";
-                    moveTo(a, REVIEW.x + rand(-40, 40), REVIEW.y + rand(-24, 24));
+                    const review = reviewPoint();
+                    moveTo(a, review.x + rand(-40, 40), review.y + rand(-24, 24));
                   } else {
                     if (a.task) setCol(board, a.task.id, "done");
                     returnHome(a);

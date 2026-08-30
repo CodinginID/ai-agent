@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import type { RefObject } from "react";
 import { useStore } from "../state/store";
 import {
-  clampOffX, computeCamera,
+  clampOffX, clampOffY, computeCamera,
   drawPings,
   drawWorld,
   readPalette,
@@ -13,10 +13,12 @@ import {
 import {
   drawAgent,
   initRender,
+  resetRenderPositions,
   stepAgents,
   type RenderAgent,
 } from "./engine/agents";
 import { pickAgent, screenToWorld } from "./engine/input";
+import { getLayout, type LayoutKind } from "./engine/scene";
 import type { Theme } from "../state/types";
 
 export function useRoomEngine(canvasRef: RefObject<HTMLCanvasElement>): void {
@@ -41,6 +43,7 @@ export function useRoomEngine(canvasRef: RefObject<HTMLCanvasElement>): void {
     let pal: Palette = readPalette();
     let lastTheme: Theme = useStore.getState().theme;
     let lastEventCount = useStore.getState().events.length;
+    let lastLayoutKind: LayoutKind = getLayout().kind;
     let raf = 0;
     let last = performance.now();
 
@@ -60,14 +63,36 @@ export function useRoomEngine(canvasRef: RefObject<HTMLCanvasElement>): void {
     if (canvas.parentElement) ro.observe(canvas.parentElement);
     resize();
 
-    // Tap = pilih agen; drag horizontal = pan kamera (mode cover di HP).
-    let drag: { id: number; startX: number; startOffX: number; moved: boolean } | null = null;
+    // Tap = pilih agen; drag = pan kamera (horizontal di landscape, vertikal
+    // di portrait — arah pan mengikuti sumbu yang bisa meluap di tiap layout).
+    let drag: {
+      id: number;
+      startX: number;
+      startY: number;
+      startOffX: number;
+      startOffY: number;
+      moved: boolean;
+    } | null = null;
     const onPointerDown = (e: PointerEvent): void => {
-      drag = { id: e.pointerId, startX: e.clientX, startOffX: cam.offX, moved: false };
+      drag = {
+        id: e.pointerId,
+        startX: e.clientX,
+        startY: e.clientY,
+        startOffX: cam.offX,
+        startOffY: cam.offY,
+        moved: false,
+      };
       canvas.setPointerCapture(e.pointerId);
     };
     const onPointerMove = (e: PointerEvent): void => {
       if (!drag || drag.id !== e.pointerId) return;
+      if (getLayout().kind === "portrait") {
+        const dy = e.clientY - drag.startY;
+        if (!drag.moved && Math.abs(dy) < 6) return;
+        drag.moved = true;
+        cam = { ...cam, offY: clampOffY(drag.startOffY + dy, cssH, cam.scale) };
+        return;
+      }
       const dx = e.clientX - drag.startX;
       if (!drag.moved && Math.abs(dx) < 6) return;
       drag.moved = true;
@@ -100,6 +125,15 @@ export function useRoomEngine(canvasRef: RefObject<HTMLCanvasElement>): void {
       if (snap.theme !== lastTheme) {
         lastTheme = snap.theme;
         pal = readPalette();
+      }
+
+      // layout switched (mobile "Ruangan" tab entering/leaving portrait) —
+      // re-fit the camera and snap avatars to their new logical spot instead
+      // of animating a glide across the (now differently-sized) world.
+      if (getLayout().kind !== lastLayoutKind) {
+        lastLayoutKind = getLayout().kind;
+        cam = computeCamera(cssW, cssH);
+        resetRenderPositions(render, snap.agents);
       }
 
       // emit a coordination ping at the manager whenever activity fires
