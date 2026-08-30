@@ -17,7 +17,8 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
-from fastapi import APIRouter, Header
+from fastapi import APIRouter, Header, Query, WebSocket, WebSocketDisconnect, status
+from fastapi.exceptions import HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.composition import build_roster
@@ -272,3 +273,40 @@ async def room_stream(
     workers = await _worker_count_for(user_id, mode)
     agents = await _agents_snapshot_for(user_id, mode)
     return StreamingResponse(_room_stream(agents, workers), media_type="text/event-stream")
+
+
+# ── WebSocket mirror /room/ws ─────────────────────────────────────────────────
+# Beberapa proxy (Cloudflare quick tunnel) menahan body SSE sehingga
+# /room/stream tak pernah sampai ke klien, sedangkan WebSocket lolos. Payload
+# identik dengan SSE: snapshot dulu, lalu setiap event RoomBus sebagai JSON.
+
+_WS_HEARTBEAT_SEC = 20.0
+
+
+@router.websocket("/ws")
+async def room_ws(
+    websocket: WebSocket,
+    session: str = Query(..., description="Bearer session token / ADMIN_TOKEN"),
+) -> None:
+    try:
+        user_id, mode = _resolve_caller(f"Bearer {session}")
+    except HTTPException:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="invalid session")
+        return
+
+    workers = await _worker_count_for(user_id, mode)
+    agents = await _agents_snapshot_for(user_id, mode)
+    await websocket.accept()
+    q = _bus.subscribe()
+    try:
+        await websocket.send_json(_snapshot(agents, workers))
+        while True:
+            try:
+                event = await asyncio.wait_for(q.get(), timeout=_WS_HEARTBEAT_SEC)
+                await websocket.send_json(event)
+            except TimeoutError:
+                await websocket.send_json({"type": "heartbeat"})
+    except WebSocketDisconnect:
+        pass
+    finally:
+        _bus.unsubscribe(q)

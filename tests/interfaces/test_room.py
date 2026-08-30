@@ -173,3 +173,32 @@ def test_room_task_observer_push_exception_does_not_propagate() -> None:
         await asyncio.sleep(0)  # let the failing push task run & be swallowed
 
     asyncio.run(go())  # must not raise
+
+
+# ── /room/ws (WebSocket mirror) ───────────────────────────────────────────────
+
+def test_room_ws_rejects_invalid_token(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from fastapi import HTTPException
+    from starlette.websockets import WebSocketDisconnect
+
+    import app.interfaces.room as room_mod
+
+    # Token non-admin normalnya di-resolve ke DB sesi; di sini cukup dipastikan
+    # 401 dari resolver → WS ditutup 1008 (tanpa butuh tabel user_sessions).
+    def _deny(_auth: str | None) -> tuple[str, str]:
+        raise HTTPException(status_code=401, detail="invalid or expired session")
+
+    monkeypatch.setattr(room_mod, "_resolve_caller", _deny)
+    with pytest.raises(WebSocketDisconnect) as exc, client.websocket_connect("/room/ws?session=wrong"):
+        pass
+    assert exc.value.code == 1008
+
+
+def test_room_ws_sends_snapshot_then_live_events(client: TestClient) -> None:
+    with client.websocket_connect("/room/ws?session=test-admin") as ws:
+        snap = ws.receive_json()
+        assert snap["type"] == "room.snapshot"
+        assert len(snap["agents"]) == 7
+        publish_room_event("agent.status", id="octo", status="working")
+        ev = ws.receive_json()
+        assert ev == {"type": "agent.status", "id": "octo", "status": "working"}

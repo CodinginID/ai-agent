@@ -12,6 +12,13 @@ export interface ReleaseNote {
 
 export const CHANGELOG: ReleaseNote[] = [
   {
+    version: "0.4.4",
+    date: "2026-08-30",
+    notes: [
+      "Ruangan kembali realtime lewat URL tunnel: event live kini lewat WebSocket (SSE tertahan proxy), persetujuan & pergerakan agen muncul seketika.",
+    ],
+  },
+  {
     version: "0.4.3",
     date: "2026-08-30",
     notes: [
