@@ -114,8 +114,10 @@ async def test_steps_executed_in_order() -> None:
     runner = TaskRunner(pm=_FakePM(plan), github=gh, dispatch=dispatch)
     await runner.run("user-1", "ordered")
     # Despite plan order, runner sorts by .order → "first" dispatched first.
-    assert dispatch.calls[0][2] == "first"
-    assert dispatch.calls[1][2] == "second"
+    # Prompt now wraps the raw description with the role profile (see roles.py
+    # tests below), so we assert containment rather than equality.
+    assert "first" in dispatch.calls[0][2]
+    assert "second" in dispatch.calls[1][2]
 
 
 # ── failure path ─────────────────────────────────────────────────────────────────
@@ -364,4 +366,48 @@ def test_provider_agent_mapping() -> None:
     assert _PROVIDER_AGENT["claude"] == "claude"
     assert _PROVIDER_AGENT["anthropic"] == "claude"
     assert _PROVIDER_AGENT["glm"] == "glm"
+    assert _PROVIDER_AGENT["claude-cli"] == "claude"
+    assert _PROVIDER_AGENT["glm-cli"] == "glm"
     assert _PROVIDER_AGENT.get("mock") is None
+
+
+# ── role prompts (Part B): step dispatch uses build_step_prompt ──────────────────
+
+
+@pytest.mark.asyncio
+async def test_step_dispatch_prompt_contains_role_title_and_description() -> None:
+    plan = _plan([
+        TaskStep(order=1, description="write the health route", action="file_write", params={}),
+    ])
+    dispatch = _FakeDispatch([DispatchResult(output="ok", ok=True)])
+    runner = TaskRunner(pm=_FakePM(plan), github=_FakeGitHub(), dispatch=dispatch)
+
+    await runner.run("user-1", "add health endpoint")
+
+    prompt = dispatch.calls[0][2]
+    assert "Engineer" in prompt              # role title (file_write → engineer)
+    assert "write the health route" in prompt  # raw step description preserved
+    assert plan.title in prompt
+    assert plan.summary in prompt
+
+
+@pytest.mark.asyncio
+async def test_decompose_via_worker_prompt_uses_planner_profile(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(
+        "app.orchestrator.task_runner._active_single_agent", lambda _uid: "claude"
+    )
+    plan_json = (
+        '{"title":"T","summary":"s","estimated_complexity":"simple",'
+        '"steps":[{"order":1,"description":"cek","action":"server_status","params":{}}]}'
+    )
+    dispatch = _FakeDispatch([
+        DispatchResult(output=plan_json, ok=True),
+        DispatchResult(output="done", ok=True),
+    ])
+    runner = TaskRunner(pm=PMAgent(), github=_FakeGitHub(), dispatch=dispatch)
+
+    await runner.run("user-1", "cek server")
+
+    decompose_prompt = dispatch.calls[0][2]
+    assert "Planner" in decompose_prompt
+    assert "cek server" in decompose_prompt or "Decompose" in decompose_prompt

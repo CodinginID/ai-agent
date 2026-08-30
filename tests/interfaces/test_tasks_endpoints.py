@@ -46,10 +46,25 @@ def fake() -> FakeTaskRunner:
     return FakeTaskRunner()
 
 
+class _FakeProviderRepo:
+    """Stands in for ``UserProviderConfigRepository`` — these tests only care
+    about validation, not persistence (covered by
+    tests/adapters/test_user_provider_config.py)."""
+
+    def __init__(self, factory: object) -> None:
+        pass
+
+    def set(self, user_id: str, provider: str, model: str | None = None) -> None:
+        pass
+
+
 @pytest.fixture
 def client(fake: FakeTaskRunner, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
+    import app.adapters.user_provider_config as upc_mod
+
     monkeypatch.setattr(tasks_iface, "build_task_runner", lambda: fake)
     monkeypatch.setattr(tasks_iface, "_resolve_caller", lambda _a: (USER, "user"))
+    monkeypatch.setattr(upc_mod, "UserProviderConfigRepository", _FakeProviderRepo)
     app = FastAPI()
     app.include_router(tasks_iface.router)
     yield TestClient(app)
@@ -131,6 +146,24 @@ def test_run_503_when_github_unconfigured(
     resp = client.post("/tasks/run", json={"request": "x"})
     assert resp.status_code == 503
     assert "unavailable" in resp.json()["detail"]
+
+
+def test_invalid_provider_rejected(client: TestClient, fake: FakeTaskRunner) -> None:
+    resp = client.post("/tasks/run", json={"request": "x", "provider": "gpt4"})
+    assert resp.status_code == 400
+    assert "provider" in resp.json()["detail"]
+    assert fake.calls == []  # rejected before the runner ever ran
+
+
+def test_cli_provider_is_a_valid_choice(client: TestClient, fake: FakeTaskRunner) -> None:
+    """claude-cli/glm-cli (local, no key) must validate same as cloud providers."""
+    fake.result = TaskResult(plan=_plan(), issue_number=1, issue_url="u", outcomes=[
+        StepOutcome(order=1, description="x", role="engineer", ok=True),
+    ], closed=True)
+
+    resp = client.post("/tasks/run", json={"request": "x", "provider": "claude-cli"})
+
+    assert resp.status_code == 200
 
 
 def test_admin_requires_as_email(monkeypatch: pytest.MonkeyPatch, fake: FakeTaskRunner) -> None:

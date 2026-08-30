@@ -33,6 +33,7 @@ from app.adapters.sessions import UserSessionRepository
 from app.composition import _session_factory, build_use_case
 from app.config import BASE_DIR, settings
 from app.domain.messaging import ChatEvent, MessageContext
+from app.domain.providers import ALL_PROVIDERS
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -71,7 +72,7 @@ def _resolve_caller(authorization: str | None) -> tuple[str, str]:
     return (info.user_id, "user")
 
 
-_ALLOWED_PROVIDERS = {"anthropic", "glm", "mock"}
+_ALLOWED_PROVIDERS = ALL_PROVIDERS
 
 
 class ChatSendRequest(BaseModel):

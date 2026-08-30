@@ -1,5 +1,16 @@
 import { create } from "zustand";
-import { approvePlan, fetchMe, getToken, rejectPlan, runTask } from "../net/api";
+import {
+  approvePlan,
+  fetchMe,
+  getProvider,
+  getToken,
+  isCliProvider,
+  rejectPlan,
+  runTask,
+  saveProviderPreference,
+  setApiKey,
+  setProvider,
+} from "../net/api";
 import { CURRENT_VERSION, fetchLatestVersion, type VersionInfo } from "../net/version";
 import type {
   Agent,
@@ -289,6 +300,8 @@ interface RoomState {
   queue: Task[];
   selectedId: string | null;
   theme: Theme;
+  /** Otak (LLM provider) aktif — reaktif, dipakai chip header + ProviderEditor. */
+  provider: string;
   managerName: string;
   /** pasukan (worker) online — dari /room/state + event worker.online/offline */
   workers: number;
@@ -306,6 +319,8 @@ interface RoomState {
   closeSettings: () => void;
   select: (id: string | null) => void;
   submitCommand: (text: string) => void;
+  /** Ganti otak aktif: persist ke localStorage + server, lalu update state reaktif. */
+  setActiveProvider: (p: string) => void;
   applyServerEvent: (ev: Record<string, unknown>) => void;
   /** Sinkronkan agents dengan roster server (CRUD /room/roster / event
    *  roster.updated / room.snapshot) — lihat reconcileAgents. */
@@ -475,6 +490,7 @@ export const useStore = create<RoomState>((set, get) => {
     queue: [],
     selectedId: null,
     theme: initialTheme(),
+    provider: getProvider(),
     managerName: MANAGER,
     workers: 0,
     live: false,
@@ -496,6 +512,12 @@ export const useStore = create<RoomState>((set, get) => {
     closeSettings: () => set({ settingsOpen: false }),
 
     select: (id) => set({ selectedId: id }),
+
+    setActiveProvider: (p) => {
+      setProvider(p);
+      void saveProviderPreference(p);
+      set({ provider: p });
+    },
 
     setTheme: (t) => {
       applyThemeAttr(t);
@@ -536,6 +558,73 @@ export const useStore = create<RoomState>((set, get) => {
     submitCommand: (text) => {
       const txt = text.trim();
       if (!txt) return;
+
+      // Perintah cepat lokal (ganti otak) — tidak diteruskan ke Manajer/backend.
+      if (txt.startsWith("/")) {
+        const [cmdRaw, ...restWords] = txt.slice(1).split(/\s+/);
+        const cmd = cmdRaw.toLowerCase();
+        const argRaw = restWords.join(" ").trim();
+        const OTAK_HINT = `Pilihan: mock, claude-cli, glm-cli, anthropic, glm. Pakai "/use <pilihan>" untuk ganti.`;
+
+        if (cmd === "use" && argRaw) {
+          const ALIASES: Record<string, string> = {
+            claude: "claude-cli",
+            "claude-cli": "claude-cli",
+            glm: "glm-cli",
+            "glm-cli": "glm-cli",
+            anthropic: "anthropic",
+            mock: "mock",
+          };
+          const resolved = ALIASES[argRaw.toLowerCase()];
+          if (!resolved) {
+            set((s) => ({
+              events: feedInto(
+                s.events,
+                `⚠️ Provider tidak dikenal: "${escapeHtml(argRaw)}". Pilihan: mock, claude, glm, anthropic.`,
+                "error",
+              ),
+            }));
+            return;
+          }
+          get().setActiveProvider(resolved);
+          if (resolved === "mock" || isCliProvider(resolved)) setApiKey("");
+          const LABELS: Record<string, string> = {
+            "claude-cli": `🧠 Otak: claude-cli — semua peran dijalankan Claude Code di device-mu`,
+            "glm-cli": `🧠 Otak: glm-cli — semua peran dijalankan GLM CLI di device-mu`,
+            anthropic: `🧠 Otak: anthropic — cloud, pastikan API key sudah diisi di Pengaturan`,
+            glm: `🧠 Otak: glm — cloud, pastikan API key sudah diisi di Pengaturan`,
+            mock: `🧠 Otak: mock — mode demo, tanpa key`,
+          };
+          set((s) => ({ events: feedInto(s.events, LABELS[resolved], "done") }));
+          return;
+        }
+
+        if (cmd === "use" || cmd === "otak") {
+          set((s) => ({
+            events: feedInto(s.events, `🧠 Otak saat ini: ${get().provider}. ${OTAK_HINT}`, "idle"),
+          }));
+          return;
+        }
+
+        if (cmd === "help") {
+          set((s) => ({
+            events: feedInto(
+              s.events,
+              `Perintah: /use <provider> — ganti otak · /otak — lihat otak aktif · /help — bantuan ini.`,
+              "idle",
+            ),
+          }));
+          return;
+        }
+
+        // Tidak ada konvensi "/foo" lain di codebase ini (CommandBar/MobileCommandBar
+        // hanya memanggil submitCommand ini) — perintah tak dikenal ditolak di sini.
+        set((s) => ({
+          events: feedInto(s.events, `⚠️ Perintah tidak dikenal: ${escapeHtml(txt)}`, "error"),
+        }));
+        return;
+      }
+
       const safe = escapeHtml(txt);
 
       // Ruangan kini dikendalikan backend nyata → matikan simulasi mock.

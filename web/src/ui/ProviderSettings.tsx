@@ -3,10 +3,11 @@ import { useIsMobile } from "../hooks/useIsMobile";
 import {
   getApiKey,
   getProvider,
+  isCliProvider,
   isRealMode,
   setApiKey,
-  setProvider,
 } from "../net/api";
+import { useStore } from "../state/store";
 import { BottomSheet } from "./mobile/BottomSheet";
 
 export interface ProviderEditorProps {
@@ -20,10 +21,11 @@ export function ProviderEditor({ onClose }: ProviderEditorProps): JSX.Element {
   const isMobile = useIsMobile();
   const [provider, setProviderState] = useState(getProvider());
   const [key, setKeyState] = useState(getApiKey());
+  const setActiveProvider = useStore((s) => s.setActiveProvider);
 
   const save = (): void => {
-    setProvider(provider);
-    setApiKey(provider === "mock" ? "" : key.trim());
+    setActiveProvider(provider);
+    setApiKey(provider === "mock" || isCliProvider(provider) ? "" : key.trim());
     onClose();
   };
 
@@ -45,12 +47,18 @@ export function ProviderEditor({ onClose }: ProviderEditorProps): JSX.Element {
           className="mt-1 w-full rounded-lg border border-line bg-surface-2 px-3 py-2.5 text-[14px] text-ink"
         >
           <option value="mock">mock (demo, tanpa key)</option>
-          <option value="anthropic">anthropic (Claude)</option>
-          <option value="glm">glm (Zhipu)</option>
+          <option value="claude-cli">
+            claude-cli — Claude Code di device kamu (tanpa key, via worker)
+          </option>
+          <option value="glm-cli">
+            glm-cli — GLM CLI di device kamu (tanpa key, via worker)
+          </option>
+          <option value="anthropic">anthropic (cloud, API key)</option>
+          <option value="glm">glm (cloud, API key)</option>
         </select>
       </div>
 
-      {provider !== "mock" && (
+      {!isCliProvider(provider) && provider !== "mock" && (
         <div>
           <label className="block font-mono text-[11px] uppercase tracking-wide text-ink-faint">
             API Key
@@ -112,5 +120,9 @@ export function ProviderEditor({ onClose }: ProviderEditorProps): JSX.Element {
 
 /** Ringkasan provider aktif untuk baris "Otak" di SettingsPanel. */
 export function providerSummary(): string {
-  return isRealMode() ? `${getProvider()} · key tersimpan` : "mock (tanpa key)";
+  const p = getProvider();
+  if (p === "mock") return "mock (tanpa key)";
+  if (p === "claude-cli") return "claude-cli · Claude lokal via worker";
+  if (p === "glm-cli") return "glm-cli · GLM lokal via worker";
+  return isRealMode() ? `${p} · key tersimpan` : `${p} · key belum diisi`;
 }

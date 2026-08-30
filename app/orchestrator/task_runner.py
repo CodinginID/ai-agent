@@ -27,6 +27,7 @@ import uuid
 from dataclasses import dataclass, field
 
 from app.agents.pm import TaskPlan
+from app.agents.roles import build_step_prompt
 from app.ports.ai_provider_resolver import AIProviderResolver
 from app.ports.github_issues import GitHubIssuesPort
 from app.ports.pm_agent import PMAgentPort
@@ -145,10 +146,20 @@ class TaskRunner:
         self.observer.issue_opened(task_id, issue.number, issue.url)
 
         outcomes: list[StepOutcome] = []
+        total_steps = len(plan.steps)
         for step in sorted(plan.steps, key=lambda s: s.order):
             role = role_for_action(step.action)
             self.observer.step_started(task_id, step.order, role, step.description)
-            result = await self.dispatch.dispatch_async(user_id, role, step.description)
+            prompt = build_step_prompt(
+                role,
+                step.description,
+                task_title=plan.title,
+                task_summary=plan.summary,
+                step_order=step.order,
+                step_total=total_steps,
+                context=context,
+            )
+            result = await self.dispatch.dispatch_async(user_id, role, prompt)
             detail = (result.summary or result.output or result.error)[:500]
             outcome = StepOutcome(
                 order=step.order,
@@ -215,8 +226,16 @@ class TaskRunner:
         agent = await asyncio.to_thread(_active_single_agent, user_id)
         if agent:
             try:
+                planning_prompt = build_step_prompt(
+                    "planner",
+                    self.pm.build_prompt(request, context),
+                    task_title="Decompose request menjadi rencana kerja",
+                    task_summary=request[:200],
+                    step_order=1,
+                    step_total=1,
+                )
                 result = await self.dispatch.dispatch_async(
-                    user_id, "research", self.pm.build_prompt(request, context)
+                    user_id, "research", planning_prompt
                 )
                 text = result.output or result.summary
                 if result.ok and text:

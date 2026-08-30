@@ -3,10 +3,14 @@ from __future__ import annotations
 
 import dataclasses
 
+import pytest
+
 from app.adapters.ai_provider_db import DbAIProviderResolver, personal_anthropic_key_var
 from app.adapters.anthropic import AnthropicAdapter
 from app.adapters.circuit_breaker import _CircuitBreakerProvider
+from app.adapters.mock_llm import MockAIProvider
 from app.config import load_settings
+from app.domain.exceptions import AIProviderError
 
 
 class _FakeRepo:
@@ -92,3 +96,36 @@ def test_server_key_provider_is_still_cached() -> None:
 
     assert p1 is p2
     assert resolver._cache == {("anthropic", "claude-opus-4-8"): p1}
+
+
+# ── CLI provider degrade behaviour (claude-cli/glm-cli have no cloud adapter) ──
+
+
+def test_cli_provider_raises_by_default() -> None:
+    resolver = DbAIProviderResolver(_FakeRepo({"u1": ("claude-cli", None)}), _settings_with_key())
+    with pytest.raises(AIProviderError):
+        resolver.for_user("u1")
+
+
+def test_cli_provider_degrades_to_mock_when_flagged() -> None:
+    resolver = DbAIProviderResolver(
+        _FakeRepo({"u1": ("claude-cli", None)}), _settings_with_key(), degrade_cli_to_mock=True
+    )
+    assert isinstance(resolver.for_user("u1"), MockAIProvider)
+
+
+def test_glm_cli_degrades_to_mock_when_flagged() -> None:
+    resolver = DbAIProviderResolver(
+        _FakeRepo({"u1": ("glm-cli", None)}), _settings_with_key(), degrade_cli_to_mock=True
+    )
+    assert isinstance(resolver.for_user("u1"), MockAIProvider)
+
+
+def test_non_cli_provider_error_still_raises_even_when_flagged() -> None:
+    """Flag only degrades CLI providers — a real missing-key error still surfaces."""
+    settings = dataclasses.replace(load_settings(), anthropic_api_key="")
+    resolver = DbAIProviderResolver(
+        _FakeRepo({"u1": ("anthropic", None)}), settings, degrade_cli_to_mock=True
+    )
+    with pytest.raises(AIProviderError):
+        resolver.for_user("u1")
