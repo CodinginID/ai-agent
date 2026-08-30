@@ -89,7 +89,12 @@ jobs:
           fi
           ssh -T git@github-work || true
           git fetch origin main
-          git merge --ff-only FETCH_HEAD
+          # Robust: deploy dir kadang tertinggal di branch lain (mis. saat dev),
+          # yang bikin `merge --ff-only FETCH_HEAD` gagal. Pastikan di main dulu,
+          # baru fast-forward ke origin/main. Gagal keras kalau divergen (bukan
+          # silent) — tak pakai reset --hard agar tak menghapus kerja lokal.
+          git checkout main 2>/dev/null || git checkout -B main origin/main
+          git merge --ff-only origin/main
           make deploy
 
   # ── 3. Verifikasi semua container running ───────────────────────────────────
