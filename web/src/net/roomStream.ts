@@ -49,8 +49,63 @@ export async function fetchRoomState(signal?: AbortSignal): Promise<boolean> {
   }
 }
 
+/** Terima satu payload event (WS/SSE) → store. */
+function applyRaw(raw: string): void {
+  try {
+    const ev = JSON.parse(raw) as Record<string, unknown>;
+    if (ev.type === "heartbeat") return;
+    useStore.getState().applyServerEvent(ev);
+  } catch {
+    /* abaikan payload non-JSON */
+  }
+}
+
+/** Jalur utama: WebSocket /room/ws (lolos proxy yang menahan SSE, mis.
+ *  Cloudflare quick tunnel). Resolve true bila pernah tersambung & menerima
+ *  data, false bila gagal handshake → pemanggil fallback ke SSE. */
+function connectWs(token: string, signal: AbortSignal): Promise<boolean> {
+  return new Promise((resolve) => {
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const url = `${proto}//${window.location.host}/room/ws?session=${encodeURIComponent(token)}`;
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(url);
+    } catch {
+      resolve(false);
+      return;
+    }
+    let gotData = false;
+    const onAbort = (): void => ws.close();
+    signal.addEventListener("abort", onAbort, { once: true });
+    ws.onmessage = (e) => {
+      gotData = true;
+      applyRaw(String(e.data));
+    };
+    ws.onerror = () => {
+      /* onclose menyusul */
+    };
+    ws.onclose = () => {
+      signal.removeEventListener("abort", onAbort);
+      resolve(gotData);
+    };
+  });
+}
+
 async function connectLive(signal: AbortSignal): Promise<void> {
+  let sseFallback = false;
   while (!signal.aborted) {
+    const wsToken = getToken();
+    if (wsToken && !sseFallback) {
+      const ok = await connectWs(wsToken, signal);
+      if (signal.aborted) return;
+      // Handshake gagal (mis. proxy tak dukung WS / 401) → coba SSE di bawah;
+      // pernah tersambung lalu putus → reconnect WS setelah jeda.
+      if (ok) {
+        await new Promise((r) => setTimeout(r, 2000));
+        continue;
+      }
+      sseFallback = true;
+    }
     // Token dibaca ulang tiap percobaan: setelah user login lewat Pengaturan
     // → Akun, stream langsung tersambung tanpa reload halaman.
     const token = getToken();
@@ -78,17 +133,14 @@ async function connectLive(signal: AbortSignal): Promise<void> {
             .split("\n")
             .find((l) => l.startsWith("data:"));
           if (!dataLine) continue; // heartbeat comment / event line saja
-          try {
-            const ev = JSON.parse(dataLine.slice(5).trim());
-            useStore.getState().applyServerEvent(ev);
-          } catch {
-            /* abaikan payload non-JSON */
-          }
+          applyRaw(dataLine.slice(5).trim());
         }
       }
     } catch {
       if (signal.aborted) return;
     }
+    // SSE putus → coba WS lagi dulu di iterasi berikutnya (mungkin sudah pulih).
+    sseFallback = false;
     await new Promise((r) => setTimeout(r, 3000)); // reconnect backoff
   }
 }

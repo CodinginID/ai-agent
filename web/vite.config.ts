@@ -48,7 +48,7 @@ export default defineConfig({
     allowedHosts: true, // izinkan host tunnel (trycloudflare) di dev
     proxy: {
       "/chat": { target: "http://localhost:8080", changeOrigin: true },
-      "/room": { target: "http://localhost:8080", changeOrigin: true },
+      "/room": { target: "http://localhost:8080", changeOrigin: true, ws: true },
       "/auth": { target: "http://localhost:8080", changeOrigin: true },
       "/push": { target: "http://localhost:8080", changeOrigin: true },
     },
