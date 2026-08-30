@@ -31,6 +31,36 @@ def _role_agent_map() -> dict[str, str]:
     }
 
 
+# Provider (pilihan user) → agent CLI worker. Satu-LLM: semua role pakai ini.
+_PROVIDER_AGENT = {
+    "claude": "claude",
+    "anthropic": "claude",
+    "glm": "glm",
+    "zhipu": "glm",
+    "codex": "codex",
+}
+
+
+def _single_agent_override(user_id: str) -> str | None:
+    """Agent tunggal untuk SEMUA role bila user mengaktifkan satu LLM.
+
+    Baca preferensi provider per-user; ``mock``/kosong → tak ada override
+    (pakai peta role default). Best-effort — kegagalan baca = tak override.
+    """
+    if not user_id:
+        return None
+    try:
+        from app.adapters.user_provider_config import UserProviderConfigRepository
+        from app.composition import _session_factory
+
+        pref = UserProviderConfigRepository(_session_factory()).get(user_id)
+    except Exception:
+        return None
+    if not pref:
+        return None
+    return _PROVIDER_AGENT.get(pref[0].strip().lower())
+
+
 def _agent_model_map() -> dict[str, str]:
     """Per-agent model override sourced from existing *_model settings.
 
@@ -63,9 +93,12 @@ class WorkerDispatchAdapter:
         )
 
         available = await self._available_caps(user_id)
+        # Satu-LLM: kalau user mengaktifkan provider tunggal, semua role → agent itu.
+        single = await asyncio.to_thread(_single_agent_override, user_id)
+        role_map = dict.fromkeys(_role_agent_map(), single) if single else _role_agent_map()
         decision = pick(
             role,
-            role_agent_map=_role_agent_map(),
+            role_agent_map=role_map,
             agent_model_map=_agent_model_map(),
             available_caps=available,
         )

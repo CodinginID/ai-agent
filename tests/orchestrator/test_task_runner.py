@@ -8,7 +8,7 @@ from __future__ import annotations
 import pytest
 
 from app.adapters.github import GitHubIssue
-from app.agents.pm import TaskPlan, TaskStep
+from app.agents.pm import PMAgent, TaskPlan, TaskStep
 from app.orchestrator.task_runner import TaskRunner, role_for_action
 from app.ports.worker_dispatch import DispatchResult
 
@@ -316,3 +316,52 @@ async def test_memory_not_indexed_on_failure() -> None:
     )
     await runner.run("user-1", "do it")
     assert mem.indexed == []   # failed task is not memorized
+
+
+# ── satu-LLM: decompose via worker CLI saat tanpa key cloud ──────────────────────
+
+@pytest.mark.asyncio
+async def test_make_plan_decomposes_via_worker_when_no_cloud_provider(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    # User mengaktifkan satu LLM (claude) tanpa key cloud → PM decompose
+    # didelegasikan ke worker CLI, bukan ke provider cloud.
+    monkeypatch.setattr(
+        "app.orchestrator.task_runner._active_single_agent", lambda _uid: "claude"
+    )
+    plan_json = (
+        '{"title":"T","summary":"s","estimated_complexity":"simple",'
+        '"steps":[{"order":1,"description":"cek","action":"server_status","params":{}}]}'
+    )
+    dispatch = _FakeDispatch([
+        DispatchResult(output=plan_json, ok=True),      # hasil decompose
+        DispatchResult(output="done", ok=True),          # eksekusi step
+    ])
+    runner = TaskRunner(pm=PMAgent(), github=_FakeGitHub(), dispatch=dispatch)
+
+    result = await runner.run("user-1", "cek server")
+
+    assert result.plan.steps and result.plan.steps[0].action == "server_status"
+    assert dispatch.calls[0][1] == "research"   # dispatch pertama = decompose
+    assert result.ok is True
+
+
+@pytest.mark.asyncio
+async def test_make_plan_empty_when_no_provider_and_no_agent(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(
+        "app.orchestrator.task_runner._active_single_agent", lambda _uid: None
+    )
+    dispatch = _FakeDispatch([])
+    runner = TaskRunner(pm=PMAgent(), github=_FakeGitHub(), dispatch=dispatch)
+
+    result = await runner.run("user-1", "cek server")
+
+    assert result.plan.steps == []          # tak ada otak → plan kosong
+    assert dispatch.calls == []             # tak ada dispatch decompose
+
+
+def test_provider_agent_mapping() -> None:
+    from app.adapters.worker_dispatch import _PROVIDER_AGENT
+
+    assert _PROVIDER_AGENT["claude"] == "claude"
+    assert _PROVIDER_AGENT["anthropic"] == "claude"
+    assert _PROVIDER_AGENT["glm"] == "glm"
+    assert _PROVIDER_AGENT.get("mock") is None
