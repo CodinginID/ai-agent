@@ -12,6 +12,14 @@ export interface ReleaseNote {
 
 export const CHANGELOG: ReleaseNote[] = [
   {
+    version: "0.4.3",
+    date: "2026-08-30",
+    notes: [
+      "Nama/peran pasukan yang sudah disimpan kini selalu tampil (sebelumnya kembali ke default bila stream ruangan tertahan proxy).",
+      "Snapshot ruangan diambil via JSON saat mulai, setelah masuk, dan tiap 20 detik sebagai cadangan.",
+    ],
+  },
+  {
     version: "0.4.2",
     date: "2026-08-29",
     notes: [
