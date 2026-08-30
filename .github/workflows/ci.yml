@@ -34,6 +34,37 @@ jobs:
       - name: Unit test
         run: pytest tests/ -v
 
+  go:
+    name: Go (octopus-cli)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: octopus-cli/go.sum
+
+      - name: Gofmt (informational)
+        working-directory: octopus-cli
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "::warning::File Go belum diformat (gofmt -w):"
+            echo "$unformatted"
+          fi
+
+      - name: Vet
+        working-directory: octopus-cli
+        run: go vet ./...
+
+      - name: Build
+        working-directory: octopus-cli
+        run: go build ./...
+
   docker-build:
     name: Docker Build
     runs-on: ubuntu-latest
