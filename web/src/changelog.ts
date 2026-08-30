@@ -12,6 +12,15 @@ export interface ReleaseNote {
 
 export const CHANGELOG: ReleaseNote[] = [
   {
+    version: "0.5.0",
+    date: "2026-08-30",
+    notes: [
+      "Otak (LLM provider) kini bisa \"claude-cli\"/\"glm-cli\" — Claude Code atau GLM CLI di device kamu sendiri, tanpa API key, dijalankan lewat worker.",
+      "Perintah cepat /use <provider> di kolom perintah untuk ganti otak tanpa buka Pengaturan (juga /otak untuk lihat yang aktif, /help untuk daftar perintah).",
+      "Otak aktif kini tampil sebagai chip di header — ketuk untuk buka Pengaturan.",
+    ],
+  },
+  {
     version: "0.4.4",
     date: "2026-08-30",
     notes: [

@@ -24,6 +24,7 @@ from pydantic import BaseModel
 
 from app.adapters.github import GitHubUnavailableError
 from app.composition import build_task_runner
+from app.domain.providers import ALL_PROVIDERS
 from app.interfaces.chat import _resolve_admin_target, _resolve_caller
 
 logger = logging.getLogger(__name__)
@@ -120,9 +121,15 @@ async def run_task(
     # BYOK: persist pilihan provider (kalau ada) + set key per-request ke
     # contextvar supaya PMAgent & dispatch pakai otak asli milik user.
     if req.provider:
+        provider = req.provider.strip().lower()
+        if provider not in ALL_PROVIDERS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"provider harus salah satu: {sorted(ALL_PROVIDERS)}",
+            )
         from app.adapters.user_provider_config import UserProviderConfigRepository
         from app.composition import _session_factory
-        UserProviderConfigRepository(_session_factory()).set(user_id, req.provider)
+        UserProviderConfigRepository(_session_factory()).set(user_id, provider)
 
     from app.adapters.ai_provider_db import personal_anthropic_key_var
     key_token = (

@@ -14,6 +14,7 @@ from app.adapters.circuit_breaker import CircuitBreaker
 from app.adapters.glm import GLMAdapter
 from app.config import Settings
 from app.domain.exceptions import AIProviderError
+from app.domain.providers import is_cli_provider
 from app.ports.ai_provider import AIProvider
 
 _ALIASES = {"claude": "anthropic", "zhipu": "glm"}
@@ -29,6 +30,12 @@ def build_ai_provider(
     provider: str, model: str | None, settings: Settings, personal_key: str | None = None
 ) -> AIProvider:
     name = _ALIASES.get(provider.strip().lower(), provider.strip().lower())
+    if is_cli_provider(name):
+        # CLI lokal (claude-cli/glm-cli): tidak ada adapter cloud untuk ini —
+        # brain + peran dijalankan di worker CLI user (lihat worker_dispatch).
+        raise AIProviderError(
+            "provider CLI lokal — dijalankan lewat worker, bukan cloud"
+        )
     if name == "anthropic":
         api_key = personal_key or settings.anthropic_api_key
         if not api_key:

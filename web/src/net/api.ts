@@ -132,9 +132,28 @@ export function setApiKey(k: string): void {
   if (k) store.setItem(APIKEY_KEY, k);
   else store.removeItem(APIKEY_KEY);
 }
-/** IT-Manager "asli" aktif = provider non-mock + ada key. */
+/** Provider lokal (jalan via worker CLI di device user) — tanpa API key. */
+export function isCliProvider(p: string): boolean {
+  return p === "claude-cli" || p === "glm-cli";
+}
+/** IT-Manager "asli" aktif = provider non-mock + (CLI lokal ATAU ada key). */
 export function isRealMode(): boolean {
-  return getProvider() !== "mock" && getApiKey().length > 0;
+  return getProvider() !== "mock" && (isCliProvider(getProvider()) || getApiKey().length > 0);
+}
+
+/** PUT /auth/me/provider — persist preferensi provider di server (tanpa efek
+ *  samping lain, tidak mengirim chat/tugas). Best-effort, tidak throw. */
+export async function saveProviderPreference(provider: string): Promise<boolean> {
+  try {
+    const resp = await fetch(`${API_BASE}/auth/me/provider`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ provider }),
+    });
+    return resp.ok;
+  } catch {
+    return false;
+  }
 }
 
 function authHeaders(): Record<string, string> {

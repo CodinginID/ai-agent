@@ -56,11 +56,30 @@ def _session_factory() -> sessionmaker[Any]:
 
 @lru_cache(maxsize=1)
 def _provider_resolver() -> Any:
-    """Resolver AI provider per-user (BYOK) — dipakai use case / loop / task runner."""
+    """Resolver AI provider per-user (BYOK) — dipakai loop / task runner.
+
+    Provider CLI lokal (claude-cli/glm-cli) tetap RAISE di sini (tak ada
+    adapter cloud) supaya task runner jatuh ke jalur decompose-via-worker.
+    """
     from app.adapters.ai_provider_db import DbAIProviderResolver
     from app.adapters.user_provider_config import UserProviderConfigRepository
     repo = UserProviderConfigRepository(_session_factory())
     return DbAIProviderResolver(repo, settings)
+
+
+@lru_cache(maxsize=1)
+def _chat_provider_resolver() -> Any:
+    """Resolver khusus 'otak' chat — provider CLI lokal degrade ke mock.
+
+    Kerja berat (agent_* delegation, task steps) sudah dijalankan lewat
+    worker dispatch override; brain chat langsung cukup respons mock supaya
+    ``/chat/send`` tidak menunjukkan error tiap kali user memilih provider
+    CLI lokal.
+    """
+    from app.adapters.ai_provider_db import DbAIProviderResolver
+    from app.adapters.user_provider_config import UserProviderConfigRepository
+    repo = UserProviderConfigRepository(_session_factory())
+    return DbAIProviderResolver(repo, settings, degrade_cli_to_mock=True)
 
 
 @lru_cache(maxsize=1)
@@ -252,5 +271,5 @@ def build_use_case() -> HandleMessageUseCase:
         rate_limiter=_rate_limiter(),
         audit=_audit_logger(),
         context_provider=_context_store(),
-        provider_resolver=_provider_resolver(),
+        provider_resolver=_chat_provider_resolver(),
     )

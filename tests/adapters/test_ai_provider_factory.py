@@ -50,3 +50,13 @@ def test_personal_key_overrides_settings() -> None:
 def test_glm_alias_and_adapter() -> None:
     provider = build_ai_provider("zhipu", None, load_settings(), personal_key="pk-1")
     assert isinstance(_inner(provider), GLMAdapter)
+
+
+def test_claude_cli_raises_ai_provider_error_not_cloud_adapter() -> None:
+    with pytest.raises(AIProviderError):
+        build_ai_provider("claude-cli", None, load_settings(), personal_key="pk-1")
+
+
+def test_glm_cli_raises_ai_provider_error_even_without_key() -> None:
+    with pytest.raises(AIProviderError):
+        build_ai_provider("glm-cli", None, load_settings())

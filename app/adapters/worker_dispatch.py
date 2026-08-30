@@ -32,11 +32,15 @@ def _role_agent_map() -> dict[str, str]:
 
 
 # Provider (pilihan user) → agent CLI worker. Satu-LLM: semua role pakai ini.
+# claude-cli/glm-cli: provider "lokal" eksplisit (tanpa key cloud sama sekali) —
+# brain + semua peran dijalankan di worker CLI milik user.
 _PROVIDER_AGENT = {
     "claude": "claude",
     "anthropic": "claude",
+    "claude-cli": "claude",
     "glm": "glm",
     "zhipu": "glm",
+    "glm-cli": "glm",
     "codex": "codex",
 }
 

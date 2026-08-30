@@ -13,6 +13,8 @@ export interface MobileHeaderProps {
 export function MobileHeader({ onCompose, onNavigateToPasukan }: MobileHeaderProps = {}): JSX.Element {
   const workers = useStore((s) => s.workers);
   const count = useStore((s) => s.agents.length);
+  const provider = useStore((s) => s.provider);
+  const openSettings = useStore((s) => s.openSettings);
 
   return (
     <header
@@ -38,6 +40,15 @@ export function MobileHeader({ onCompose, onNavigateToPasukan }: MobileHeaderPro
           {workers} pasukan online · {count} agen
         </div>
       </div>
+
+      <button
+        type="button"
+        onClick={openSettings}
+        className="flex flex-none items-center gap-1 whitespace-nowrap rounded-full border border-line bg-surface-2 px-2 py-1 font-mono text-[11.5px] text-ink-soft"
+        title="Otak aktif — klik untuk ganti"
+      >
+        🧠 {provider}
+      </button>
 
       {onCompose && (
         <button

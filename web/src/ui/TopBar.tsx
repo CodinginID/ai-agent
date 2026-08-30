@@ -5,6 +5,8 @@ import { SettingsButton } from "./settings/SettingsButton";
 export function TopBar(): JSX.Element {
   const count = useStore((s) => s.agents.length);
   const workers = useStore((s) => s.workers);
+  const provider = useStore((s) => s.provider);
+  const openSettings = useStore((s) => s.openSettings);
 
   return (
     <header className="flex flex-wrap items-center gap-4 border-b border-line bg-surface px-4 py-2.5">
@@ -42,6 +44,15 @@ export function TopBar(): JSX.Element {
         />
         {workers} pasukan
       </div>
+
+      <button
+        type="button"
+        onClick={openSettings}
+        className="flex items-center gap-1.5 whitespace-nowrap rounded-full border border-line bg-surface-2 px-2.5 py-1.5 font-mono text-[12px] text-ink-soft"
+        title="Otak aktif — klik untuk ganti"
+      >
+        🧠 {provider}
+      </button>
 
       <SettingsButton />
     </header>
