@@ -10,6 +10,7 @@ import {
   startGoogleLogin,
 } from "../../net/api";
 import { syncTokenToSw } from "../../net/push";
+import { fetchRoomState } from "../../net/roomStream";
 import { CURRENT_VERSION } from "../../net/version";
 import { CHANGELOG } from "../../changelog";
 import { useStore } from "../../state/store";
@@ -153,6 +154,7 @@ export function SettingsPanel({ onClose, onNavigateToPasukan }: SettingsPanelPro
     await syncTokenToSw();
     await refreshAuth();
     const st = useStore.getState().auth.status;
+    if (st !== "anon") void fetchRoomState();
     setLoginMsg(st === "anon" ? "Token tidak valid" : "Berhasil masuk");
     if (st !== "anon") {
       setTokenOpen(false);

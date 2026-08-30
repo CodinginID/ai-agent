@@ -8,16 +8,45 @@ export interface RoomStream {
   stop: () => void;
 }
 
+const STATE_POLL_MS = 20_000;
+
 export function startRoomStream(): RoomStream {
   const stopScheduler = useStore.getState().startScheduler();
   const ctrl = new AbortController();
   void connectLive(ctrl.signal);
+  // Cadangan snapshot via JSON: beberapa proxy (mis. Cloudflare quick tunnel)
+  // menahan body SSE sehingga room.snapshot tak pernah sampai → roster/worker
+  // di UI tetap default. /room/state = data yang sama, lewat request biasa.
+  void fetchRoomState(ctrl.signal);
+  const poll = window.setInterval(() => {
+    if (document.visibilityState === "visible") void fetchRoomState(ctrl.signal);
+  }, STATE_POLL_MS);
   return {
     stop: () => {
       stopScheduler();
+      window.clearInterval(poll);
       ctrl.abort();
     },
   };
+}
+
+/** Ambil snapshot ruangan sekali (idempoten — applyServerEvent me-reconcile). */
+export async function fetchRoomState(signal?: AbortSignal): Promise<boolean> {
+  const token = getToken();
+  if (!token) return false;
+  try {
+    const resp = await fetch("/room/state", {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+      signal,
+    });
+    if (!resp.ok) return false;
+    const ev = (await resp.json()) as Record<string, unknown>;
+    useStore.getState().applyServerEvent(ev);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function connectLive(signal: AbortSignal): Promise<void> {
