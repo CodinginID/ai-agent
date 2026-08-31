@@ -130,7 +130,10 @@ class RoomTaskObserver:
         )
         self._inner.step_started(task_id, order, role, description)
 
-    def step_finished(self, task_id: str, order: int, role: str, ok: bool, detail: str) -> None:
+    def step_finished(
+        self, task_id: str, order: int, role: str, ok: bool, detail: str,
+        *, output: str = "",
+    ) -> None:
         avatar = self._avatar(role)
         publish_room_event("agent.status", id=avatar, status="idle")
         publish_room_event(
@@ -143,7 +146,16 @@ class RoomTaskObserver:
             level="done" if ok else "error",
             text=f"Langkah {order} ({role}) {'selesai' if ok else 'gagal'}",
         )
-        self._inner.step_finished(task_id, order, role, ok, detail)
+        if output:
+            publish_room_event(
+                "step.output",
+                task_id=task_id,
+                order=order,
+                role=role,
+                ok=ok,
+                text=output[:6000],
+            )
+        self._inner.step_finished(task_id, order, role, ok, detail, output=output)
 
     def task_finished(self, task_id: str, *, closed: bool, ok: bool, note: str) -> None:
         publish_room_event("agent.status", id="octo", status="idle")

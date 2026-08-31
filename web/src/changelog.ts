@@ -12,6 +12,14 @@ export interface ReleaseNote {
 
 export const CHANGELOG: ReleaseNote[] = [
   {
+    version: "0.6.0",
+    date: "2026-08-31",
+    notes: [
+      "Jawaban lengkap tiap agen kini tampil sebagai percakapan (tab Chat di HP, panel Percakapan di desktop) — bukan cuma \"selesai\"/\"gagal\" lagi.",
+      "Jawaban panjang bisa dilipat/di-expand (\"Selengkapnya\"/\"Sembunyikan\") supaya thread tetap ringkas.",
+    ],
+  },
+  {
     version: "0.5.0",
     date: "2026-08-30",
     notes: [

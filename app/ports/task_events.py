@@ -26,6 +26,7 @@ class TaskObserver(Protocol):
 
     def step_finished(
         self, task_id: str, order: int, role: str, ok: bool, detail: str,
+        *, output: str = "",
     ) -> None: ...
 
     def task_finished(
@@ -45,7 +46,10 @@ class NullTaskObserver:
     def step_started(self, task_id: str, order: int, role: str, description: str) -> None:
         return None
 
-    def step_finished(self, task_id: str, order: int, role: str, ok: bool, detail: str) -> None:
+    def step_finished(
+        self, task_id: str, order: int, role: str, ok: bool, detail: str,
+        *, output: str = "",
+    ) -> None:
         return None
 
     def task_finished(self, task_id: str, *, closed: bool, ok: bool, note: str) -> None:

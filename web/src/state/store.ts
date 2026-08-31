@@ -17,6 +17,7 @@ import type {
   Approval,
   BoardCard,
   BoardCol,
+  ChatMsg,
   FeedColor,
   Role,
   RoomEvent,
@@ -165,6 +166,17 @@ function logicalPlaceFor(state: Agent["state"]): "home" | "meet" | "review" | "s
 
 const VALID_ROLES = new Set<string>(Object.keys(ROLE));
 
+/** RoomTaskObserver.step_finished publishes the raw TaskRunner role
+ *  (engineer/infra/reviewer/research) on `step.output` — mirrors backend
+ *  `_ROLE_CARD` (app/interfaces/room.py) so the chat bubble reuses the same
+ *  avatar color/icon as the kanban card for that role. */
+const BACKEND_ROLE_TO_CARD: Record<string, Role> = {
+  engineer: "coder",
+  infra: "deployer",
+  reviewer: "reviewer",
+  research: "researcher",
+};
+
 /** Validasi payload agents dari event server (boundary tak terpercaya) —
  *  entri dengan id kosong atau peran tak dikenal dibuang, bukan bikin crash. */
 function parseRosterEntries(raw: unknown): RosterEntry[] {
@@ -296,6 +308,8 @@ interface RoomState {
   approvals: Approval[];
   serverApprovals: ServerApproval[];
   events: RoomEvent[];
+  /** Thread percakapan (tab Chat mobile / panel Percakapan desktop) — max 200. */
+  chat: ChatMsg[];
   board: BoardCard[];
   queue: Task[];
   selectedId: string | null;
@@ -351,6 +365,7 @@ export const useStore = create<RoomState>((set, get) => {
   let taskSeq = 0;
   let apprSeq = 0;
   let eventSeq = 0;
+  let chatSeq = 0;
   let spawnT = rand(2, 4);
 
   // ── internal mutation on the current agents array (already cloned by caller) ──
@@ -361,6 +376,17 @@ export const useStore = create<RoomState>((set, get) => {
   ): RoomEvent[] => {
     const next = [...events, { id: ++eventSeq, t: now(), msg, color }];
     return next.length > 40 ? next.slice(next.length - 40) : next;
+  };
+
+  // Chat thread (agent-chat-output) — appended by submitCommand (user),
+  // applyServerEvent (activity → status, step.output → agent), and runTask's
+  // resolution (final). Capped at 200 like the RoomEvent feed above.
+  const pushChat = (
+    chat: ChatMsg[],
+    msg: Omit<ChatMsg, "id" | "t">,
+  ): ChatMsg[] => {
+    const next = [...chat, { id: ++chatSeq, t: now(), ...msg }];
+    return next.length > 200 ? next.slice(next.length - 200) : next;
   };
 
   const logInto = (a: Agent, msg: string): void => {
@@ -486,6 +512,7 @@ export const useStore = create<RoomState>((set, get) => {
         color: "done",
       },
     ],
+    chat: [],
     board: [],
     queue: [],
     selectedId: null,
@@ -635,13 +662,18 @@ export const useStore = create<RoomState>((set, get) => {
           `📩 <b>${MANAGER}</b> menerima perintahmu: “${safe}”`,
           "work",
         ),
+        chat: pushChat(s.chat, { who: "user", name: "Kamu", text: txt, kind: "user" }),
       }));
 
       // Kirim ke Manajer IT nyata (TaskRunner): PM pecah tugas → dispatch
       // per-role ke pasukan. Kartu kanban + avatar digerakkan event
-      // /room/stream (task.card); hasil akhir → feed.
+      // /room/stream (task.card); jawaban lengkap tiap langkah → step.output
+      // (lihat applyServerEvent); ini cuma ringkasan akhir → feed + chat.
       void runTask(txt).then((res) => {
         if (!res) return;
+        const finalText = res.ok
+          ? `Selesai (${res.outcomes.length} langkah): ${res.summary}`
+          : `Berhenti: ${res.note}`;
         set((s) => ({
           events: feedInto(
             s.events,
@@ -650,6 +682,13 @@ export const useStore = create<RoomState>((set, get) => {
               : `⚠️ <b>${MANAGER}</b> berhenti: ${escapeHtml(res.note)}`,
             res.ok ? "done" : "error",
           ),
+          chat: pushChat(s.chat, {
+            who: "octo",
+            name: MANAGER,
+            text: finalText,
+            ok: res.ok,
+            kind: "final",
+          }),
         }));
       });
     },
@@ -661,8 +700,36 @@ export const useStore = create<RoomState>((set, get) => {
           const level = String((ev as { level?: unknown }).level ?? "info");
           const color: FeedColor =
             level === "error" ? "error" : level === "done" ? "done" : "work";
-          const text = escapeHtml(String((ev as { text?: unknown }).text ?? ""));
-          return { events: feedInto(s.events, `🛰️ ${text}`, color) };
+          const rawText = String((ev as { text?: unknown }).text ?? "");
+          const text = escapeHtml(rawText);
+          return {
+            events: feedInto(s.events, `🛰️ ${text}`, color),
+            // Ringkasan tipis di thread chat — jawaban lengkap datang lewat
+            // step.output di bawah, ini cuma penanda progres langkah.
+            chat: pushChat(s.chat, {
+              who: "octo",
+              name: MANAGER,
+              text: rawText,
+              ok: level === "error" ? false : undefined,
+              kind: "status",
+            }),
+          };
+        }
+        if (type === "step.output") {
+          const roleRaw = String((ev as { role?: unknown }).role ?? "");
+          const cardRole = BACKEND_ROLE_TO_CARD[roleRaw] ?? "researcher";
+          const text = String((ev as { text?: unknown }).text ?? "");
+          const ok = Boolean((ev as { ok?: unknown }).ok ?? true);
+          if (!text) return {};
+          return {
+            chat: pushChat(s.chat, {
+              who: cardRole,
+              name: ROLE[cardRole].label,
+              text,
+              ok,
+              kind: "agent",
+            }),
+          };
         }
         if (type === "approval.request") {
           const planId = String((ev as { id?: unknown }).id ?? "");

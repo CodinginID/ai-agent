@@ -189,8 +189,10 @@ class _RecordingObserver:
     def step_started(self, task_id, order, role, description):  # type: ignore[no-untyped-def]
         self.events.append(("step_started", f"{order}:{role}"))
 
-    def step_finished(self, task_id, order, role, ok, detail):  # type: ignore[no-untyped-def]
+    def step_finished(self, task_id, order, role, ok, detail, *, output=""):  # type: ignore[no-untyped-def]
         self.events.append(("step_finished", f"{order}:{ok}"))
+        self.last_detail = detail
+        self.last_output = output
 
     def task_finished(self, task_id, *, closed, ok, note):  # type: ignore[no-untyped-def]
         self.events.append(("task_finished", f"closed={closed},ok={ok}"))
@@ -358,6 +360,60 @@ async def test_make_plan_empty_when_no_provider_and_no_agent(monkeypatch) -> Non
 
     assert result.plan.steps == []          # tak ada otak → plan kosong
     assert dispatch.calls == []             # tak ada dispatch decompose
+
+
+# ── step output pipeline (agent-chat-output) ─────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_step_outcome_detail_carries_full_output_not_summary() -> None:
+    plan = _plan([
+        TaskStep(order=1, description="write module", action="file_write", params={}),
+    ])
+    long_output = "Here is the full agent answer with real detail, not just exit 0."
+    gh = _FakeGitHub()
+    dispatch = _FakeDispatch([
+        DispatchResult(output=long_output, summary="exit 0", ok=True),
+    ])
+    obs = _RecordingObserver()
+    runner = TaskRunner(pm=_FakePM(plan), github=gh, dispatch=dispatch, observer=obs)
+
+    result = await runner.run("user-1", "req")
+
+    assert result.outcomes[0].detail == long_output
+    assert obs.last_detail == long_output
+    assert obs.last_output == long_output
+    # The GitHub comment carries the full answer too, not "exit 0".
+    assert long_output in gh.comments[0][1]
+
+
+@pytest.mark.asyncio
+async def test_step_output_truncated_to_6000_chars() -> None:
+    plan = _plan([
+        TaskStep(order=1, description="write module", action="file_write", params={}),
+    ])
+    huge = "a" * 7000
+    dispatch = _FakeDispatch([DispatchResult(output=huge, ok=True)])
+    obs = _RecordingObserver()
+    runner = TaskRunner(pm=_FakePM(plan), github=_FakeGitHub(), dispatch=dispatch, observer=obs)
+
+    result = await runner.run("user-1", "req")
+
+    assert len(result.outcomes[0].detail) == 6000
+    assert len(obs.last_output) == 6000
+
+
+@pytest.mark.asyncio
+async def test_step_output_falls_back_to_error_when_no_output() -> None:
+    plan = _plan([
+        TaskStep(order=1, description="step one", action="file_write", params={}),
+    ])
+    dispatch = _FakeDispatch([DispatchResult(output="", ok=False, error="no worker online")])
+    obs = _RecordingObserver()
+    runner = TaskRunner(pm=_FakePM(plan), github=_FakeGitHub(), dispatch=dispatch, observer=obs)
+
+    await runner.run("user-1", "req")
+
+    assert obs.last_output == "no worker online"
 
 
 def test_provider_agent_mapping() -> None:

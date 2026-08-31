@@ -4,7 +4,7 @@ import { RoomCanvas } from "./room/RoomCanvas";
 import { InspectorPanel } from "./ui/InspectorPanel";
 import { Roster } from "./ui/Roster";
 import { ApprovalQueue } from "./ui/ApprovalQueue";
-import { ActivityFeed } from "./ui/ActivityFeed";
+import { ChatThread } from "./ui/ChatThread";
 import { startRoomStream } from "./net/roomStream";
 import { setBadge, syncTokenToSw } from "./net/push";
 import { useStore } from "./state/store";
@@ -88,8 +88,8 @@ export default function App(): JSX.Element {
         <Section title="Perlu Persetujuan">
           <ApprovalQueue />
         </Section>
-        <Section title="Aktivitas Langsung" grow>
-          <ActivityFeed />
+        <Section title="Percakapan" grow>
+          <ChatThread />
         </Section>
       </aside>
     </div>

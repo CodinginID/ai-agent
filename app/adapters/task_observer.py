@@ -63,7 +63,10 @@ class LoggingTaskObserver:
     def step_started(self, task_id: str, order: int, role: str, description: str) -> None:
         _emit(task_id, role, "step_started", f"step {order}: {description[:100]}", order=str(order))
 
-    def step_finished(self, task_id: str, order: int, role: str, ok: bool, detail: str) -> None:
+    def step_finished(
+        self, task_id: str, order: int, role: str, ok: bool, detail: str,
+        *, output: str = "",
+    ) -> None:
         status = "step_ok" if ok else "step_failed"
         _emit(task_id, role, status, f"step {order}: {detail[:100]}", order=str(order))
 

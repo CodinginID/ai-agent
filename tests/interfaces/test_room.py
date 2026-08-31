@@ -127,7 +127,10 @@ class _NullInner:
     def step_started(self, task_id: str, order: int, role: str, description: str) -> None:
         return None
 
-    def step_finished(self, task_id: str, order: int, role: str, ok: bool, detail: str) -> None:
+    def step_finished(
+        self, task_id: str, order: int, role: str, ok: bool, detail: str,
+        *, output: str = "",
+    ) -> None:
         return None
 
     def task_finished(self, task_id: str, *, closed: bool, ok: bool, note: str) -> None:
@@ -173,6 +176,51 @@ def test_room_task_observer_push_exception_does_not_propagate() -> None:
         await asyncio.sleep(0)  # let the failing push task run & be swallowed
 
     asyncio.run(go())  # must not raise
+
+
+def test_room_task_observer_publishes_step_output() -> None:
+    from app.interfaces.room import RoomTaskObserver
+
+    async def go() -> dict:
+        obs = RoomTaskObserver(_NullInner())
+        q = _bus.subscribe()
+        try:
+            obs.step_finished(
+                "t1", 1, "engineer", True, "short detail",
+                output="full agent answer here",
+            )
+            events = [await asyncio.wait_for(q.get(), timeout=1.0) for _ in range(4)]
+            return next(e for e in events if e["type"] == "step.output")
+        finally:
+            _bus.unsubscribe(q)
+
+    ev = asyncio.run(go())
+    assert ev == {
+        "type": "step.output",
+        "task_id": "t1",
+        "order": 1,
+        "role": "engineer",
+        "ok": True,
+        "text": "full agent answer here",
+    }
+
+
+def test_room_task_observer_no_step_output_event_when_output_empty() -> None:
+    from app.interfaces.room import RoomTaskObserver
+
+    async def go() -> list[dict]:
+        obs = RoomTaskObserver(_NullInner())
+        q = _bus.subscribe()
+        try:
+            obs.step_finished("t1", 1, "engineer", True, "short detail")
+            # Only agent.status, task.card, activity — no step.output.
+            events = [await asyncio.wait_for(q.get(), timeout=1.0) for _ in range(3)]
+            return events
+        finally:
+            _bus.unsubscribe(q)
+
+    events = asyncio.run(go())
+    assert all(e["type"] != "step.output" for e in events)
 
 
 # ── /room/ws (WebSocket mirror) ───────────────────────────────────────────────
