@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "../../state/store";
-import { ActivityFeed } from "../ActivityFeed";
+import { ChatThread } from "../ChatThread";
 import { ApprovalQueue } from "../ApprovalQueue";
 import { ApprovalSheet } from "./ApprovalSheet";
 import { MobileCommandBar } from "./MobileCommandBar";
@@ -68,11 +68,7 @@ export function MobileShell(): JSX.Element {
           <ApprovalQueue />
         </div>
       )}
-      {tab === "aktivitas" && (
-        <div className="scroll-thin h-full overflow-y-auto px-3 py-3">
-          <ActivityFeed large />
-        </div>
-      )}
+      {tab === "aktivitas" && <ChatThread />}
       {tab === "pasukan" && <PasukanTab />}
     </main>
   );

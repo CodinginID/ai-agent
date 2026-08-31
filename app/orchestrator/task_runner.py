@@ -160,7 +160,9 @@ class TaskRunner:
                 context=context,
             )
             result = await self.dispatch.dispatch_async(user_id, role, prompt)
-            detail = (result.summary or result.output or result.error)[:500]
+            # Full agent answer (not just the "exit 0" summary) — capped so it
+            # stays reasonable in the GitHub comment / RoomBus event / UI.
+            detail = (result.output or result.error)[:6000]
             outcome = StepOutcome(
                 order=step.order,
                 description=step.description,
@@ -169,7 +171,9 @@ class TaskRunner:
                 detail=detail,
             )
             outcomes.append(outcome)
-            self.observer.step_finished(task_id, step.order, role, result.ok, detail)
+            self.observer.step_finished(
+                task_id, step.order, role, result.ok, detail, output=detail,
+            )
 
             status = "✅" if result.ok else "❌"
             await self.github.comment_issue(

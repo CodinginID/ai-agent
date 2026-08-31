@@ -96,3 +96,21 @@ export interface BoardCard {
 }
 
 export type Theme = "light" | "dark" | "system";
+
+/** Jenis baris di thread chat percakapan (tab Chat mobile / panel Percakapan
+ *  desktop) — "status" = ringkasan `activity` (baris tipis abu-abu), "agent" =
+ *  jawaban lengkap satu langkah dari `step.output`, "final" = ringkasan akhir
+ *  Manajer saat task selesai/berhenti, "user" = perintah yang kamu kirim. */
+export type ChatKind = "user" | "status" | "agent" | "final";
+
+export interface ChatMsg {
+  id: number;
+  /** "user" = kamu, "octo" = Manajer, atau peran agen (kartu Role) untuk kind "agent". */
+  who: "user" | "octo" | Role;
+  name: string;
+  text: string;
+  /** hasil langkah/tugas (dot hijau/merah); undefined untuk status/user netral. */
+  ok?: boolean;
+  t: string;
+  kind: ChatKind;
+}
